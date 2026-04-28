@@ -51,6 +51,7 @@ Rules for the JSON:
 - "category": one of: Fridge, Pantry, Vegetables, Fruits, Spices, Snacks, Drinks, Household
 - Always include this JSON when listing ingredients for a dish
 - The JSON must be valid and parseable
+- VERY IMPORTANT: When you suggest a recipe or ingredients, DO NOT say you automatically added them. Instead, ALWAYS end your response by asking the user: "Do you want me to add these ingredients to your shopping list?"
 ''';
 
 // ─── Quick Prompts ─────────────────────────────────────────────────────────────
@@ -81,6 +82,9 @@ class _AIChatPageState extends State<AIChatPage> {
   ChatSession? _fallbackSession;
   bool _isTyping = false;
   bool _isLoading = true;
+
+  // Items waiting for user confirmation before adding
+  List<Map<String, dynamic>> _pendingGroceryItems = [];
 
   @override
   void initState() {
@@ -152,6 +156,9 @@ class _AIChatPageState extends State<AIChatPage> {
     if (trimmed.isEmpty || _isTyping || _session == null) return;
     _controller.clear();
 
+    final isYes = RegExp(r'^(yes|yeah|yep|sure|ok|okay|add|please|add it|yes please|sure add it)$', caseSensitive: false).hasMatch(trimmed);
+    final shouldShowPopup = isYes && _pendingGroceryItems.isNotEmpty;
+
     final ctx = _buildContext();
     final fullText = ctx.isNotEmpty ? '$ctx\nUser question: $trimmed' : trimmed;
 
@@ -160,6 +167,42 @@ class _AIChatPageState extends State<AIChatPage> {
       _isTyping = true;
     });
     _scrollToBottom();
+
+    if (shouldShowPopup && mounted) {
+      final itemsToAdd = List<Map<String, dynamic>>.from(_pendingGroceryItems);
+      _pendingGroceryItems.clear(); // Clear so we don't prompt again
+
+      showDialog<bool>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text('Add Ingredients?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+            content: Text(
+              'Would you like to add these ${itemsToAdd.length} ingredients to your shopping list?',
+              style: GoogleFonts.plusJakartaSans(color: kMuted, fontWeight: FontWeight.w500),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                style: TextButton.styleFrom(foregroundColor: kMuted),
+                child: const Text('No'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: TextButton.styleFrom(foregroundColor: kPrimary),
+                child: const Text('Yes'),
+              ),
+            ],
+          );
+        },
+      ).then((confirm) {
+        if (confirm == true && mounted) {
+          _addItemsToShoppingList(itemsToAdd);
+        }
+      });
+    }
 
     try {
       // Try primary model first, fall back on 503/overload errors
@@ -193,38 +236,8 @@ class _AIChatPageState extends State<AIChatPage> {
 
       await ChatStorage.save(_messages);
 
-      // Ask for confirmation before adding ingredients to shopping list
-      if (groceryItems.isNotEmpty && mounted) {
-        final confirm = await showDialog<bool>(
-          context: context,
-          builder: (context) {
-            return AlertDialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: Text('Add Ingredients?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
-              content: Text(
-                'The AI suggested ${groceryItems.length} ingredient${groceryItems.length > 1 ? 's' : ''}. Would you like to add them to your shopping list?',
-                style: GoogleFonts.plusJakartaSans(color: kMuted, fontWeight: FontWeight.w500),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  style: TextButton.styleFrom(foregroundColor: kMuted),
-                  child: const Text('No'),
-                ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  style: TextButton.styleFrom(foregroundColor: kPrimary),
-                  child: const Text('Yes'),
-                ),
-              ],
-            );
-          },
-        );
-
-        if (confirm == true) {
-          _addItemsToShoppingList(groceryItems);
-        }
+      if (groceryItems.isNotEmpty) {
+        _pendingGroceryItems = groceryItems;
       }
     } catch (e) {
       debugPrint('🔴 AI Chat Error: $e');
