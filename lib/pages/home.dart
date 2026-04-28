@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:mobile_aismartwallet/pages/recent.dart';
 import 'package:mobile_aismartwallet/pages/analytics.dart';
+import 'package:mobile_aismartwallet/pages/ai_chat.dart';
 
 // ─── Colors & Design Tokens ────────────────────────────────────────────────
 final Color kPrimary = HSLColor.fromAHSL(1.0, 152, 0.45, 0.42).toColor();
@@ -689,10 +690,28 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 ),
               ),
               onTap: () {
-                Navigator.pop(context); // Close Drawer
+                Navigator.pop(context);
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(builder: (_) => const AnalyticsPage()),
+                );
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF6366F1)),
+              title: const Text(
+                'AI Assistant',
+                style: TextStyle(
+                  color: Color(0xFF6366F1),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AIChatPage()),
                 );
               },
             ),
@@ -878,7 +897,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           ),
         ),
       ),
-      floatingActionButton: _BouncingFAB(onPressed: _showAddItemSheet),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+      floatingActionButton: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AIChatFab(),
+          const SizedBox(height: 12),
+          _BouncingFAB(onPressed: _showAddItemSheet),
+        ],
+      ),
     );
   }
 }

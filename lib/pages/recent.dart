@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'package:mobile_aismartwallet/pages/home.dart';
 import 'package:mobile_aismartwallet/pages/analytics.dart';
+import 'package:mobile_aismartwallet/pages/ai_chat.dart';
 
 class RecentPage extends StatefulWidget {
   const RecentPage({super.key});
@@ -219,10 +220,28 @@ class _RecentPageState extends State<RecentPage> {
                 ),
               ),
               onTap: () {
-                Navigator.pop(context); // Close Drawer
+                Navigator.pop(context);
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(builder: (_) => const AnalyticsPage()),
+                );
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF6366F1)),
+              title: const Text(
+                'AI Assistant',
+                style: TextStyle(
+                  color: Color(0xFF6366F1),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AIChatPage()),
                 );
               },
             ),
@@ -398,6 +417,7 @@ class _RecentPageState extends State<RecentPage> {
           ],
         ),
       ),
+      floatingActionButton: const AIChatFab(),
     );
   }
 }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:mobile_aismartwallet/pages/home.dart';
 import 'package:mobile_aismartwallet/pages/recent.dart';
+import 'package:mobile_aismartwallet/pages/ai_chat.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -48,6 +49,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               ],
             )
           : _EmptyState(),
+      floatingActionButton: const AIChatFab(),
     );
   }
 
@@ -438,6 +440,16 @@ class _AppDrawer extends StatelessWidget {
             leading: Icon(Icons.insights_rounded, color: kPrimary),
             title: Text('Analytics', style: TextStyle(color: kPrimary, fontWeight: FontWeight.w700)),
             onTap: () => Navigator.pop(context),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF6366F1)),
+            title: const Text('AI Assistant',
+                style: TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.w700)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const AIChatPage()));
+            },
           ),
         ],
       ),
