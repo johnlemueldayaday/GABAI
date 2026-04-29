@@ -37,7 +37,7 @@ class AppDrawer extends StatelessWidget {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Grocery Wallet',
+                  'GABAY',
                   style: TextStyle(
                     color: kTextCharcoal,
                     fontSize: 18,

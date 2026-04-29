@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:mobile_aismartwallet/pages/home.dart';
-import 'package:mobile_aismartwallet/pages/ramsey.dart';
-import 'package:mobile_aismartwallet/models/grocery_models.dart';
-import 'package:mobile_aismartwallet/config/app_theme.dart';
-import 'package:mobile_aismartwallet/widgets/app_drawer.dart';
-import 'package:mobile_aismartwallet/services/grocery_storage.dart';
+import 'package:gabay/pages/home.dart';
+import 'package:gabay/pages/ramsey.dart';
+import 'package:gabay/models/grocery_models.dart';
+import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/widgets/app_drawer.dart';
+import 'package:gabay/services/grocery_storage.dart';
 
 class RecentPage extends StatefulWidget {
   const RecentPage({super.key});

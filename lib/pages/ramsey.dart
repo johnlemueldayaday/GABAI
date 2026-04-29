@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
-import 'package:mobile_aismartwallet/config/ai_config.dart';
-import 'package:mobile_aismartwallet/services/chat_storage.dart';
-import 'package:mobile_aismartwallet/models/grocery_models.dart';
-import 'package:mobile_aismartwallet/config/app_theme.dart';
-import 'package:mobile_aismartwallet/services/grocery_storage.dart';
+import 'package:gabay/config/ai_config.dart';
+import 'package:gabay/services/chat_storage.dart';
+import 'package:gabay/models/grocery_models.dart';
+import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/services/grocery_storage.dart';
 
 const _kSystemPrompt = '''
-You are Ramsey, a smart grocery budgeting and cooking assistant for Filipino households integrated into the Grocery Wallet app.
+You are Ramsey, a smart grocery budgeting and cooking assistant for Filipino households integrated into the GABAY app.
 
 Your expertise:
 1. Suggest what to cook based on available or bought ingredients

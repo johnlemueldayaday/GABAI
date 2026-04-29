@@ -1,4 +1,4 @@
-package com.example.mobile_aismartwallet
+package com.example.gabay
 
 import io.flutter.embedding.android.FlutterActivity
 

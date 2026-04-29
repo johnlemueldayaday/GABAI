@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:speech_to_text/speech_recognition_error.dart';
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 
-import 'package:mobile_aismartwallet/pages/ramsey.dart';
-import 'package:mobile_aismartwallet/models/grocery_models.dart';
-import 'package:mobile_aismartwallet/config/app_theme.dart';
-import 'package:mobile_aismartwallet/widgets/app_drawer.dart';
-import 'package:mobile_aismartwallet/services/grocery_storage.dart';
+import 'package:gabay/pages/ramsey.dart';
+import 'package:gabay/models/grocery_models.dart';
+import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/widgets/app_drawer.dart';
+import 'package:gabay/services/grocery_storage.dart';
 
 class GroceryApp extends StatelessWidget {
   const GroceryApp({super.key});
@@ -1350,14 +1353,20 @@ class _AddItemSheet extends StatefulWidget {
 }
 
 class _AddItemSheetState extends State<_AddItemSheet>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   final _searchCtrl = TextEditingController();
   final _priceCtrl = TextEditingController();
+  final SpeechToText _speech = SpeechToText();
   double _qty = 1.0;
   String _unit = 'pcs';
   String _selectedCategory = 'All';
+  bool _speechAvailable = false;
+  bool _isListening = false;
+  String? _speechErrorText;
   late AnimationController _sheetAnimCtrl;
+  late AnimationController _micPulseCtrl;
   late Animation<Offset> _slideAnimation;
+  late Animation<double> _micPulseScale;
 
   static const _categories = [
     'All',
@@ -1404,15 +1413,136 @@ class _AddItemSheetState extends State<_AddItemSheet>
             curve: const _SpringCurve(damping: 30, stiffness: 300),
           ),
         );
+    _micPulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    );
+    _micPulseScale = Tween<double>(begin: 1.0, end: 1.08).animate(
+      CurvedAnimation(parent: _micPulseCtrl, curve: Curves.easeInOut),
+    );
     _sheetAnimCtrl.forward();
+    _initSpeech();
   }
 
   @override
   void dispose() {
+    if (_speech.isListening) {
+      _speech.stop();
+    }
+    _micPulseCtrl.dispose();
     _sheetAnimCtrl.dispose();
     _searchCtrl.dispose();
     _priceCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _initSpeech() async {
+    final available = await _speech.initialize(
+      onStatus: _onSpeechStatus,
+      onError: _onSpeechError,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _speechAvailable = available;
+      if (!available) {
+        _speechErrorText = 'Voice input is unavailable on this device.';
+      }
+    });
+  }
+
+  Future<void> _toggleListening() async {
+    FocusScope.of(context).unfocus();
+
+    if (_isListening) {
+      await _stopListening();
+      return;
+    }
+
+    if (!_speechAvailable) {
+      setState(() {
+        _speechErrorText = 'Voice input is unavailable right now.';
+      });
+      return;
+    }
+
+    final started = await _speech.listen(
+      onResult: _onSpeechResult,
+      listenMode: ListenMode.dictation,
+      partialResults: true,
+      cancelOnError: true,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _isListening = started;
+      _speechErrorText = started
+          ? null
+          : 'Could not start voice input. Please try again.';
+    });
+
+    if (started) {
+      _micPulseCtrl.repeat(reverse: true);
+    }
+  }
+
+  Future<void> _stopListening() async {
+    if (_speech.isListening) {
+      await _speech.stop();
+    }
+
+    if (!mounted) return;
+
+    _micPulseCtrl.stop();
+    _micPulseCtrl.value = 0;
+
+    setState(() {
+      _isListening = false;
+    });
+  }
+
+  void _onSpeechStatus(String status) {
+    final stillListening = status == 'listening';
+    if (!mounted) return;
+
+    if (!stillListening && _isListening) {
+      _micPulseCtrl.stop();
+      _micPulseCtrl.value = 0;
+    }
+
+    setState(() {
+      _isListening = stillListening;
+    });
+  }
+
+  void _onSpeechError(SpeechRecognitionError error) {
+    if (!mounted) return;
+
+    _micPulseCtrl.stop();
+    _micPulseCtrl.value = 0;
+
+    setState(() {
+      _isListening = false;
+      _speechErrorText = error.errorMsg.isEmpty
+          ? 'Voice input failed. Please try again.'
+          : error.errorMsg;
+    });
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    final transcript = result.recognizedWords.trim();
+    if (!mounted || transcript.isEmpty) return;
+
+    _searchCtrl.value = TextEditingValue(
+      text: transcript,
+      selection: TextSelection.collapsed(offset: transcript.length),
+    );
+
+    setState(() {
+      _speechErrorText = null;
+    });
   }
 
   List<Map<String, dynamic>> get _allDatabase => [
@@ -1463,6 +1593,10 @@ class _AddItemSheetState extends State<_AddItemSheet>
     if (name.isEmpty) return;
     final price = double.tryParse(_priceCtrl.text) ?? 0;
 
+    if (_isListening) {
+      _stopListening();
+    }
+
     // Save custom item for future use
     if (_isCustomItem) {
       widget.onSaveCustom({
@@ -1490,6 +1624,10 @@ class _AddItemSheetState extends State<_AddItemSheet>
   }
 
   void _onSuggestionTap(Map<String, dynamic> item) {
+    if (_isListening) {
+      _stopListening();
+    }
+
     setState(() {
       final name = item['name'].toString();
       _searchCtrl.text = name;
@@ -1577,10 +1715,23 @@ class _AddItemSheetState extends State<_AddItemSheet>
                       color: kBackground,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(color: kBorder),
+                      boxShadow: _isListening
+                          ? [
+                              BoxShadow(
+                                color: kPrimary.withValues(alpha: 0.16),
+                                blurRadius: 18,
+                                spreadRadius: 1,
+                              ),
+                            ]
+                          : [],
                     ),
                     child: TextField(
                       controller: _searchCtrl,
-                      onChanged: (_) => setState(() {}),
+                      onChanged: (_) {
+                        setState(() {
+                          _speechErrorText = null;
+                        });
+                      },
                       style: TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w500,
@@ -1594,6 +1745,39 @@ class _AddItemSheetState extends State<_AddItemSheet>
                           color: kMuted,
                           size: 20,
                         ),
+                        suffixIcon: Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: Center(
+                            child: ScaleTransition(
+                              scale: _micPulseScale,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: _toggleListening,
+                                  borderRadius: BorderRadius.circular(20),
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 180),
+                                    width: 36,
+                                    height: 36,
+                                    decoration: BoxDecoration(
+                                      color: _isListening
+                                          ? kPrimary.withValues(alpha: 0.12)
+                                          : Colors.transparent,
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Icon(
+                                      _isListening
+                                          ? Icons.graphic_eq_rounded
+                                          : Icons.mic_none_rounded,
+                                      size: 19,
+                                      color: _isListening ? kPrimary : kMuted,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
                           vertical: 14,
@@ -1603,6 +1787,38 @@ class _AddItemSheetState extends State<_AddItemSheet>
                   ),
                 ),
                 // ─── Custom Item Badge ──────────────────
+                if (_isListening || _speechErrorText != null)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+                    child: Row(
+                      children: [
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: _isListening ? kPrimary : Colors.red.shade400,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _isListening
+                                ? 'Listening... speak the item name'
+                                : _speechErrorText!,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: _isListening
+                                  ? kPrimary
+                                  : Colors.red.shade400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 if (_isCustomItem)
                   Padding(
                     padding: const EdgeInsets.symmetric(

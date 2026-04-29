@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:mobile_aismartwallet/pages/home.dart';
-import 'package:mobile_aismartwallet/services/grocery_storage.dart';
+import 'package:gabay/pages/home.dart';
+import 'package:gabay/services/grocery_storage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
