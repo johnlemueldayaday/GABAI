@@ -4,14 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
-import 'package:mobile_aismartwallet/pages/home.dart';
+import 'package:mobile_aismartwallet/config/ai_config.dart';
 import 'package:mobile_aismartwallet/services/chat_storage.dart';
-
-// ─── API Config ────────────────────────────────────────────────────────────────
-const _kApiKey = 'AIzaSyA-jPMjkUqBwi7bCptujcmwkl3srH59FTA';
+import 'package:mobile_aismartwallet/models/grocery_models.dart';
+import 'package:mobile_aismartwallet/config/app_theme.dart';
+import 'package:mobile_aismartwallet/services/grocery_storage.dart';
 
 const _kSystemPrompt = '''
-You are GroceryAI, a smart grocery budgeting and cooking assistant for Filipino households integrated into the Grocery Wallet app.
+You are Ramsey, a smart grocery budgeting and cooking assistant for Filipino households integrated into the Grocery Wallet app.
 
 Your expertise:
 1. Suggest what to cook based on available or bought ingredients
@@ -34,9 +34,9 @@ Rules:
 - Use bullet points for lists
 - Include ₱ cost estimates when relevant
 - Use Filipino food terms naturally (patis, toyo, suka, sabaw)
-- Reference user's current grocery list when giving advice
-- When asked what to cook, check their list first before suggesting
-
+- ALWAYS base your cooking suggestions on the user's current grocery list or pantry ingredients.
+- If the user asks "what can I cook?" DO NOT just decide a random dish for them. Instead, ask follow-up questions like "What are you craving today?" or "What ingredients do you currently have?" to gather more context.
+- Never arbitrarily pick a dish and list its ingredients unless the user specifically asks for that recipe or agrees to your suggestion.
 IMPORTANT - Grocery List JSON:
 Whenever you suggest a recipe or list ingredients to buy, you MUST include a JSON block at the very end of your response wrapped in these exact tags:
 [GROCERY_LIST_JSON]
@@ -49,35 +49,30 @@ Rules for the JSON:
 - "unit": one of: pcs, kg, g, L, mL, pack, box, can, bottle, dozen, bundle, loaf, jar, roll, sachet
 - "price": estimated price per unit in Philippine Peso (number only, no ₱ symbol)
 - "category": one of: Fridge, Pantry, Vegetables, Fruits, Spices, Snacks, Drinks, Household
-- Always include this JSON when listing ingredients for a dish
+- When the user asks "Suggest me a dish to cook", provide exactly 5 random examples in this format:
+  [Dish Name] - Brief info/description
+  Do NOT list ingredients or recipes yet. Wait for the user to pick one or ask for details.
 - The JSON must be valid and parseable
-- VERY IMPORTANT: When you suggest a recipe or ingredients, DO NOT say you automatically added them. Instead, ALWAYS end your response by asking the user: "Do you want me to add these ingredients to your shopping list?"
+- VERY IMPORTANT: When you suggest a recipe or ingredients, DO NOT say you automatically added them.
+- VERY IMPORTANT: Do NOT ask whether to add ingredients to the shopping list. The app will ask that as a separate follow-up message.
 ''';
 
-// ─── Quick Prompts ─────────────────────────────────────────────────────────────
-const _kQuickPrompts = [
-  (Icons.restaurant_menu_outlined, 'What can I cook?'),
-  (Icons.account_balance_wallet_outlined, 'Am I over budget?'),
-  (Icons.lightbulb_outline_rounded, 'Budget meal ideas'),
-  (Icons.shopping_cart_outlined, 'Adobo ingredients'),
-  (Icons.eco_outlined, 'Healthy options'),
-  (Icons.calendar_month_outlined, 'Weekly meal plan'),
-];
+// Quick prompts are now generated dynamically in _AIChatPageState
 
-// ─── AIChatPage ────────────────────────────────────────────────────────────────
-class AIChatPage extends StatefulWidget {
-  const AIChatPage({super.key});
+// ─── RamseyPage ────────────────────────────────────────────────────────────────
+class RamseyPage extends StatefulWidget {
+  const RamseyPage({super.key});
 
   @override
-  State<AIChatPage> createState() => _AIChatPageState();
+  State<RamseyPage> createState() => _RamseyPageState();
 }
 
-class _AIChatPageState extends State<AIChatPage> {
+class _RamseyPageState extends State<RamseyPage> {
   final _messages = <ChatMessage>[];
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
-  late GenerativeModel _model;
-  late GenerativeModel _fallbackModel;
+  GenerativeModel? _model;
+  GenerativeModel? _fallbackModel;
   ChatSession? _session;
   ChatSession? _fallbackSession;
   bool _isTyping = false;
@@ -89,16 +84,18 @@ class _AIChatPageState extends State<AIChatPage> {
   @override
   void initState() {
     super.initState();
-    _model = GenerativeModel(
-      model: 'gemini-2.5-flash',
-      apiKey: _kApiKey,
-      systemInstruction: Content.system(_kSystemPrompt),
-    );
-    _fallbackModel = GenerativeModel(
-      model: 'gemini-2.0-flash-lite',
-      apiKey: _kApiKey,
-      systemInstruction: Content.system(_kSystemPrompt),
-    );
+    if (AIConfig.hasGeminiApiKey) {
+      _model = GenerativeModel(
+        model: 'gemini-2.5-flash',
+        apiKey: AIConfig.geminiApiKey,
+        systemInstruction: Content.system(_kSystemPrompt),
+      );
+      _fallbackModel = GenerativeModel(
+        model: 'gemini-2.0-flash-lite',
+        apiKey: AIConfig.geminiApiKey,
+        systemInstruction: Content.system(_kSystemPrompt),
+      );
+    }
     _init();
   }
 
@@ -112,23 +109,27 @@ class _AIChatPageState extends State<AIChatPage> {
         history.add(Content('model', [TextPart(m.text)]));
       }
     }
-    _session = _model.startChat(history: history);
-    _fallbackSession = _fallbackModel.startChat(history: history);
+    if (_model != null && _fallbackModel != null) {
+      _session = _model!.startChat(history: history);
+      _fallbackSession = _fallbackModel!.startChat(history: history);
+    }
     setState(() {
       _messages.addAll(saved);
       _isLoading = false;
     });
-    if (_messages.isEmpty) _addWelcome();
+    if (_messages.isEmpty) {
+      if (AIConfig.hasGeminiApiKey) {
+        _addWelcome();
+      } else {
+        _addMissingKeyMessage();
+      }
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
   }
 
   void _addWelcome() {
     final welcome = ChatMessage(
-      text:
-          'Hi! I am GroceryAI, your smart grocery and cooking assistant.\n\n'
-          'I can help you plan meals from your ingredients, manage your budget, '
-          'find recipes, or tell you what to buy for any dish.\n\n'
-          'What would you like help with today?',
+      text: "Hi! I'm Ramsey, your cooking assistant.",
       isUser: false,
       timestamp: DateTime.now(),
     );
@@ -136,18 +137,65 @@ class _AIChatPageState extends State<AIChatPage> {
     ChatStorage.save(_messages);
   }
 
+  String _getMealType() {
+    final hour = DateTime.now().hour;
+    if (hour >= 5 && hour < 10) return 'breakfast';
+    if (hour >= 10 && hour < 15) return 'lunch';
+    if (hour >= 15 && hour < 18) return 'snack';
+    if (hour >= 18 && hour < 22) return 'dinner';
+    return 'midnight snack';
+  }
+
+  List<(IconData, String)> _getDynamicQuickPrompts() {
+    final meal = _getMealType();
+    return [
+      (Icons.restaurant_menu_outlined, 'What can I cook for $meal?'),
+      (Icons.account_balance_wallet_outlined, 'How much did I spend this week?'),
+      (Icons.lightbulb_outline_rounded, 'Suggest me a dish to cook.'),
+      (Icons.eco_outlined, 'Healthy options'),
+      (Icons.calendar_month_outlined, 'Weekly meal plan'),
+    ];
+  }
+
+  void _addMissingKeyMessage() {
+    final message = ChatMessage(
+      text:
+          'AI Assistant is not configured yet.\n\n'
+          'Add `GEMINI_API_KEY` to your local `.env`, then run the app with '
+          '`./scripts/flutter_with_env.sh run` so the key stays out of the frontend source.',
+      isUser: false,
+      timestamp: DateTime.now(),
+    );
+    setState(() => _messages.add(message));
+    ChatStorage.save(_messages);
+  }
+
   String _buildContext() {
     final list = AppState.currentList;
-    if (list == null || list.items.isEmpty) return '';
-    final sb = StringBuffer('[Current Grocery List]\n');
-    sb.writeln('Name: ${list.name} | Budget: ₱${list.budget.toStringAsFixed(2)}');
-    double total = 0;
-    for (final item in list.items) {
-      total += item.price * item.qty;
-      sb.writeln('- ${item.name} x${item.qty} ${item.unit} @ ₱${item.price}');
+    final recent = AppState.recentLists;
+    final sb = StringBuffer();
+
+    if (recent.isNotEmpty) {
+      sb.writeln('[Recent Shopping History]');
+      for (var i = 0; i < recent.length && i < 10; i++) {
+        final r = recent[i];
+        double rTotal = r.items.fold(0.0, (sum, item) => sum + (item.price * item.qty));
+        sb.writeln('- ${r.name}: ₱${rTotal.toStringAsFixed(2)}');
+      }
+      sb.writeln('');
     }
-    sb.writeln(
-        'Total: ₱${total.toStringAsFixed(2)} | Remaining: ₱${(list.budget - total).toStringAsFixed(2)}');
+
+    if (list != null && list.items.isNotEmpty) {
+      sb.writeln('[Current Grocery List]');
+      sb.writeln('Name: ${list.name} | Budget: ₱${list.budget.toStringAsFixed(2)}');
+      double total = 0;
+      for (final item in list.items) {
+        total += item.price * item.qty;
+        sb.writeln('- ${item.name} x${item.qty} ${item.unit} @ ₱${item.price}');
+      }
+      sb.writeln(
+          'Total: ₱${total.toStringAsFixed(2)} | Remaining: ₱${(list.budget - total).toStringAsFixed(2)}');
+    }
     return sb.toString();
   }
 
@@ -156,21 +204,98 @@ class _AIChatPageState extends State<AIChatPage> {
     if (trimmed.isEmpty || _isTyping || _session == null) return;
     _controller.clear();
 
-    final isYes = RegExp(r'^(yes|yeah|yep|sure|ok|okay|add|please|add it|yes please|sure add it)$', caseSensitive: false).hasMatch(trimmed);
-    final shouldShowPopup = isYes && _pendingGroceryItems.isNotEmpty;
+    setState(() {
+      _messages.add(ChatMessage(text: trimmed, isUser: true, timestamp: DateTime.now()));
+    });
+    _scrollToBottom();
+
+    if (_handlePendingIngredientReply(trimmed)) {
+      await ChatStorage.save(_messages);
+      _scrollToBottom();
+      return;
+    }
 
     final ctx = _buildContext();
     final fullText = ctx.isNotEmpty ? '$ctx\nUser question: $trimmed' : trimmed;
 
     setState(() {
-      _messages.add(ChatMessage(text: trimmed, isUser: true, timestamp: DateTime.now()));
       _isTyping = true;
     });
-    _scrollToBottom();
 
-    if (shouldShowPopup && mounted) {
+    try {
+      // Try primary model first, fall back on 503/overload errors
+      String reply;
+      try {
+        final response = await _session!.sendMessage(Content.text(fullText));
+        reply = response.text ?? 'Sorry, I could not generate a response.';
+      } catch (primaryError) {
+        final errStr = primaryError.toString();
+        if (errStr.contains('503') || errStr.contains('UNAVAILABLE') || errStr.contains('overloaded')) {
+          debugPrint('⚠️ Primary model busy, trying fallback...');
+          // Wait a moment then try fallback model
+          await Future.delayed(const Duration(seconds: 2));
+          _fallbackSession ??= _fallbackModel!.startChat(history: []);
+          final fallbackResponse = await _fallbackSession!.sendMessage(Content.text(fullText));
+          reply = fallbackResponse.text ?? 'Sorry, I could not generate a response.';
+        } else {
+          rethrow;
+        }
+      }
+
+      // Check if the reply contains grocery list JSON and extract items
+      final parsed = _parseGroceryJson(reply);
+      final groceryItems = parsed.items;
+      final displayText = groceryItems.isEmpty
+          ? parsed.displayText
+          : _stripAddToListQuestion(parsed.displayText);
+
+      setState(() {
+        if (displayText.isNotEmpty) {
+          _messages.add(ChatMessage(text: displayText, isUser: false, timestamp: DateTime.now()));
+        }
+        if (groceryItems.isNotEmpty) {
+          _messages.add(ChatMessage(
+            text: 'Do you want me to add these ingredients to your shopping list?',
+            isUser: false,
+            timestamp: DateTime.now(),
+          ));
+        }
+        _isTyping = false;
+      });
+
+      await ChatStorage.save(_messages);
+      _pendingGroceryItems = groceryItems;
+    } catch (e) {
+      debugPrint('🔴 AI Chat Error: $e');
+      final errStr = e.toString();
+      String userMessage;
+      if (errStr.contains('503') || errStr.contains('UNAVAILABLE')) {
+        userMessage = '🔄 The AI is experiencing high demand right now. Please wait a moment and try again.';
+      } else if (errStr.contains('429') || errStr.contains('quota')) {
+        userMessage = '⏳ API quota exceeded. Please wait a minute before trying again.';
+      } else {
+        userMessage = '⚠️ Something went wrong. Please check your connection and try again.';
+      }
+      setState(() {
+        _messages.add(ChatMessage(
+          text: userMessage,
+          isUser: false,
+          timestamp: DateTime.now(),
+        ));
+        _isTyping = false;
+      });
+    }
+    _scrollToBottom();
+  }
+
+  bool _handlePendingIngredientReply(String userReply) {
+    if (_pendingGroceryItems.isEmpty) return false;
+
+    if (_isAffirmative(userReply)) {
       final itemsToAdd = List<Map<String, dynamic>>.from(_pendingGroceryItems);
-      _pendingGroceryItems.clear(); // Clear so we don't prompt again
+      _pendingGroceryItems.clear();
+
+      if (!mounted) return true;
 
       showDialog<bool>(
         context: context,
@@ -202,64 +327,22 @@ class _AIChatPageState extends State<AIChatPage> {
           _addItemsToShoppingList(itemsToAdd);
         }
       });
+      return true;
     }
 
-    try {
-      // Try primary model first, fall back on 503/overload errors
-      String reply;
-      try {
-        final response = await _session!.sendMessage(Content.text(fullText));
-        reply = response.text ?? 'Sorry, I could not generate a response.';
-      } catch (primaryError) {
-        final errStr = primaryError.toString();
-        if (errStr.contains('503') || errStr.contains('UNAVAILABLE') || errStr.contains('overloaded')) {
-          debugPrint('⚠️ Primary model busy, trying fallback...');
-          // Wait a moment then try fallback model
-          await Future.delayed(const Duration(seconds: 2));
-          _fallbackSession ??= _fallbackModel.startChat(history: []);
-          final fallbackResponse = await _fallbackSession!.sendMessage(Content.text(fullText));
-          reply = fallbackResponse.text ?? 'Sorry, I could not generate a response.';
-        } else {
-          rethrow;
-        }
-      }
-
-      // Check if the reply contains grocery list JSON and extract items
-      final parsed = _parseGroceryJson(reply);
-      final displayText = parsed.displayText;
-      final groceryItems = parsed.items;
-
-      setState(() {
-        _messages.add(ChatMessage(text: displayText, isUser: false, timestamp: DateTime.now()));
-        _isTyping = false;
-      });
-
-      await ChatStorage.save(_messages);
-
-      if (groceryItems.isNotEmpty) {
-        _pendingGroceryItems = groceryItems;
-      }
-    } catch (e) {
-      debugPrint('🔴 AI Chat Error: $e');
-      final errStr = e.toString();
-      String userMessage;
-      if (errStr.contains('503') || errStr.contains('UNAVAILABLE')) {
-        userMessage = '🔄 The AI is experiencing high demand right now. Please wait a moment and try again.';
-      } else if (errStr.contains('429') || errStr.contains('quota')) {
-        userMessage = '⏳ API quota exceeded. Please wait a minute before trying again.';
-      } else {
-        userMessage = '⚠️ Something went wrong. Please check your connection and try again.';
-      }
+    if (_isNegative(userReply)) {
       setState(() {
         _messages.add(ChatMessage(
-          text: userMessage,
+          text: 'No problem. I will leave the recipe as-is and not add anything to your shopping list.',
           isUser: false,
           timestamp: DateTime.now(),
         ));
-        _isTyping = false;
       });
+      _pendingGroceryItems.clear();
+      return true;
     }
-    _scrollToBottom();
+
+    return false;
   }
 
   // ─── Parse grocery JSON from AI response ──────────────────────────────────
@@ -279,6 +362,32 @@ class _AIChatPageState extends State<AIChatPage> {
       debugPrint('🔴 Failed to parse grocery JSON: $e');
       return (displayText: displayText, items: []);
     }
+  }
+
+  String _stripAddToListQuestion(String text) {
+    return text
+        .replaceAll(
+          RegExp(
+            r'\s*(do you want me to add (these )?ingredients to your shopping (list|cart)\??)\s*$',
+            caseSensitive: false,
+          ),
+          '',
+        )
+        .trim();
+  }
+
+  bool _isAffirmative(String text) {
+    return RegExp(
+      r'^(yes|yeah|yep|sure|ok|okay|add|please|add it|yes please|sure add it|go ahead)[!\.]?$',
+      caseSensitive: false,
+    ).hasMatch(text.trim());
+  }
+
+  bool _isNegative(String text) {
+    return RegExp(
+      r"^(no|nope|not now|maybe later|don't add|do not add)[!\.]?$",
+      caseSensitive: false,
+    ).hasMatch(text.trim());
   }
 
   // ─── Add parsed items to the shopping list ────────────────────────────────
@@ -324,6 +433,7 @@ class _AIChatPageState extends State<AIChatPage> {
         ));
       });
       ChatStorage.save(_messages);
+      GroceryStorage.saveAll();
 
       // Show a snackbar confirmation
       if (mounted) {
@@ -390,9 +500,18 @@ class _AIChatPageState extends State<AIChatPage> {
           TextButton(
             onPressed: () async {
               await ChatStorage.clear();
-              _session = _model.startChat(history: []);
+              if (_model != null) {
+                _session = _model!.startChat(history: []);
+              }
+              if (_fallbackModel != null) {
+                _fallbackSession = _fallbackModel!.startChat(history: []);
+              }
               setState(() => _messages.clear());
-              _addWelcome();
+              if (AIConfig.hasGeminiApiKey) {
+                _addWelcome();
+              } else {
+                _addMissingKeyMessage();
+              }
               if (mounted) Navigator.pop(context);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
@@ -435,7 +554,7 @@ class _AIChatPageState extends State<AIChatPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'AI Assistant',
+                  'Ramsey',
                   style: GoogleFonts.plusJakartaSans(
                     color: kTextCharcoal,
                     fontSize: 15,
@@ -465,8 +584,8 @@ class _AIChatPageState extends State<AIChatPage> {
       body: Column(
         children: [
           _buildContextBanner(),
-          if (_messages.length <= 1) _buildQuickPrompts(),
           Expanded(child: _buildMessageList()),
+          if (_messages.length <= 1) _buildQuickPrompts(),
           _buildInputBar(),
         ],
       ),
@@ -525,62 +644,84 @@ class _AIChatPageState extends State<AIChatPage> {
   }
 
   Widget _buildQuickPrompts() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'QUICK QUESTIONS',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: kMuted,
-              letterSpacing: 1.5,
+    final prompts = _getDynamicQuickPrompts();
+    return SizedBox(
+      width: double.infinity,
+      child: Padding(
+        padding: const EdgeInsets.only(bottom: 12, right: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+            child: Text(
+              'QUICK QUESTIONS',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: kMuted,
+                letterSpacing: 1.5,
+              ),
             ),
           ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 34,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: _kQuickPrompts.length,
-              separatorBuilder: (context, i) => const SizedBox(width: 8),
-              itemBuilder: (context, i) {
-                final (icon, label) = _kQuickPrompts[i];
-                return GestureDetector(
+          ...List.generate(prompts.length, (index) {
+            final (icon, label) = prompts[index];
+            return TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: 1.0),
+              duration: Duration(milliseconds: 400 + (index * 100)),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value,
+                  child: Transform.translate(
+                    offset: Offset(0, 20 * (1 - value)),
+                    child: child,
+                  ),
+                );
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: GestureDetector(
                   onTap: () => _send(label),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
-                      color: kPrimarySoft,
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: kPrimary.withValues(alpha: 0.25)),
+                      border: Border.all(color: kPrimary.withValues(alpha: 0.15)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: kPrimary.withValues(alpha: 0.08),
+                          offset: const Offset(0, 4),
+                          blurRadius: 12,
+                        ),
+                      ],
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(icon, size: 13, color: kPrimary),
-                        const SizedBox(width: 5),
+                        Icon(icon, size: 14, color: kPrimary),
+                        const SizedBox(width: 8),
                         Text(
                           label,
                           style: GoogleFonts.plusJakartaSans(
                             color: kPrimary,
                             fontWeight: FontWeight.w600,
-                            fontSize: 12,
+                            fontSize: 13,
                           ),
                         ),
                       ],
                     ),
                   ),
-                );
-              },
-            ),
-          ),
+                ),
+              ),
+            );
+          }),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildMessageList() {
     if (_isLoading) {
@@ -606,41 +747,44 @@ class _AIChatPageState extends State<AIChatPage> {
           color: Colors.white,
           border: Border(top: BorderSide(color: kBorder)),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 10, 16, 10),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            Expanded(
-              child: Container(
-                decoration: BoxDecoration(
-                  color: kBackground,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: kBorder),
-                ),
-                child: TextField(
-                  controller: _controller,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: kTextCharcoal,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 16, 0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: kBackground,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: kBorder),
                   ),
-                  maxLines: 4,
-                  minLines: 1,
-                  textInputAction: TextInputAction.send,
-                  onSubmitted: _send,
-                  decoration: InputDecoration(
-                    hintText: 'Ask me anything about groceries...',
-                    hintStyle: TextStyle(color: kMuted, fontSize: 13),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
+                  child: TextField(
+                    controller: _controller,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: kTextCharcoal,
+                    ),
+                    maxLines: 4,
+                    minLines: 1,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: _send,
+                    decoration: InputDecoration(
+                      hintText: 'Ask me anything about groceries...',
+                      hintStyle: TextStyle(color: kMuted, fontSize: 13),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(width: 10),
-            _SendButton(onTap: () => _send(_controller.text)),
-          ],
+              const SizedBox(width: 10),
+              _SendButton(onTap: () => _send(_controller.text)),
+            ],
+          ),
         ),
       ),
     );
@@ -881,15 +1025,15 @@ class _TypingBubbleState extends State<_TypingBubble>
   }
 }
 
-// ─── AI Chat FAB (matches app's BouncingFAB style) ────────────────────────────
-class AIChatFab extends StatefulWidget {
-  const AIChatFab({super.key});
+// ─── Ramsey FAB (matches app's BouncingFAB style) ────────────────────────────
+class RamseyFab extends StatefulWidget {
+  const RamseyFab({super.key});
 
   @override
-  State<AIChatFab> createState() => _AIChatFabState();
+  State<RamseyFab> createState() => _RamseyFabState();
 }
 
-class _AIChatFabState extends State<AIChatFab> {
+class _RamseyFabState extends State<RamseyFab> {
   bool _isDown = false;
 
   @override
@@ -902,7 +1046,7 @@ class _AIChatFabState extends State<AIChatFab> {
         Navigator.push(
           context,
           PageRouteBuilder(
-            pageBuilder: (_, a, b) => const AIChatPage(),
+            pageBuilder: (_, a, b) => const RamseyPage(),
             transitionsBuilder: (_, a, b, child) => FadeTransition(
               opacity: a,
               child: SlideTransition(
@@ -926,7 +1070,7 @@ class _AIChatFabState extends State<AIChatFab> {
           height: 52,
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
+            shape: BoxShape.circle,
             border: Border.all(color: kPrimary.withValues(alpha: 0.3)),
             boxShadow: [
               BoxShadow(

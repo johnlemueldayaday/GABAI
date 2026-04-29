@@ -1,28 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:mobile_aismartwallet/pages/recent.dart';
-import 'package:mobile_aismartwallet/pages/analytics.dart';
-import 'package:mobile_aismartwallet/pages/ai_chat.dart';
-
-// ─── Colors & Design Tokens ────────────────────────────────────────────────
-final Color kPrimary = HSLColor.fromAHSL(1.0, 152, 0.45, 0.42).toColor();
-final Color kBackground = HSLColor.fromAHSL(1.0, 40, 0.20, 0.97).toColor();
-final Color kTextCharcoal = HSLColor.fromAHSL(1.0, 220, 0.20, 0.14).toColor();
-final Color kMuted = HSLColor.fromAHSL(1.0, 220, 0.10, 0.50).toColor();
-final Color kPrimaryLight = HSLColor.fromAHSL(1.0, 152, 0.40, 0.55).toColor();
-final Color kPrimarySoft = HSLColor.fromAHSL(1.0, 152, 0.35, 0.92).toColor();
-final Color kCardBg = Colors.white;
-
-final Color kMutedBg = const Color(0xFFE5E7EB);
-final Color kBorder = const Color(0xFFE5E7EB);
-
-final BoxShadow kShadowSoft = BoxShadow(
-  color: kTextCharcoal.withValues(alpha: 0.06),
-  offset: const Offset(0, 2),
-  blurRadius: 20,
-  spreadRadius: -4,
-);
+import 'package:mobile_aismartwallet/pages/ramsey.dart';
+import 'package:mobile_aismartwallet/models/grocery_models.dart';
+import 'package:mobile_aismartwallet/config/app_theme.dart';
+import 'package:mobile_aismartwallet/widgets/app_drawer.dart';
+import 'package:mobile_aismartwallet/services/grocery_storage.dart';
 
 class GroceryApp extends StatelessWidget {
   const GroceryApp({super.key});
@@ -53,47 +36,7 @@ class GroceryApp extends StatelessWidget {
   }
 }
 
-// ─── Models ────────────────────────────────────────────────────────────────
-class GroceryItem {
-  final String id;
-  String name;
-  double qty;
-  String unit;
-  double price;
-  bool isDone;
-  final String category;
-
-  GroceryItem({
-    required this.id,
-    required this.name,
-    this.qty = 1.0,
-    this.unit = 'pcs',
-    this.price = 0,
-    this.isDone = false,
-    this.category = 'All',
-  });
-}
-
-class GroceryList {
-  String name;
-  double budget;
-  List<GroceryItem> items;
-  DateTime date;
-  GroceryList(this.name)
-      : budget = 100.0,
-        items = [],
-        date = DateTime.now();
-}
-
-class AppState {
-  static List<GroceryList> lists = [];
-  static List<GroceryList> recentLists = [];
-  static int activeIndex = -1;
-  static GroceryList? get currentList =>
-      activeIndex >= 0 && activeIndex < lists.length
-      ? lists[activeIndex]
-      : null;
-}
+// Models and AppState moved to lib/models/grocery_models.dart
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
 String _formatQty(double q) {
@@ -429,7 +372,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ],
       ),
     );
-    if (result != null && result.isNotEmpty) setState(() => _listName = result);
+    if (result != null && result.isNotEmpty) {
+      setState(() => _listName = result);
+      GroceryStorage.saveAll();
+    }
   }
 
   void _editItemName(GroceryItem item) async {
@@ -469,7 +415,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ],
       ),
     );
-    if (result != null && result.isNotEmpty) setState(() => item.name = result);
+    if (result != null && result.isNotEmpty) {
+      setState(() => item.name = result);
+      GroceryStorage.saveAll();
+    }
   }
 
   void _editBudget() async {
@@ -482,7 +431,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         itemName: 'Budget Overview',
       ),
     );
-    if (result != null) setState(() => _budget = result);
+    if (result != null) {
+      setState(() => _budget = result);
+      GroceryStorage.saveAll();
+    }
   }
 
   void _showAddItemSheet() {
@@ -498,7 +450,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         customItems: _customItems,
         recentItemNames: _recentItemNames,
         lastPrices: _lastPrices,
-        onAdd: (item) => setState(() => _items.add(item)),
+        onAdd: (item) {
+          setState(() => _items.add(item));
+          GroceryStorage.saveAll();
+        },
         onSaveCustom: (customItem) =>
             setState(() => _customItems.add(customItem)),
         onRecordUsage: (name, price) {
@@ -516,18 +471,21 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     setState(() {
       item.isDone = !item.isDone;
     });
+    GroceryStorage.saveAll();
   }
 
   void _deleteItem(GroceryItem item) {
     setState(() {
       _items.remove(item);
     });
+    GroceryStorage.saveAll();
   }
 
   void _changeQty(GroceryItem item, int delta) {
     setState(() {
       item.qty = _stepQty(item.qty, delta, item.unit);
     });
+    GroceryStorage.saveAll();
   }
 
   void _editPrice(GroceryItem item) async {
@@ -538,7 +496,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       builder: (_) =>
           _NumericKeypadSheet(initialValue: item.price, itemName: item.name),
     );
-    if (result != null) setState(() => item.price = result);
+    if (result != null) {
+      setState(() => item.price = result);
+      GroceryStorage.saveAll();
+    }
   }
 
   void _finishList() {
@@ -594,6 +555,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                   AppState.lists.removeAt(AppState.activeIndex);
                   AppState.activeIndex = -1;
                 }
+                GroceryStorage.saveAll();
               });
               Navigator.pop(context);
             },
@@ -617,107 +579,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         ),
         title: const Text('Shopping'),
       ),
-      drawer: Drawer(
-        backgroundColor: kBackground,
-        child: Column(
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(color: kBackground),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: kPrimary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.account_balance_wallet_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Grocery Wallet',
-                    style: TextStyle(
-                      color: kTextCharcoal,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: Icon(Icons.shopping_cart_outlined, color: kTextCharcoal),
-              title: Text(
-                'Shopping',
-                style: TextStyle(
-                  color: kTextCharcoal,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: Icon(Icons.history, color: kTextCharcoal),
-              title: Text(
-                'Recent Groceries',
-                style: TextStyle(
-                  color: kTextCharcoal,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(context); // Close Drawer
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const RecentPage()),
-                );
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.insights_rounded, color: kTextCharcoal),
-              title: Text(
-                'Insights',
-                style: TextStyle(
-                  color: kTextCharcoal,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AnalyticsPage()),
-                );
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF6366F1)),
-              title: const Text(
-                'AI Assistant',
-                style: TextStyle(
-                  color: Color(0xFF6366F1),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AIChatPage()),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
+      drawer: const AppDrawer(currentPage: 'Shopping'),
       body: AnimatedOpacity(
         duration: const Duration(milliseconds: 600),
         opacity: _isInit ? 1.0 : 0.0,
@@ -901,7 +763,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const AIChatFab(),
+          const RamseyFab(),
           const SizedBox(height: 12),
           _BouncingFAB(onPressed: _showAddItemSheet),
         ],
@@ -1445,7 +1307,7 @@ class _BouncingFABState extends State<_BouncingFAB> {
           width: 64,
           height: 64,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
+            shape: BoxShape.circle,
             gradient: LinearGradient(
               colors: [kPrimary, kPrimaryLight],
               begin: Alignment.topLeft,

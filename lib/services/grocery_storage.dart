@@ -1,0 +1,56 @@
+import 'dart:convert';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../models/grocery_models.dart';
+
+class GroceryStorage {
+  static const _activeListsKey = 'grocery_active_lists';
+  static const _recentListsKey = 'grocery_recent_lists';
+  static const _activeIndexKey = 'grocery_active_index';
+
+  static Future<void> saveAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    final activeJson = jsonEncode(AppState.lists.map((e) => e.toJson()).toList());
+    final recentJson = jsonEncode(AppState.recentLists.map((e) => e.toJson()).toList());
+    
+    await prefs.setString(_activeListsKey, activeJson);
+    await prefs.setString(_recentListsKey, recentJson);
+    await prefs.setInt(_activeIndexKey, AppState.activeIndex);
+  }
+
+  static Future<void> loadAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    
+    final activeRaw = prefs.getString(_activeListsKey);
+    if (activeRaw != null) {
+      try {
+        final list = jsonDecode(activeRaw) as List<dynamic>;
+        AppState.lists = list.map((e) => GroceryList.fromJson(e as Map<String, dynamic>)).toList();
+      } catch (e) {
+        AppState.lists = [];
+      }
+    }
+
+    final recentRaw = prefs.getString(_recentListsKey);
+    if (recentRaw != null) {
+      try {
+        final list = jsonDecode(recentRaw) as List<dynamic>;
+        AppState.recentLists = list.map((e) => GroceryList.fromJson(e as Map<String, dynamic>)).toList();
+      } catch (e) {
+        AppState.recentLists = [];
+      }
+    }
+
+    AppState.activeIndex = prefs.getInt(_activeIndexKey) ?? -1;
+  }
+
+  static Future<void> clear() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_activeListsKey);
+    await prefs.remove(_recentListsKey);
+    await prefs.remove(_activeIndexKey);
+    AppState.lists = [];
+    AppState.recentLists = [];
+    AppState.activeIndex = -1;
+  }
+}

@@ -40,12 +40,18 @@ Grocery Wallet is a professional Flutter-based mobile application designed for e
    ```
 
 3. Configure the AI Assistant:
-   Update the API key in `lib/pages/ai_chat.dart` (ensure secure handling for production).
+   Copy `.env.example` to `.env` and set `GEMINI_API_KEY` with your real key.
 
 4. Run the application:
    ```bash
-   flutter run
+   ./scripts/flutter_with_env.sh run
    ```
+
+For builds, use the same wrapper so the API key stays out of the source tree:
+
+```bash
+./scripts/flutter_with_env.sh build apk
+```
 
 ## Project Structure
 

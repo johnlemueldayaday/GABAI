@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:mobile_aismartwallet/pages/home.dart';
-import 'package:mobile_aismartwallet/pages/analytics.dart';
-import 'package:mobile_aismartwallet/pages/ai_chat.dart';
+import 'package:mobile_aismartwallet/pages/ramsey.dart';
+import 'package:mobile_aismartwallet/models/grocery_models.dart';
+import 'package:mobile_aismartwallet/config/app_theme.dart';
+import 'package:mobile_aismartwallet/widgets/app_drawer.dart';
+import 'package:mobile_aismartwallet/services/grocery_storage.dart';
 
 class RecentPage extends StatefulWidget {
   const RecentPage({super.key});
@@ -54,7 +57,7 @@ class _RecentPageState extends State<RecentPage> {
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                 itemCount: recent.items.length,
                 shrinkWrap: true,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
                 itemBuilder: (context, i) {
                   final item = recent.items[i];
                   return Row(
@@ -122,6 +125,7 @@ class _RecentPageState extends State<RecentPage> {
     );
     if (result != null && result.isNotEmpty) {
       setState(() => recent.name = result);
+      GroceryStorage.saveAll();
     }
   }
 
@@ -147,107 +151,7 @@ class _RecentPageState extends State<RecentPage> {
           fontWeight: FontWeight.w600,
         ),
       ),
-      drawer: Drawer(
-        backgroundColor: kBackground,
-        child: Column(
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(color: kBackground),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      color: kPrimary,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.account_balance_wallet_rounded,
-                      color: Colors.white,
-                      size: 22,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Grocery Wallet',
-                    style: TextStyle(
-                      color: kTextCharcoal,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            ListTile(
-              leading: Icon(Icons.shopping_cart_outlined, color: kTextCharcoal),
-              title: Text(
-                'Shopping',
-                style: TextStyle(
-                  color: kTextCharcoal,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(context); // Close Drawer
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const HomePage()),
-                );
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.history, color: kTextCharcoal),
-              title: Text(
-                'Recent Groceries',
-                style: TextStyle(
-                  color: kTextCharcoal,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onTap: () => Navigator.pop(context),
-            ),
-            ListTile(
-              leading: Icon(Icons.insights_rounded, color: kTextCharcoal),
-              title: Text(
-                'Insights',
-                style: TextStyle(
-                  color: kTextCharcoal,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AnalyticsPage()),
-                );
-              },
-            ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF6366F1)),
-              title: const Text(
-                'AI Assistant',
-                style: TextStyle(
-                  color: Color(0xFF6366F1),
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AIChatPage()),
-                );
-              },
-            ),
-          ],
-        ),
-      ),
+      drawer: const AppDrawer(currentPage: 'Recent'),
       body: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -379,6 +283,7 @@ class _RecentPageState extends State<RecentPage> {
                             AppState.lists.clear();
                             AppState.lists.add(clone);
                             AppState.activeIndex = 0;
+                            GroceryStorage.saveAll();
 
                             Navigator.pushReplacement(
                               context,
@@ -417,7 +322,7 @@ class _RecentPageState extends State<RecentPage> {
           ],
         ),
       ),
-      floatingActionButton: const AIChatFab(),
+      floatingActionButton: const RamseyFab(),
     );
   }
 }

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:mobile_aismartwallet/pages/home.dart';
-import 'package:mobile_aismartwallet/pages/recent.dart';
-import 'package:mobile_aismartwallet/pages/ai_chat.dart';
+import 'package:mobile_aismartwallet/pages/ramsey.dart';
+import 'package:mobile_aismartwallet/models/grocery_models.dart';
+import 'package:mobile_aismartwallet/config/app_theme.dart';
+import 'package:mobile_aismartwallet/widgets/app_drawer.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -28,7 +29,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         ),
         title: const Text('Insights'),
       ),
-      drawer: _AppDrawer(),
+      drawer: const AppDrawer(currentPage: 'Insights'),
       body: hasData
           ? ListView(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
@@ -49,7 +50,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               ],
             )
           : _EmptyState(),
-      floatingActionButton: const AIChatFab(),
+      floatingActionButton: const RamseyFab(),
     );
   }
 
@@ -328,7 +329,7 @@ class _HistoryList extends StatelessWidget {
                        child: ListView.separated(
                          padding: const EdgeInsets.all(24),
                          itemCount: l.items.length,
-                         separatorBuilder: (_, __) => const SizedBox(height: 12),
+                         separatorBuilder: (_, _) => const SizedBox(height: 12),
                          itemBuilder: (context, i) {
                            final item = l.items[i];
                            return Row(
@@ -397,65 +398,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _AppDrawer extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Drawer(
-      backgroundColor: kBackground,
-      child: Column(
-        children: [
-          DrawerHeader(
-            decoration: const BoxDecoration(color: Colors.transparent),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(color: kPrimary, shape: BoxShape.circle),
-                  child: const Icon(Icons.account_balance_wallet_rounded, color: Colors.white, size: 22),
-                ),
-                const SizedBox(height: 16),
-                Text('Grocery Wallet', style: TextStyle(color: kTextCharcoal, fontSize: 18, fontWeight: FontWeight.w800)),
-              ],
-            ),
-          ),
-          ListTile(
-            leading: Icon(Icons.shopping_cart_outlined, color: kTextCharcoal),
-            title: Text('Shopping', style: TextStyle(color: kTextCharcoal, fontWeight: FontWeight.w600)),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const HomePage()));
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.history, color: kTextCharcoal),
-            title: Text('Recent Groceries', style: TextStyle(color: kTextCharcoal, fontWeight: FontWeight.w600)),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const RecentPage()));
-            },
-          ),
-          ListTile(
-            leading: Icon(Icons.insights_rounded, color: kPrimary),
-            title: Text('Analytics', style: TextStyle(color: kPrimary, fontWeight: FontWeight.w700)),
-            onTap: () => Navigator.pop(context),
-          ),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.auto_awesome_rounded, color: Color(0xFF6366F1)),
-            title: const Text('AI Assistant',
-                style: TextStyle(color: Color(0xFF6366F1), fontWeight: FontWeight.w700)),
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(context, MaterialPageRoute(builder: (_) => const AIChatPage()));
-            },
-          ),
-        ],
-      ),
-    );
-  }
-}
+// _AppDrawer removed as it is now shared in lib/widgets/app_drawer.dart
 
 class _EmptyState extends StatelessWidget {
   @override
