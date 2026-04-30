@@ -162,7 +162,7 @@ class _RamseyPageState extends State<RamseyPage> {
       text:
           'AI Assistant is not configured yet.\n\n'
           'Add `GEMINI_API_KEY` to your local `.env`, then run the app with '
-          '`./scripts/flutter_with_env.sh run` so the key stays out of the frontend source.',
+          '`./scripts/flutter_with_env.sh run` or `.\\scripts\\flutter_with_env.ps1 run` so the key stays out of the frontend source.',
       isUser: false,
       timestamp: DateTime.now(),
     );

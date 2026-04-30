@@ -1469,9 +1469,11 @@ class _AddItemSheetState extends State<_AddItemSheet>
 
     final started = await _speech.listen(
       onResult: _onSpeechResult,
-      listenMode: ListenMode.dictation,
-      partialResults: true,
-      cancelOnError: true,
+      listenOptions: SpeechListenOptions(
+        listenMode: ListenMode.dictation,
+        partialResults: true,
+        cancelOnError: true,
+      ),
     );
 
     if (!mounted) return;

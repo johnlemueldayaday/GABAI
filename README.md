@@ -47,10 +47,21 @@ Grocery Wallet is a professional Flutter-based mobile application designed for e
    ./scripts/flutter_with_env.sh run
    ```
 
+   On PowerShell:
+   ```powershell
+   .\scripts\flutter_with_env.ps1 run
+   ```
+
 For builds, use the same wrapper so the API key stays out of the source tree:
 
 ```bash
 ./scripts/flutter_with_env.sh build apk
+```
+
+On PowerShell:
+
+```powershell
+.\scripts\flutter_with_env.ps1 build apk
 ```
 
 ## Project Structure

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../pages/home.dart';
 import '../pages/recent.dart';
 import '../pages/analytics.dart';
@@ -16,15 +17,31 @@ class AppDrawer extends StatelessWidget {
       backgroundColor: kBackground,
       child: Column(
         children: [
-          DrawerHeader(
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(24, 60, 24, 20),
             decoration: BoxDecoration(color: kBackground),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.end,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                Text(
+                  'GABAY',
+                  style: GoogleFonts.bangers(
+                    textStyle: TextStyle(
+                      color: kTextCharcoal,
+                      fontSize: 40,
+                      fontVariations: const [
+                        FontVariation('ital', 0),
+                        FontVariation('wght', 400),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 36,
+                  height: 36,
                   decoration: BoxDecoration(
                     color: kPrimary,
                     shape: BoxShape.circle,
@@ -32,16 +49,7 @@ class AppDrawer extends StatelessWidget {
                   child: const Icon(
                     Icons.account_balance_wallet_rounded,
                     color: Colors.white,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'GABAY',
-                  style: TextStyle(
-                    color: kTextCharcoal,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+                    size: 18,
                   ),
                 ),
               ],
@@ -125,10 +133,7 @@ class _DrawerItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      leading: Icon(
-        icon,
-        color: isSelected ? kPrimary : kTextCharcoal,
-      ),
+      leading: Icon(icon, color: isSelected ? kPrimary : kTextCharcoal),
       title: Text(
         label,
         style: TextStyle(
@@ -139,9 +144,7 @@ class _DrawerItem extends StatelessWidget {
       onTap: onTap,
       selected: isSelected,
       selectedTileColor: kPrimary.withValues(alpha: 0.05),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
     );
   }
