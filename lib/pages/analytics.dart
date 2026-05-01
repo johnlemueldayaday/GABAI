@@ -135,6 +135,44 @@ class _TrendCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (recentLists.length < 2) {
+      return Container(
+        height: 200,
+        margin: const EdgeInsets.only(top: 12),
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: kCardBg,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [kShadowSoft],
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.auto_graph_rounded, size: 32, color: kPrimary.withValues(alpha: 0.2)),
+            const SizedBox(height: 12),
+            Text(
+              'Not enough data yet',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: kTextCharcoal,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Finish more shopping lists to see your spending trends over time.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: kMuted,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     // Reverse so chronologically L to R
     final points = recentLists.reversed.toList();
 

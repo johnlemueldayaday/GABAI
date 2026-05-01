@@ -30,6 +30,11 @@
 	<string>GABAY uses speech recognition so you can add grocery items by voice.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>GABAY uses the microphone so you can speak grocery item names.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>GABAY needs camera access to scan products and receipts.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>GABAY needs photo library access to pick product images.</string>
+
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

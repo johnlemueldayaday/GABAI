@@ -135,7 +135,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       message:
                           'All your Ramsey conversations will be deleted. This cannot be undone.',
                       confirmLabel: 'Clear',
-                      confirmColor: kTextCharcoal,
+                      confirmColor: Colors.red.shade400,
                       onConfirm: () async {
                         await ChatStorage.clear();
                         if (context.mounted) {
@@ -155,8 +155,8 @@ class _SettingsPageState extends State<SettingsPage> {
                       title: 'Reset All Data?',
                       message:
                           'All your shopping lists, history, and saved data will be permanently deleted.',
-                      confirmLabel: 'Reset',
-                      confirmColor: kTextCharcoal,
+                      confirmLabel: 'Reset All',
+                      confirmColor: Colors.red.shade600,
                       onConfirm: () async {
                         await GroceryStorage.clear();
                         await ChatStorage.clear();
@@ -234,47 +234,117 @@ class _SettingsPageState extends State<SettingsPage> {
     required Color confirmColor,
     required VoidCallback onConfirm,
   }) {
-    showDialog(
+    showGeneralDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: kCardBg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text(
-          title,
-          style: GoogleFonts.plusJakartaSans(
-            fontWeight: FontWeight.w700,
-            color: kTextCharcoal,
-          ),
-        ),
-        content: Text(
-          message,
-          style: GoogleFonts.plusJakartaSans(
-            color: kMuted,
-            fontWeight: FontWeight.w500,
-            fontSize: 14,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(foregroundColor: kMuted),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              onConfirm();
-            },
-            style: TextButton.styleFrom(foregroundColor: confirmColor),
-            child: Text(
-              confirmLabel,
-              style: const TextStyle(fontWeight: FontWeight.w700),
+      barrierDismissible: true,
+      barrierLabel: '',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) => const SizedBox(),
+      transitionBuilder: (context, anim1, anim2, child) {
+        return Transform.scale(
+          scale: anim1.value,
+          child: Opacity(
+            opacity: anim1.value,
+            child: AlertDialog(
+              backgroundColor: kCardBg,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+              contentPadding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      color: confirmColor.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      confirmLabel.toLowerCase().contains('clear')
+                          ? Icons.auto_delete_outlined
+                          : Icons.warning_amber_rounded,
+                      size: 36,
+                      color: confirmColor,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    title,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: kTextCharcoal,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      color: kMuted,
+                      height: 1.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              side: BorderSide(color: kBorder),
+                            ),
+                          ),
+                          child: Text(
+                            'Cancel',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w700,
+                              color: kMuted,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            onConfirm();
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: confirmColor,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                          ),
+                          child: Text(
+                            confirmLabel,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
+
 
   void _showSnack(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(

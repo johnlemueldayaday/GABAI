@@ -6,6 +6,7 @@ import '../pages/recent.dart';
 import '../pages/analytics.dart';
 import '../pages/ramsey.dart';
 import '../pages/settings.dart';
+import '../pages/bills.dart';
 import '../config/app_theme.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -98,13 +99,27 @@ class AppDrawer extends StatelessWidget {
             },
           ),
           _DrawerItem(
+            icon: Icons.receipt_long_rounded,
+            label: 'Bills Tracker',
+            isSelected: currentPage == 'Bills',
+            onTap: () {
+              Navigator.pop(context);
+              if (currentPage != 'Bills') {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BillsPage()),
+                );
+              }
+            },
+          ),
+          _DrawerItem(
             icon: Icons.auto_awesome_rounded,
             label: 'Ramsey',
             isSelected: currentPage == 'Ramsey',
-            onTap: () async {
+            onTap: () {
               Navigator.pop(context);
               if (currentPage != 'Ramsey') {
-                await Navigator.push(
+                Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(builder: (_) => const RamseyPage()),
                 );

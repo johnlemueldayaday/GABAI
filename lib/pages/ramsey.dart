@@ -5,12 +5,15 @@ import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:gabay/config/ai_config.dart';
-import 'package:gabay/services/chat_storage.dart';
-import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/models/grocery_models.dart';
+import 'package:gabay/services/chat_storage.dart';
+import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
+import 'package:gabay/services/bill_storage.dart';
+import 'package:gabay/models/bill_models.dart';
 
-const _kSystemPrompt = '''
+const _kSystemPromptBase = '''
 You are Ramsey, a smart grocery budgeting and cooking assistant for Filipino households integrated into the GABAY app.
 
 Your expertise:
@@ -20,6 +23,7 @@ Your expertise:
 4. List ingredients needed for specific dishes with estimated ₱ costs
 5. Recommend healthy, affordable meal options
 6. Suggest budget-friendly ingredient substitutions
+7. Answer questions about current bills and overdue payments from the Bills Tracker.
 
 Philippine market price reference:
 - Rice ₱58/kg, Chicken ₱220/kg, Pork ₱320/kg, Beef ₱420/kg
@@ -32,7 +36,7 @@ Philippine market price reference:
 Rules:
 - Be friendly, warm, and concise
 - Use numbered lists for dish suggestions (1., 2., 3...) so the user can easily select one by just typing the number.
-- Use bullet points for ingredients or other general lists.
+- Use bullet points (•) for ingredients or other general lists. NEVER use asterisks (*) for bullet points.
 - Include ₱ cost estimates when relevant
 - Use Filipino food terms naturally (patis, toyo, suka, sabaw)
 - ALWAYS base your cooking suggestions on the user's current grocery list or pantry ingredients.
@@ -84,26 +88,83 @@ class _RamseyPageState extends State<RamseyPage> {
   // Items waiting for user confirmation before adding
   List<Map<String, dynamic>> _pendingGroceryItems = [];
   String? _currentRecipeName;
+  List<Bill> _allBills = [];
 
   @override
   void initState() {
     super.initState();
-    if (AIConfig.hasGeminiApiKey) {
-      _model = GenerativeModel(
-        model: 'gemini-2.5-flash',
-        apiKey: AIConfig.geminiApiKey,
-        systemInstruction: Content.system(_kSystemPrompt),
-      );
-      _fallbackModel = GenerativeModel(
-        model: 'gemini-2.0-flash-lite',
-        apiKey: AIConfig.geminiApiKey,
-        systemInstruction: Content.system(_kSystemPrompt),
-      );
-    }
     _init();
   }
 
   Future<void> _init() async {
+    if (AIConfig.hasGeminiApiKey) {
+      _allBills = await BillStorage.loadBills();
+      
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      final nextWeek = today.add(const Duration(days: 7));
+      
+      final overdueBills = _allBills.where((b) => b.dueDate.isBefore(today) && !b.isPaid).toList();
+      final upcomingBills = _allBills.where((b) => b.dueDate.isAtSameMomentAs(today) || (b.dueDate.isAfter(today) && b.dueDate.isBefore(nextWeek)) && !b.isPaid).toList();
+      final monthlyBills = _allBills.where((b) => b.dueDate.year == now.year && b.dueDate.month == now.month).toList();
+      
+      final overdueTotal = overdueBills.fold(0.0, (sum, b) => sum + b.amount);
+      final upcomingTotal = upcomingBills.fold(0.0, (sum, b) => sum + b.amount);
+      final monthlyTotal = monthlyBills.fold(0.0, (sum, b) => sum + b.amount);
+      
+      // Analyze shopping insights
+      int greenCount = 0;
+      int unhealthyCount = 0;
+      for (var list in AppState.recentLists) {
+        for (var item in list.items) {
+          final cat = item.category.toLowerCase();
+          if (cat == 'vegetables' || cat == 'fruits') greenCount++;
+          if (cat == 'snacks' || cat == 'drinks') unhealthyCount++;
+        }
+      }
+      
+      String context = "\n\n--- APP CONTEXT ---\n";
+      
+      context += "BILLS TRACKER:\n";
+      context += "- Overdue: ${overdueBills.length} bills (Total ₱${overdueTotal.toStringAsFixed(2)})\n";
+      context += "- Upcoming (Next 7 days): ${upcomingBills.length} bills (Total ₱${upcomingTotal.toStringAsFixed(2)})\n";
+      context += "- Current Month Total: ₱${monthlyTotal.toStringAsFixed(2)}\n";
+      
+      context += "\nSHOPPING INSIGHTS:\n";
+      context += "- Healthy Items (Vegetables/Fruits) bought recently: $greenCount\n";
+      context += "- Less Healthy Items (Snacks/Drinks) bought recently: $unhealthyCount\n";
+      if (unhealthyCount > greenCount && unhealthyCount > 0) {
+        context += "NOTE: The user has been buying more snacks than greens recently. Gently suggest adding more vegetables or fruits to their list.\n";
+      } else if (greenCount > 0) {
+        context += "NOTE: The user is doing great with their healthy choices! Encourage them.\n";
+      }
+
+      final fullPrompt = _kSystemPromptBase + context;
+
+      _model = GenerativeModel(
+        model: 'gemini-1.5-flash',
+        apiKey: AIConfig.geminiApiKey,
+        systemInstruction: Content.system(fullPrompt),
+      );
+      _fallbackModel = GenerativeModel(
+        model: 'gemini-1.5-flash-8b',
+        apiKey: AIConfig.geminiApiKey,
+        systemInstruction: Content.system(fullPrompt),
+      );
+      _initSessions();
+      await _loadMessages();
+    }
+    setState(() => _isLoading = false);
+  }
+
+  void _initSessions() {
+    if (_model != null && _fallbackModel != null) {
+      _session = _model!.startChat();
+      _fallbackSession = _fallbackModel!.startChat();
+    }
+  }
+
+  Future<void> _loadMessages() async {
     final saved = await ChatStorage.load();
     final history = <Content>[];
     for (final m in saved) {
@@ -155,7 +216,7 @@ class _RamseyPageState extends State<RamseyPage> {
     return [
       (Icons.restaurant_menu_outlined, 'What can I cook for $meal?'),
       (Icons.account_balance_wallet_outlined, 'How much did I spend this week?'),
-      (Icons.lightbulb_outline_rounded, 'Suggest me a dish to cook.'),
+      (Icons.receipt_long_rounded, 'How much for my overdue bills?'),
       (Icons.eco_outlined, 'Healthy options'),
       (Icons.calendar_month_outlined, 'Weekly meal plan'),
     ];
@@ -289,6 +350,8 @@ class _RamseyPageState extends State<RamseyPage> {
         userMessage = '🔄 The AI is experiencing high demand right now. Please wait a moment and try again.';
       } else if (errStr.contains('429') || errStr.contains('quota')) {
         userMessage = '⏳ API quota exceeded. Please wait a minute before trying again.';
+      } else if (errStr.contains('API key not valid')) {
+        userMessage = '🔑 The API key is invalid. Please check your configuration.';
       } else {
         userMessage = '⚠️ Something went wrong. Please check your connection and try again.';
       }
@@ -555,12 +618,15 @@ class _RamseyPageState extends State<RamseyPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: kBackground,
+      drawer: const AppDrawer(currentPage: 'Ramsey'),
       appBar: AppBar(
         backgroundColor: kBackground,
         elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded, color: kTextCharcoal, size: 20),
-          onPressed: () => Navigator.pop(context),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Icon(Icons.menu_rounded, color: kTextCharcoal, size: 24),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
         ),
         titleSpacing: 0,
         title: Row(

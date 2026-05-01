@@ -5,12 +5,15 @@ import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
-import 'package:gabay/pages/ramsey.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/services/scanner_service.dart';
+import 'package:gabay/config/ai_config.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:gabay/pages/recent.dart';
 import 'package:gabay/pages/splash_screen.dart';
 
@@ -343,16 +346,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   double get _checkedTotal =>
-      _doneItems.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
+      _items.where((i) => i.isDone).fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
   double get _plannedTotal =>
       _items.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
   double get _left => _budget - _checkedTotal;
   double get _progress => (_plannedTotal > 0)
       ? (_checkedTotal / _plannedTotal).clamp(0.0, 1.0)
       : 0.0;
-
-  List<GroceryItem> get _toBuy => _items.where((i) => !i.isDone).toList();
-  List<GroceryItem> get _doneItems => _items.where((i) => i.isDone).toList();
 
   void _editListName() async {
     final ctrl = TextEditingController(text: _listName);
@@ -518,6 +518,78 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (result != null) {
       setState(() => item.price = result);
       GroceryStorage.saveAll();
+    }
+  }
+
+  void _scanProduct() async {
+    final status = await Permission.camera.request();
+    if (status.isDenied) return;
+
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.camera);
+    if (image == null || !mounted) return;
+
+    if (!AIConfig.hasGeminiApiKey) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Gemini API Key missing. Please check your setup.'),
+            backgroundColor: Colors.orange,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => Center(
+        child: CircularProgressIndicator(color: kPrimary),
+      ),
+    );
+
+    final result = await ScannerService.scanProduct(image);
+
+    if (!mounted) return;
+    Navigator.pop(context); // Close loading
+
+    if (result != null) {
+      final name = result['name'] ?? 'Unknown Product';
+      final price = (result['price'] as num?)?.toDouble() ?? 0.0;
+
+      setState(() {
+        if (AppState.currentList != null) {
+          AppState.currentList!.items.add(GroceryItem(
+            id: DateTime.now().millisecondsSinceEpoch.toString(),
+            name: name,
+            price: price,
+            category: 'All',
+          ));
+        }
+      });
+      GroceryStorage.saveAll();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Added $name (₱$price)'),
+            backgroundColor: kPrimary,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not detect product info.'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
     }
   }
 
@@ -774,6 +846,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             onPressed: () {
               setState(() {
                 _items.clear();
+                _listName = 'New List';
                 GroceryStorage.saveAll();
               });
               Navigator.pop(context);
@@ -911,7 +984,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               child: Text(
                                 _listName,
                                 style: TextStyle(
-                                  fontSize: 32,
+                                  fontSize: 24,
                                   fontWeight: FontWeight.w800,
                                   color: kTextCharcoal,
                                 ),
@@ -981,9 +1054,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const RamseyFab(),
-          const SizedBox(height: 12),
-          _BouncingFAB(onPressed: _showAddItemSheet),
+          _BouncingFAB(
+            onPressed: _scanProduct,
+            icon: Icons.camera_alt_rounded,
+          ),
+          const SizedBox(height: 16),
+          _BouncingFAB(
+            onPressed: _showAddItemSheet,
+            icon: Icons.add,
+          ),
         ],
       ),
     );
@@ -1529,7 +1608,8 @@ class _ItemTile extends StatelessWidget {
 // ─── FAB ───────────────────────────────────────────────────────────────────
 class _BouncingFAB extends StatefulWidget {
   final VoidCallback onPressed;
-  const _BouncingFAB({required this.onPressed});
+  final IconData icon;
+  const _BouncingFAB({required this.onPressed, required this.icon});
 
   @override
   State<_BouncingFAB> createState() => _BouncingFABState();
@@ -1569,7 +1649,7 @@ class _BouncingFABState extends State<_BouncingFAB> {
               ),
             ],
           ),
-          child: const Icon(Icons.add, color: Colors.white, size: 28),
+          child: Icon(widget.icon, color: Colors.white, size: 28),
         ),
       ),
     );
@@ -1792,13 +1872,57 @@ class _AddItemSheetState extends State<_AddItemSheet>
     });
   }
 
-  List<Map<String, dynamic>> get _allDatabase => [
-    ...kGroceryDatabase,
-    ...widget.customItems,
-  ];
+  List<Map<String, dynamic>> get _historyItems {
+    final seen = <String>{};
+    final items = <Map<String, dynamic>>[];
+    for (final list in AppState.recentLists) {
+      for (final item in list.items) {
+        if (!seen.contains(item.name)) {
+          seen.add(item.name);
+          items.add({
+            'name': item.name,
+            'price': item.price,
+            'unit': item.unit,
+            'category': item.category,
+          });
+        }
+      }
+    }
+    return items;
+  }
+
+  List<Map<String, dynamic>> get _allDatabase {
+    final map = <String, Map<String, dynamic>>{};
+    
+    // 1. Start with base DB
+    for (final item in kGroceryDatabase) {
+      map[item['name'].toString().toLowerCase()] = item;
+    }
+    
+    // 2. Overwrite with history (more relevant prices/units)
+    for (final item in _historyItems) {
+      map[item['name'].toString().toLowerCase()] = item;
+    }
+
+    // 3. Overwrite with session custom items
+    for (final item in widget.customItems) {
+      map[item['name'].toString().toLowerCase()] = item;
+    }
+
+    return map.values.toList();
+  }
 
   List<Map<String, dynamic>> get _filteredSuggestions {
     final query = _searchCtrl.text.trim().toLowerCase();
+    
+    // Get list of names from history in order of recency
+    final historyNames = <String>[];
+    for (final list in AppState.recentLists) {
+      for (final item in list.items) {
+        if (!historyNames.contains(item.name)) historyNames.add(item.name);
+      }
+    }
+
     final filtered = _allDatabase.where((item) {
       final matchesCategory =
           _selectedCategory == 'All' || item['category'] == _selectedCategory;
@@ -1808,19 +1932,28 @@ class _AddItemSheetState extends State<_AddItemSheet>
       return matchesCategory && matchesSearch;
     }).toList();
 
-    // Sort so most recently added items appear first
-    final recentNames = widget.recentItemNames;
     filtered.sort((a, b) {
       final aName = a['name'].toString();
       final bName = b['name'].toString();
-      final aIndex = recentNames.indexOf(aName);
-      final bIndex = recentNames.indexOf(bName);
-      // Both recent: lower index = more recent = should come first
-      if (aIndex != -1 && bIndex != -1) return aIndex.compareTo(bIndex);
-      // Only one is recent: it goes first
-      if (aIndex != -1) return -1;
-      if (bIndex != -1) return 1;
-      // Neither recent: keep original order
+      
+      // Check session recency first
+      final aSessionIndex = widget.recentItemNames.indexOf(aName);
+      final bSessionIndex = widget.recentItemNames.indexOf(bName);
+      
+      // Check history recency second
+      final aHistoryIndex = historyNames.indexOf(aName);
+      final bHistoryIndex = historyNames.indexOf(bName);
+
+      // Prioritize session recency (items just added to the current list)
+      if (aSessionIndex != -1 && bSessionIndex != -1) return aSessionIndex.compareTo(bSessionIndex);
+      if (aSessionIndex != -1) return -1;
+      if (bSessionIndex != -1) return 1;
+
+      // Then prioritize history recency
+      if (aHistoryIndex != -1 && bHistoryIndex != -1) return aHistoryIndex.compareTo(bHistoryIndex);
+      if (aHistoryIndex != -1) return -1;
+      if (bHistoryIndex != -1) return 1;
+
       return 0;
     });
 
@@ -1957,82 +2090,91 @@ class _AddItemSheetState extends State<_AddItemSheet>
                 // ─── Search Bar ─────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: kBackground,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: kBorder),
-                      boxShadow: _isListening
-                          ? [
-                              BoxShadow(
-                                color: kPrimary.withValues(alpha: 0.16),
-                                blurRadius: 18,
-                                spreadRadius: 1,
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: kBackground,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: kBorder),
+                            boxShadow: _isListening
+                                ? [
+                                    BoxShadow(
+                                      color: kPrimary.withValues(alpha: 0.16),
+                                      blurRadius: 18,
+                                      spreadRadius: 1,
+                                    ),
+                                  ]
+                                : [],
+                          ),
+                          child: TextField(
+                            controller: _searchCtrl,
+                            onChanged: (_) {
+                              setState(() {
+                                _speechErrorText = null;
+                              });
+                            },
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: kTextCharcoal,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Search or type a new item...',
+                              hintStyle: TextStyle(color: kMuted, fontSize: 14),
+                              prefixIcon: Icon(
+                                Icons.search_rounded,
+                                color: kMuted,
+                                size: 20,
                               ),
-                            ]
-                          : [],
-                    ),
-                    child: TextField(
-                      controller: _searchCtrl,
-                      onChanged: (_) {
-                        setState(() {
-                          _speechErrorText = null;
-                        });
-                      },
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: kTextCharcoal,
-                      ),
-                      decoration: InputDecoration(
-                        hintText: 'Search or type a new item...',
-                        hintStyle: TextStyle(color: kMuted, fontSize: 14),
-                        prefixIcon: Icon(
-                          Icons.search_rounded,
-                          color: kMuted,
-                          size: 20,
-                        ),
-                        suffixIcon: Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: Center(
-                            child: ScaleTransition(
-                              scale: _micPulseScale,
-                              child: Material(
-                                color: Colors.transparent,
-                                child: InkWell(
-                                  onTap: _toggleListening,
-                                  borderRadius: BorderRadius.circular(20),
-                                  child: AnimatedContainer(
-                                    duration: const Duration(milliseconds: 180),
-                                    width: 36,
-                                    height: 36,
-                                    decoration: BoxDecoration(
-                                      color: _isListening
-                                          ? kPrimary.withValues(alpha: 0.12)
-                                          : Colors.transparent,
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: Icon(
-                                      _isListening
-                                          ? Icons.graphic_eq_rounded
-                                          : Icons.mic_none_rounded,
-                                      size: 19,
-                                      color: _isListening ? kPrimary : kMuted,
-                                    ),
-                                  ),
-                                ),
+                              border: InputBorder.none,
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 12,
                               ),
                             ),
                           ),
                         ),
-                        border: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(
-                          vertical: 14,
+                      ),
+                      const SizedBox(width: 12),
+                      ScaleTransition(
+                        scale: _micPulseScale,
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: _toggleListening,
+                            borderRadius: BorderRadius.circular(20),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 180),
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: _isListening
+                                    ? kPrimary.withValues(alpha: 0.12)
+                                    : kMutedBg.withValues(alpha: 0.5),
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _isListening
+                                      ? kPrimary.withValues(alpha: 0.3)
+                                      : kBorder.withValues(alpha: 0.3),
+                                ),
+                              ),
+                              child: Icon(
+                                _isListening
+                                    ? Icons.graphic_eq_rounded
+                                    : Icons.mic_none_rounded,
+                                size: 20,
+                                color: _isListening ? kPrimary : kMuted,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
+
                 // ─── Custom Item Badge ──────────────────
                 if (_isListening || _speechErrorText != null)
                   Padding(

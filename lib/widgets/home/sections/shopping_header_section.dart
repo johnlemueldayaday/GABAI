@@ -104,7 +104,7 @@ class ShoppingHeaderSection extends StatelessWidget {
                 child: Text(
                   listName,
                   style: TextStyle(
-                    fontSize: 32,
+                    fontSize: 24,
                     fontWeight: FontWeight.w800,
                     color: kTextCharcoal,
                   ),
