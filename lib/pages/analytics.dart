@@ -4,6 +4,7 @@ import 'package:gabay/pages/ramsey.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
+import 'package:gabay/widgets/home/home_helpers.dart';
 
 class AnalyticsPage extends StatefulWidget {
   const AnalyticsPage({super.key});
@@ -55,7 +56,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   }
 
   Widget _buildSummaryGrid(List<GroceryList> lists) {
-    double totalSpend = lists.fold(0.0, (s, l) => s + l.items.fold(0.0, (si, i) => si + (i.price * i.qty)));
+    double totalSpend = lists.fold(0.0, (s, l) => s + l.items.fold(0.0, (si, i) => si + getItemTotal(i.price, i.qty, i.unit)));
     
     // Grouping by time (Mock for demo since we only have now(), but structured correctly)
     double weeklySpend = totalSpend; // Filter by date logic would go here
@@ -106,7 +107,7 @@ class _StatCard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: kCardBg,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [kShadowSoft],
       ),
@@ -141,7 +142,7 @@ class _TrendCard extends StatelessWidget {
       height: 260,
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [kShadowSoft]),
+      decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.circular(24), boxShadow: [kShadowSoft]),
       child: LineChart(
         LineChartData(
           gridData: FlGridData(show: false),
@@ -150,7 +151,7 @@ class _TrendCard extends StatelessWidget {
           lineBarsData: [
             LineChartBarData(
               spots: List.generate(points.length, (i) {
-                final total = points[i].items.fold(0.0, (s, item) => s + (item.price * item.qty));
+                final total = points[i].items.fold(0.0, (s, item) => s + getItemTotal(item.price, item.qty, item.unit));
                 return FlSpot(i.toDouble(), total);
               }),
               isCurved: true,
@@ -191,7 +192,7 @@ class _CategoryDonutCard extends StatelessWidget {
     Map<String, double> catSpent = {};
     for (var l in recentLists) {
       for (var i in l.items) {
-        catSpent[i.category] = (catSpent[i.category] ?? 0) + (i.price * i.qty);
+        catSpent[i.category] = (catSpent[i.category] ?? 0) + getItemTotal(i.price, i.qty, i.unit);
       }
     }
 
@@ -201,7 +202,7 @@ class _CategoryDonutCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [kShadowSoft]),
+      decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.circular(24), boxShadow: [kShadowSoft]),
       child: Row(
         children: [
           SizedBox(
@@ -268,7 +269,7 @@ class _BudgetComparisonCard extends StatelessWidget {
       height: 220,
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(24), boxShadow: [kShadowSoft]),
+      decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.circular(24), boxShadow: [kShadowSoft]),
       child: BarChart(
         BarChartData(
           gridData: FlGridData(show: false),
@@ -276,7 +277,7 @@ class _BudgetComparisonCard extends StatelessWidget {
           borderData: FlBorderData(show: false),
           barGroups: List.generate(displayLists.length, (i) {
             final budget = displayLists[i].budget;
-            final actual = displayLists[i].items.fold(0.0, (s, item) => s + (item.price * item.qty));
+            final actual = displayLists[i].items.fold(0.0, (s, item) => s + getItemTotal(item.price, item.qty, item.unit));
             return BarChartGroupData(
               x: i,
               barRods: [
@@ -299,7 +300,7 @@ class _HistoryList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: recentLists.map((l) {
-        final total = l.items.fold(0.0, (s, i) => s + (i.price * i.qty));
+        final total = l.items.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
         return GestureDetector(
           onTap: () {
              // Show Breakdown Modal
@@ -310,7 +311,7 @@ class _HistoryList extends StatelessWidget {
                builder: (_) => Container(
                  constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
                  padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
-                 decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+                 decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
                  child: Column(
                    mainAxisSize: MainAxisSize.min,
                    children: [
@@ -337,7 +338,7 @@ class _HistoryList extends StatelessWidget {
                                Text('${item.qty.toInt()} ${item.unit}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kMuted)),
                                const SizedBox(width: 12),
                                Expanded(child: Text(item.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kTextCharcoal))),
-                               Text('₱${(item.price * item.qty).toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kTextCharcoal)),
+                               Text('₱${getItemTotal(item.price, item.qty, item.unit).toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kTextCharcoal)),
                              ],
                            );
                          },
@@ -351,7 +352,7 @@ class _HistoryList extends StatelessWidget {
           child: Container(
             margin: const EdgeInsets.only(top: 12),
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [kShadowSoft]),
+            decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.circular(16), boxShadow: [kShadowSoft]),
             child: Row(
               children: [
                 Container(

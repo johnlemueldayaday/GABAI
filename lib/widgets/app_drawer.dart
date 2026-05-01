@@ -1,9 +1,11 @@
+// Force IDE re-parse
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../pages/home.dart';
 import '../pages/recent.dart';
 import '../pages/analytics.dart';
 import '../pages/ramsey.dart';
+import '../pages/settings.dart';
 import '../config/app_theme.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -19,12 +21,24 @@ class AppDrawer extends StatelessWidget {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(24, 60, 24, 20),
+            padding: const EdgeInsets.fromLTRB(24, 80, 24, 20),
             decoration: BoxDecoration(color: kBackground),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.center,
+            child: Stack(
+              alignment: Alignment.center,
               children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: 42,
+                    height: 42,
+                    child: ClipOval(
+                      child: Image.asset(
+                        'assets/images/logo.png',
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ),
                 Text(
                   'GABAY',
                   style: GoogleFonts.bangers(
@@ -36,20 +50,6 @@ class AppDrawer extends StatelessWidget {
                         FontVariation('wght', 400),
                       ],
                     ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: kPrimary,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.account_balance_wallet_rounded,
-                    color: Colors.white,
-                    size: 18,
                   ),
                 ),
               ],
@@ -111,6 +111,30 @@ class AppDrawer extends StatelessWidget {
               }
             },
           ),
+          // ─── Spacer pushes Settings to the bottom ───────────────────
+          const Spacer(),
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Divider(
+              color: kBorder,
+              thickness: 1,
+              indent: 24,
+              endIndent: 24,
+            ),
+          ),
+          _DrawerItem(
+            icon: Icons.settings_outlined,
+            label: 'Settings',
+            isSelected: currentPage == 'Settings',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SettingsPage()),
+              );
+            },
+          ),
+          const SizedBox(height: 16),
         ],
       ),
     );

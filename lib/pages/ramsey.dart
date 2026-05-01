@@ -31,7 +31,8 @@ Philippine market price reference:
 
 Rules:
 - Be friendly, warm, and concise
-- Use bullet points for lists
+- Use numbered lists for dish suggestions (1., 2., 3...) so the user can easily select one by just typing the number.
+- Use bullet points for ingredients or other general lists.
 - Include ₱ cost estimates when relevant
 - Use Filipino food terms naturally (patis, toyo, suka, sabaw)
 - ALWAYS base your cooking suggestions on the user's current grocery list or pantry ingredients.
@@ -50,8 +51,10 @@ Rules for the JSON:
 - "price": estimated price per unit in Philippine Peso (number only, no ₱ symbol)
 - "category": one of: Fridge, Pantry, Vegetables, Fruits, Spices, Snacks, Drinks, Household
 - When the user asks "Suggest me a dish to cook", provide exactly 5 random examples in this format:
-  [Dish Name] - Brief info/description
-  Do NOT list ingredients or recipes yet. Wait for the user to pick one or ask for details.
+  1. [Dish Name] - Brief info/description
+  2. [Dish Name] - Brief info/description
+  (and so on up to 5)
+  Do NOT list ingredients or recipes yet. Wait for the user to pick one by number or name.
 - The JSON must be valid and parseable
 - VERY IMPORTANT: When you suggest a recipe or ingredients, DO NOT say you automatically added them.
 - VERY IMPORTANT: Do NOT ask whether to add ingredients to the shopping list. The app will ask that as a separate follow-up message.
@@ -80,6 +83,7 @@ class _RamseyPageState extends State<RamseyPage> {
 
   // Items waiting for user confirmation before adding
   List<Map<String, dynamic>> _pendingGroceryItems = [];
+  String? _currentRecipeName;
 
   @override
   void initState() {
@@ -249,6 +253,18 @@ class _RamseyPageState extends State<RamseyPage> {
           ? parsed.displayText
           : _stripAddToListQuestion(parsed.displayText);
 
+      // Try to extract recipe name from the display text (e.g. "**Spicy Adobo**")
+      final nameMatch = RegExp(r'\*\*(.+?)\*\*').firstMatch(displayText);
+      if (nameMatch != null) {
+        _currentRecipeName = nameMatch.group(1);
+      } else {
+        // Fallback: look for lines starting with "1. Adobo"
+        final numberedMatch = RegExp(r'^\d+\.\s+([^\-]+)', multiLine: true).firstMatch(displayText);
+        if (numberedMatch != null) {
+          _currentRecipeName = numberedMatch.group(1)?.trim();
+        }
+      }
+
       setState(() {
         if (displayText.isNotEmpty) {
           _messages.add(ChatMessage(text: displayText, isUser: false, timestamp: DateTime.now()));
@@ -301,12 +317,12 @@ class _RamseyPageState extends State<RamseyPage> {
         context: context,
         builder: (context) {
           return AlertDialog(
-            backgroundColor: Colors.white,
+            backgroundColor: kCardBg,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-            title: Text('Add Ingredients?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+            title: Text('Add Ingredients?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal)),
             content: Text(
               'Would you like to add these ${itemsToAdd.length} ingredients to your shopping list?',
-              style: GoogleFonts.plusJakartaSans(color: kMuted, fontWeight: FontWeight.w500),
+              style: GoogleFonts.plusJakartaSans(color: kTextCharcoal.withValues(alpha: 0.7), fontWeight: FontWeight.w500),
             ),
             actions: [
               TextButton(
@@ -394,9 +410,15 @@ class _RamseyPageState extends State<RamseyPage> {
   void _addItemsToShoppingList(List<Map<String, dynamic>> items) {
     // Create a new list if none exists
     if (AppState.currentList == null) {
-      final newList = GroceryList('AI Recipe List');
+      final listTitle = _currentRecipeName ?? 'AI Recipe List';
+      final newList = GroceryList(listTitle);
       AppState.lists.add(newList);
       AppState.activeIndex = AppState.lists.length - 1;
+    } else if (AppState.currentList!.items.isEmpty && _currentRecipeName != null) {
+      // If current list is empty and generic, rename it to the recipe
+      if (AppState.currentList!.name == 'New List' || AppState.currentList!.name == 'AI Recipe List') {
+        AppState.currentList!.name = _currentRecipeName!;
+      }
     }
 
     int addedCount = 0;
@@ -484,12 +506,12 @@ class _RamseyPageState extends State<RamseyPage> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Clear Chat', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+        title: Text('Clear Chat', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal)),
         content: Text(
           'This will delete your entire chat history.',
-          style: GoogleFonts.plusJakartaSans(color: kMuted, fontWeight: FontWeight.w500),
+          style: GoogleFonts.plusJakartaSans(color: kTextCharcoal.withValues(alpha: 0.7), fontWeight: FontWeight.w500),
         ),
         actions: [
           TextButton(
@@ -686,7 +708,7 @@ class _RamseyPageState extends State<RamseyPage> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: kCardBg,
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: kPrimary.withValues(alpha: 0.15)),
                       boxShadow: [
@@ -744,7 +766,7 @@ class _RamseyPageState extends State<RamseyPage> {
     return SafeArea(
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: kCardBg,
           border: Border(top: BorderSide(color: kBorder)),
         ),
         padding: const EdgeInsets.symmetric(vertical: 10),
@@ -878,7 +900,7 @@ class _MessageBubble extends StatelessWidget {
                         end: Alignment.bottomRight,
                       )
                     : null,
-                color: isUser ? null : Colors.white,
+                color: isUser ? null : kCardBg,
                 borderRadius: BorderRadius.only(
                   topLeft: const Radius.circular(16),
                   topRight: const Radius.circular(16),
@@ -988,7 +1010,7 @@ class _TypingBubbleState extends State<_TypingBubble>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: kCardBg,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(16),
                 topRight: Radius.circular(16),
@@ -1069,7 +1091,7 @@ class _RamseyFabState extends State<RamseyFab> {
           width: 52,
           height: 52,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: kCardBg,
             shape: BoxShape.circle,
             border: Border.all(color: kPrimary.withValues(alpha: 0.3)),
             boxShadow: [

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -9,32 +10,43 @@ import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
+import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/pages/recent.dart';
+import 'package:gabay/pages/splash_screen.dart';
 
 class GroceryApp extends StatelessWidget {
   const GroceryApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
-        scaffoldBackgroundColor: kBackground,
-        colorScheme: ColorScheme.fromSeed(seedColor: kPrimary),
-        appBarTheme: AppBarTheme(
-          backgroundColor: kBackground,
-          elevation: 0,
-          foregroundColor: kTextCharcoal,
-          centerTitle: false,
-          titleTextStyle: GoogleFonts.plusJakartaSans(
-            color: kTextCharcoal,
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
+    return AnimatedBuilder(
+      animation: SettingsService(),
+      builder: (context, _) {
+        // Update global color variables for the new theme
+        updateAppTheme(SettingsService().themeMode);
+
+        return MaterialApp(
+          debugShowCheckedModeBanner: false,
+          theme: ThemeData(
+            fontFamily: GoogleFonts.plusJakartaSans().fontFamily,
+            scaffoldBackgroundColor: kBackground,
+            colorScheme: ColorScheme.fromSeed(seedColor: kPrimary),
+            appBarTheme: AppBarTheme(
+              backgroundColor: kBackground,
+              elevation: 0,
+              foregroundColor: kTextCharcoal,
+              centerTitle: false,
+              titleTextStyle: GoogleFonts.plusJakartaSans(
+                color: kTextCharcoal,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            useMaterial3: true,
           ),
-        ),
-        useMaterial3: true,
-      ),
-      home: const HomePage(),
+          home: const SplashScreen(),
+        );
+      },
     );
   }
 }
@@ -95,11 +107,11 @@ double _stepQty(double current, int dir, String unit) {
 // ─── Grocery Database ──────────────────────────────────────────────────────
 final List<Map<String, dynamic>> kGroceryDatabase = [
   // Fridge
-  {'name': 'Chicken', 'price': 220.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Milk', 'price': 75.0, 'unit': 'L', 'category': 'Fridge'},
-  {'name': 'Eggs', 'price': 180.0, 'unit': 'dozen', 'category': 'Fridge'},
+  {'name': 'Chicken', 'price': 210.0, 'unit': 'kg', 'category': 'Fridge'},
+  {'name': 'Milk', 'price': 95.0, 'unit': 'L', 'category': 'Fridge'},
+  {'name': 'Eggs', 'price': 240.0, 'unit': 'dozen', 'category': 'Fridge'},
   {'name': 'Beef', 'price': 420.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Pork', 'price': 320.0, 'unit': 'kg', 'category': 'Fridge'},
+  {'name': 'Pork', 'price': 340.0, 'unit': 'kg', 'category': 'Fridge'},
   {'name': 'Butter', 'price': 110.0, 'unit': 'pcs', 'category': 'Fridge'},
   {'name': 'Cheese', 'price': 165.0, 'unit': 'pcs', 'category': 'Fridge'},
   {'name': 'Yogurt', 'price': 85.0, 'unit': 'pcs', 'category': 'Fridge'},
@@ -159,8 +171,9 @@ final List<Map<String, dynamic>> kGroceryDatabase = [
   {'name': 'Sitaw', 'price': 50.0, 'unit': 'bundle', 'category': 'Vegetables'},
   {'name': 'Okra', 'price': 55.0, 'unit': 'kg', 'category': 'Vegetables'},
   {'name': 'Eggplant', 'price': 60.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {'name': 'Tomato', 'price': 70.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {'name': 'Potato', 'price': 80.0, 'unit': 'kg', 'category': 'Vegetables'},
+  {'name': 'Tomato (kg)', 'price': 100.0, 'unit': 'kg', 'category': 'Vegetables'},
+  {'name': 'Tomato (pc)', 'price': 10.0, 'unit': 'pcs', 'category': 'Vegetables'},
+  {'name': 'Potato', 'price': 90.0, 'unit': 'kg', 'category': 'Vegetables'},
   {'name': 'Carrot', 'price': 75.0, 'unit': 'kg', 'category': 'Vegetables'},
   {'name': 'Cabbage', 'price': 55.0, 'unit': 'kg', 'category': 'Vegetables'},
   {'name': 'Sayote', 'price': 40.0, 'unit': 'kg', 'category': 'Vegetables'},
@@ -185,9 +198,11 @@ final List<Map<String, dynamic>> kGroceryDatabase = [
   // Spices
   {'name': 'Salt', 'price': 20.0, 'unit': 'pack', 'category': 'Spices'},
   {'name': 'Pepper', 'price': 50.0, 'unit': 'pack', 'category': 'Spices'},
-  {'name': 'Garlic', 'price': 120.0, 'unit': 'kg', 'category': 'Spices'},
-  {'name': 'Onion', 'price': 90.0, 'unit': 'kg', 'category': 'Spices'},
-  {'name': 'Ginger', 'price': 80.0, 'unit': 'kg', 'category': 'Spices'},
+  {'name': 'Garlic (kg)', 'price': 140.0, 'unit': 'kg', 'category': 'Spices'},
+  {'name': 'Garlic (pc)', 'price': 5.0, 'unit': 'pcs', 'category': 'Spices'},
+  {'name': 'Onion (kg)', 'price': 120.0, 'unit': 'kg', 'category': 'Spices'},
+  {'name': 'Onion (pc)', 'price': 10.0, 'unit': 'pcs', 'category': 'Spices'},
+  {'name': 'Ginger', 'price': 100.0, 'unit': 'kg', 'category': 'Spices'},
   {'name': 'Bay Leaves', 'price': 18.0, 'unit': 'pack', 'category': 'Spices'},
   {'name': 'Paprika', 'price': 60.0, 'unit': 'pack', 'category': 'Spices'},
   {'name': 'Chili', 'price': 150.0, 'unit': 'kg', 'category': 'Spices'},
@@ -328,11 +343,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   double get _checkedTotal =>
-      _doneItems.fold(0.0, (s, i) => s + i.price * i.qty);
-  double get _plannedTotal => _items.fold(0.0, (s, i) => s + i.price * i.qty);
+      _doneItems.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
+  double get _plannedTotal =>
+      _items.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
   double get _left => _budget - _checkedTotal;
-  double get _progress => (_budget > 0 && _checkedTotal > 0)
-      ? (_checkedTotal / _budget).clamp(0.0, 1.0)
+  double get _progress => (_plannedTotal > 0)
+      ? (_checkedTotal / _plannedTotal).clamp(0.0, 1.0)
       : 0.0;
 
   List<GroceryItem> get _toBuy => _items.where((i) => !i.isDone).toList();
@@ -343,16 +359,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Rename List',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
         ),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500, color: kTextCharcoal),
           decoration: InputDecoration(
             hintText: 'List name',
             hintStyle: TextStyle(color: kMuted),
@@ -386,16 +402,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Edit Name',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
         ),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500),
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500, color: kTextCharcoal),
           decoration: InputDecoration(
             hintText: 'Item name',
             hintStyle: TextStyle(color: kMuted),
@@ -505,21 +521,246 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     }
   }
 
+  void _showUnitPicker(GroceryItem item) async {
+    final List<String> units = [
+      'pcs',
+      'kg',
+      'g',
+      'L',
+      'mL',
+      'pack',
+      'bottle',
+      'can',
+      'box',
+      'bundle',
+    ];
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
+        decoration: BoxDecoration(
+          color: kCardBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: kMuted.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Select Unit',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: kTextCharcoal,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                alignment: WrapAlignment.center,
+                children: units.map((u) {
+                  final isSelected = item.unit == u;
+                  return GestureDetector(
+                    onTap: () => Navigator.pop(context, u),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? kPrimary
+                            : kMutedBg.withValues(alpha: 0.3),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isSelected
+                              ? kPrimary
+                              : kBorder.withValues(alpha: 0.5),
+                        ),
+                      ),
+                      child: Text(
+                        u,
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : kTextCharcoal,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 40),
+          ],
+        ),
+      ),
+    );
+
+    if (result != null) {
+      setState(() {
+        item.unit = result;
+      });
+      GroceryStorage.saveAll();
+    }
+  }
+
   void _finishList() {
+    final checkedItems = _items.where((i) => i.isDone).toList();
+    if (checkedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Please check off items before finishing.'),
+          backgroundColor: kPrimary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    final double totalSpent = checkedItems.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          'Finish Shopping?',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You are about to save this trip to history.',
+              style: GoogleFonts.plusJakartaSans(
+                color: kTextCharcoal.withValues(alpha: 0.7),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: kPrimary.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: kPrimary.withValues(alpha: 0.1)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'TOTAL SPENT:',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: kMuted,
+                      letterSpacing: 1.1,
+                    ),
+                  ),
+                  Text(
+                    '₱${totalSpent.toStringAsFixed(2)}',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: kPrimary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '${checkedItems.length} items will be moved to history. Unchecked items will stay in your list.',
+              style: TextStyle(fontSize: 12, color: kTextCharcoal.withValues(alpha: 0.5), fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            style: TextButton.styleFrom(foregroundColor: kMuted),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                final recent = GroceryList(_listName);
+                recent.budget = _budget;
+                recent.items = checkedItems
+                    .map(
+                      (e) => GroceryItem(
+                        id: e.id,
+                        name: e.name,
+                        qty: e.qty,
+                        unit: e.unit,
+                        price: e.price,
+                        isDone: true,
+                        category: e.category,
+                      ),
+                    )
+                    .toList();
+                
+                AppState.recentLists.insert(0, recent);
+
+                // Remove only the finished items from current list
+                _items.removeWhere((i) => i.isDone);
+                
+                GroceryStorage.saveAll();
+              });
+              
+              Navigator.pop(context);
+              
+              // Navigate to Recent Page
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const RecentPage()),
+              );
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: kPrimary,
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+            child: const Text('Finish & Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _clearAllItems() {
     if (_items.isEmpty) return;
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          'Finish Shopping?',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+          'Clear All Items?',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
         ),
         content: Text(
-          'This will mark all items as done and clear the list.',
+          'This will permanently remove all items from this list.',
           style: GoogleFonts.plusJakartaSans(
-            color: kMuted,
+            color: kTextCharcoal.withValues(alpha: 0.7),
             fontWeight: FontWeight.w500,
           ),
         ),
@@ -532,38 +773,13 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           TextButton(
             onPressed: () {
               setState(() {
-                if (_items.isNotEmpty) {
-                  final recent = GroceryList(_listName);
-                  recent.budget = _budget;
-                  recent.items = _items
-                      .map(
-                        (e) => GroceryItem(
-                          id: e.id,
-                          name: e.name,
-                          qty: e.qty,
-                          unit: e.unit,
-                          price: e.price,
-                          isDone:
-                              true, // Optional: freeze them as done since it's history
-                          category: e.category,
-                        ),
-                      )
-                      .toList();
-                  AppState.recentLists.insert(0, recent);
-                }
-
                 _items.clear();
-                _listName = 'New List';
-                if (AppState.currentList != null) {
-                  AppState.lists.removeAt(AppState.activeIndex);
-                  AppState.activeIndex = -1;
-                }
                 GroceryStorage.saveAll();
               });
               Navigator.pop(context);
             },
-            style: TextButton.styleFrom(foregroundColor: kPrimary),
-            child: const Text('Finish'),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Clear All'),
           ),
         ],
       ),
@@ -600,159 +816,158 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const SizedBox(height: 8),
-                      Text(
-                        'SHOPPING',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: kMuted,
-                          letterSpacing: 2.0,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
                       Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          GestureDetector(
-                            onTap: _editListName,
-                            child: Row(
-                              children: [
-                                Text(
-                                  _listName,
-                                  style: TextStyle(
-                                    fontSize: 28,
-                                    fontWeight: FontWeight.w800,
-                                    color: kTextCharcoal,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Icon(
-                                  Icons.edit_outlined,
-                                  size: 20,
-                                  color: kMuted,
-                                ),
-                              ],
+                          Text(
+                            'SHOPPING',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: kMuted,
+                              letterSpacing: 2.0,
                             ),
                           ),
-                          const Spacer(),
-                          _TactileButton(
-                            onTap: _finishList,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: kPrimary.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.check_circle,
-                                      size: 16,
-                                      color: kPrimary,
+                          Row(
+                            children: [
+                              _TactileButton(
+                                onTap: _clearAllItems,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.red.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
                                     ),
-                                    const SizedBox(width: 6),
-                                    Text(
-                                      'Finish',
-                                      style: TextStyle(
-                                        color: kPrimary,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 13,
-                                      ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.delete_outline_rounded,
+                                          size: 16,
+                                          color: Colors.red,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Clear',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: Colors.red,
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                  ],
+                                  ),
                                 ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              _TactileButton(
+                                onTap: _finishList,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    color: kPrimary.withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          Icons.check_circle_outline_rounded,
+                                          size: 16,
+                                          color: kPrimary,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          'Finish',
+                                          style: GoogleFonts.plusJakartaSans(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: kPrimary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
-                      _BudgetCard(
-                        budget: _budget,
-                        total: _checkedTotal,
-                        plannedTotal: _plannedTotal,
-                        left: _left,
-                        progress: _progress,
-                        onTap: _editBudget,
+                      const SizedBox(height: 12),
+                      GestureDetector(
+                        onTap: _editListName,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                _listName,
+                                style: TextStyle(
+                                  fontSize: 32,
+                                  fontWeight: FontWeight.w800,
+                                  color: kTextCharcoal,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.visible,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Icon(
+                              Icons.edit_outlined,
+                              size: 20,
+                              color: kMuted,
+                            ),
+                          ],
+                        ),
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 12),
                     ],
                   ),
                 ),
-                // ─── "To Buy" Section ─────────────────────────────────
+                SliverPersistentHeader(
+                  pinned: true,
+                  delegate: _StickyBudgetDelegate(
+                    child: _BudgetCard(
+                      budget: _budget,
+                      total: _checkedTotal,
+                      plannedTotal: _plannedTotal,
+                      left: _left,
+                      progress: _progress,
+                      onTap: _editBudget,
+                    ),
+                  ),
+                ),
+                // ─── Single List (No Reordering) ─────────────────────
                 if (_items.isEmpty)
                   SliverFillRemaining(
                     hasScrollBody: false,
                     child: _EmptyState(),
                   )
-                else ...[
-                  if (_toBuy.isNotEmpty)
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: Text(
-                          'TO BUY',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: kMuted,
-                            letterSpacing: 1.2,
-                          ),
-                        ),
-                      ),
-                    ),
+                else
                   SliverList(
                     delegate: SliverChildBuilderDelegate((context, index) {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 12),
                         child: _ItemTile(
-                          item: _toBuy[index],
-                          onToggle: () => _toggleItem(_toBuy[index]),
-                          onDelete: () => _deleteItem(_toBuy[index]),
+                          item: _items[index],
+                          onToggle: () => _toggleItem(_items[index]),
+                          onDelete: () => _deleteItem(_items[index]),
                           onQtyChange: (delta) =>
-                              _changeQty(_toBuy[index], delta),
-                          onPriceEdit: () => _editPrice(_toBuy[index]),
-                          onNameEdit: () => _editItemName(_toBuy[index]),
+                              _changeQty(_items[index], delta),
+                          onPriceEdit: () => _editPrice(_items[index]),
+                          onUnitEdit: () => _showUnitPicker(_items[index]),
+                          onNameEdit: () => _editItemName(_items[index]),
                         ),
                       );
-                    }, childCount: _toBuy.length),
-                  ),
-                ],
-                // ─── "Done" Section ───────────────────────────────────
-                if (_doneItems.isNotEmpty)
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.only(top: 16, bottom: 12),
-                      child: Text(
-                        'DONE',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: kMuted,
-                          letterSpacing: 1.2,
-                        ),
-                      ),
-                    ),
-                  ),
-                if (_doneItems.isNotEmpty)
-                  SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _ItemTile(
-                          item: _doneItems[index],
-                          onToggle: () => _toggleItem(_doneItems[index]),
-                          onDelete: () => _deleteItem(_doneItems[index]),
-                          onQtyChange: (delta) =>
-                              _changeQty(_doneItems[index], delta),
-                          onPriceEdit: () => _editPrice(_doneItems[index]),
-                        ),
-                      );
-                    }, childCount: _doneItems.length),
+                    }, childCount: _items.length),
                   ),
                 const SliverToBoxAdapter(
                   child: SizedBox(height: 100),
@@ -773,6 +988,29 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       ),
     );
   }
+}
+
+// ─── Sticky Header Delegate ──────────────────────────────────────────────────
+class _StickyBudgetDelegate extends SliverPersistentHeaderDelegate {
+  final Widget child;
+  _StickyBudgetDelegate({required this.child});
+
+  @override
+  double get minExtent => 220;
+  @override
+  double get maxExtent => 220;
+
+  @override
+  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: kBackground, // Match the page background
+      padding: const EdgeInsets.only(bottom: 12),
+      child: child,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_StickyBudgetDelegate oldDelegate) => true;
 }
 
 // ─── Tactile Button Wrapper ──────────────────────────────────────────────────
@@ -828,16 +1066,16 @@ class _BudgetCard extends StatelessWidget {
     return _TactileButton(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: LinearGradient(
-            colors: [kPrimarySoft, Colors.white],
+            colors: [kPrimarySoft, kCardBg],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
           borderRadius: BorderRadius.circular(16),
           boxShadow: [kShadowSoft],
-          border: Border.all(color: Colors.white, width: 2),
+          border: Border.all(color: kBorder, width: 2),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -868,7 +1106,7 @@ class _BudgetCard extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -891,7 +1129,7 @@ class _BudgetCard extends StatelessWidget {
             ),
             if (overBudget)
               Padding(
-                padding: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.only(top: 8),
                 child: Row(
                   children: [
                     const Icon(
@@ -1064,6 +1302,7 @@ class _ItemTile extends StatelessWidget {
   final VoidCallback onToggle, onDelete;
   final void Function(int delta) onQtyChange;
   final VoidCallback onPriceEdit;
+  final VoidCallback onUnitEdit;
   final VoidCallback? onNameEdit;
   const _ItemTile({
     required this.item,
@@ -1071,6 +1310,7 @@ class _ItemTile extends StatelessWidget {
     required this.onDelete,
     required this.onQtyChange,
     required this.onPriceEdit,
+    required this.onUnitEdit,
     this.onNameEdit,
   });
 
@@ -1104,11 +1344,11 @@ class _ItemTile extends StatelessWidget {
       ),
       child: AnimatedOpacity(
         duration: const Duration(milliseconds: 300),
-        opacity: item.isDone ? 0.5 : 1.0,
+        opacity: item.isDone ? 0.7 : 1.0,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: kCardBg,
             borderRadius: BorderRadius.circular(12),
             boxShadow: [kShadowSoft],
           ),
@@ -1159,7 +1399,7 @@ class _ItemTile extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '₱${(item.price * item.qty).toStringAsFixed(2)}',
+                    '₱${getItemTotal(item.price, item.qty, item.unit).toStringAsFixed(2)}',
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
                       fontSize: 16,
@@ -1228,12 +1468,17 @@ class _ItemTile extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        item.unit,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: kMuted,
-                          fontWeight: FontWeight.w500,
+                      GestureDetector(
+                        onTap: onUnitEdit,
+                        child: Text(
+                          item.unit,
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: kMuted,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                            decorationStyle: TextDecorationStyle.dotted,
+                          ),
                         ),
                       ),
                       const Spacer(),
@@ -1479,13 +1724,13 @@ class _AddItemSheetState extends State<_AddItemSheet>
     if (!mounted) return;
 
     setState(() {
-      _isListening = started;
-      _speechErrorText = started
+      _isListening = started ?? false;
+      _speechErrorText = (started ?? false)
           ? null
           : 'Could not start voice input. Please try again.';
     });
 
-    if (started) {
+    if (started ?? false) {
       _micPulseCtrl.repeat(reverse: true);
     }
   }
@@ -1656,8 +1901,8 @@ class _AddItemSheetState extends State<_AddItemSheet>
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.9,
         ),
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: kCardBg,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Padding(
@@ -2357,8 +2602,8 @@ class _NumericKeypadSheetState extends State<_NumericKeypadSheet> {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
 
     return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
+      decoration: BoxDecoration(
+        color: kCardBg,
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       child: Padding(
@@ -2427,13 +2672,9 @@ class _NumericKeypadSheetState extends State<_NumericKeypadSheet> {
               margin: const EdgeInsets.symmetric(horizontal: 20),
               padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [kPrimarySoft, Colors.white],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
+                color: kBackground,
                 borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: kPrimary.withValues(alpha: 0.2)),
+                border: Border.all(color: kBorder),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,

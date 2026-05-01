@@ -7,6 +7,7 @@ import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
+import 'package:gabay/widgets/home/home_helpers.dart';
 
 class RecentPage extends StatefulWidget {
   const RecentPage({super.key});
@@ -24,8 +25,8 @@ class _RecentPageState extends State<RecentPage> {
       builder: (_) => Container(
         constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
-        decoration: const BoxDecoration(
-          color: Colors.white,
+        decoration: BoxDecoration(
+          color: kCardBg,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: Column(
@@ -74,7 +75,7 @@ class _RecentPageState extends State<RecentPage> {
                       Expanded(
                         child: Text(item.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kTextCharcoal)),
                       ),
-                      Text('₱${(item.price * item.qty).toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kTextCharcoal)),
+                      Text('₱${getItemTotal(item.price, item.qty, item.unit).toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kTextCharcoal)),
                     ],
                   );
                 },
@@ -91,7 +92,7 @@ class _RecentPageState extends State<RecentPage> {
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: Colors.white,
+        backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Rename History',
@@ -198,7 +199,7 @@ class _RecentPageState extends State<RecentPage> {
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: kCardBg,
                     borderRadius: BorderRadius.circular(16),
                     boxShadow: [kShadowSoft],
                   ),
@@ -250,7 +251,7 @@ class _RecentPageState extends State<RecentPage> {
                       ),
                       const SizedBox(height: 12),
                       Text(
-                        '${recent.items.length} items · ₱${recent.items.fold(0.0, (double s, i) => s + (i.price * i.qty)).toStringAsFixed(2)}',
+                        '${recent.items.length} items · ₱${recent.items.fold(0.0, (double s, i) => s + getItemTotal(i.price, i.qty, i.unit)).toStringAsFixed(2)}',
                         style: TextStyle(
                           color: kMuted,
                           fontSize: 13,
