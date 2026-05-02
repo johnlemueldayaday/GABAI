@@ -7,7 +7,7 @@ Grocery Wallet is a professional Flutter-based mobile application designed for e
 - **Shopping Management**: Real-time tracking of grocery items with categorized organization and status updates.
 - **Budget Tracking**: Dynamic monitoring of expenditures against set budgets, featuring visual progress indicators and over-budget alerts.
 - **Intelligent Analytics**: Comprehensive data visualization of spending trends, category distributions, and historical budget performance.
-- **AI Assistant**: A specialized chatbot powered by Google Gemini, offering meal suggestions from bought ingredients, budget advice, and Filipino recipe guidance.
+- **AI Assistant**: A specialized chatbot that defaults to a local offline OpenAI-compatible model, offering meal suggestions from bought ingredients, budget advice, and Filipino recipe guidance.
 - **Grocery History**: Detailed archival of past shopping trips with the ability to instantly replicate previous lists.
 
 ## Technology Stack
@@ -15,7 +15,7 @@ Grocery Wallet is a professional Flutter-based mobile application designed for e
 - **Framework**: Flutter (Dart)
 - **State Management**: In-memory AppState with static list management.
 - **Data Visualization**: fl_chart for analytical representation.
-- **AI Integration**: Google Generative AI (Gemini 1.5 Flash).
+- **AI Integration**: Local OpenAI-compatible chat API via Ollama/llama.cpp, with optional Gemini fallback.
 - **Local Storage**: SharedPreferences for persistent chat history.
 - **Design System**: Custom design system utilizing Google Fonts (Plus Jakarta Sans) and HSL-based color tokens.
 
@@ -25,7 +25,8 @@ Grocery Wallet is a professional Flutter-based mobile application designed for e
 
 - Flutter SDK (v3.11.0 or higher)
 - Android Studio / Xcode for mobile simulation
-- Google Gemini API Key
+- Ollama or llama.cpp server for offline Ramsey chat
+- Optional Google Gemini API key for Gemini mode or AI image scanning
 
 ### Installation
 
@@ -40,9 +41,14 @@ Grocery Wallet is a professional Flutter-based mobile application designed for e
    ```
 
 3. Configure the AI Assistant:
-   Copy `.env.example` to `.env` and set `GEMINI_API_KEY` with your real key.
+   Copy `.env.example` to `.env`. Ramsey defaults to `AI_PROVIDER=local`, `LOCAL_AI_BASE_URL=http://localhost:11434/v1`, and `LOCAL_AI_MODEL=llama3.2:3b`.
 
-4. Run the application:
+4. Install and prepare a local model with Ollama:
+   ```bash
+   ollama pull llama3.2:3b
+   ```
+
+5. Run the application:
    ```bash
    ./scripts/flutter_with_env.sh run
    ```
@@ -62,6 +68,12 @@ On PowerShell:
 
 ```powershell
 .\scripts\flutter_with_env.ps1 build apk
+```
+
+For Android emulator builds that call Ollama on your computer, set:
+
+```bash
+LOCAL_AI_BASE_URL=http://10.0.2.2:11434/v1
 ```
 
 ## Project Structure

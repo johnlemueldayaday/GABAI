@@ -18,9 +18,26 @@ if (Test-Path $EnvFile) {
   }
 }
 
-if ([string]::IsNullOrWhiteSpace($env:GEMINI_API_KEY)) {
-  Write-Error "Missing GEMINI_API_KEY. Add it to $EnvFile or export it in your shell."
+if ([string]::IsNullOrWhiteSpace($env:AI_PROVIDER)) {
+  $env:AI_PROVIDER = "local"
 }
 
-& $FlutterBin @args "--dart-define=GEMINI_API_KEY=$($env:GEMINI_API_KEY)"
+if ([string]::IsNullOrWhiteSpace($env:LOCAL_AI_BASE_URL)) {
+  $env:LOCAL_AI_BASE_URL = "http://localhost:11434/v1"
+}
+
+if ([string]::IsNullOrWhiteSpace($env:LOCAL_AI_MODEL)) {
+  $env:LOCAL_AI_MODEL = "llama3.2:3b"
+}
+
+if ([string]::IsNullOrWhiteSpace($env:LOCAL_AI_API_KEY)) {
+  $env:LOCAL_AI_API_KEY = "local-ai"
+}
+
+& $FlutterBin @args `
+  "--dart-define=AI_PROVIDER=$($env:AI_PROVIDER)" `
+  "--dart-define=LOCAL_AI_BASE_URL=$($env:LOCAL_AI_BASE_URL)" `
+  "--dart-define=LOCAL_AI_MODEL=$($env:LOCAL_AI_MODEL)" `
+  "--dart-define=LOCAL_AI_API_KEY=$($env:LOCAL_AI_API_KEY)" `
+  "--dart-define=GEMINI_API_KEY=$($env:GEMINI_API_KEY)"
 exit $LASTEXITCODE

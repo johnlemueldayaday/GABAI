@@ -4,14 +4,14 @@ This document provides a comprehensive technical overview of the Grocery Wallet 
 
 ## System Architecture
 
-The application follows a modular view-based architecture in Flutter. While currently utilizing an in-memory state management pattern for grocery data, it employs persistent storage for conversational data and integrates with cloud-based AI services.
+The application follows a modular view-based architecture in Flutter. While currently utilizing an in-memory state management pattern for grocery data, it employs persistent storage for conversational data and integrates with a configurable AI chat service.
 
 ### Components
 
 1. **Presentation Layer**: Built with Flutter widgets, utilizing a custom design system for a premium user experience.
 2. **State Management**: Handled via the `AppState` class, which manages static collections of grocery lists and recent history.
 3. **Storage Service**: Uses `SharedPreferences` to serialize and deserialize JSON-encoded chat history.
-4. **AI Integration Service**: Connects to the Google Gemini API to process natural language queries related to groceries and cooking.
+4. **AI Integration Service**: Uses a provider-based chat interface. Ramsey defaults to a local OpenAI-compatible API such as Ollama or llama.cpp server, with Gemini still available when configured.
 
 ## Data Models
 
@@ -62,7 +62,7 @@ Represents a single interaction in the AI Assistant chat.
 
 ## AI Assistant Implementation
 
-The AI Assistant uses the `google_generative_ai` package to interact with the Gemini 1.5 Flash model. 
+The AI Assistant uses a `ChatAiService` abstraction. The default implementation is `LocalOpenAIChatService`, which calls a local OpenAI-compatible `/v1/chat/completions` endpoint for offline chat. `GeminiHttpService` remains available for Gemini-backed chat and image analysis when a Gemini API key is provided.
 
 ### System Context
 The assistant is initialized with a specialized system prompt that includes:

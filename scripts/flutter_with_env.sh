@@ -13,9 +13,14 @@ if [[ -f "${ENV_FILE}" ]]; then
   set +a
 fi
 
-if [[ -z "${GEMINI_API_KEY:-}" ]]; then
-  echo "Missing GEMINI_API_KEY. Add it to ${ENV_FILE} or export it in your shell." >&2
-  exit 1
-fi
+AI_PROVIDER="${AI_PROVIDER:-local}"
+LOCAL_AI_BASE_URL="${LOCAL_AI_BASE_URL:-http://localhost:11434/v1}"
+LOCAL_AI_MODEL="${LOCAL_AI_MODEL:-llama3.2:3b}"
+LOCAL_AI_API_KEY="${LOCAL_AI_API_KEY:-local-ai}"
 
-exec "${FLUTTER_BIN}" "$@" --dart-define=GEMINI_API_KEY="${GEMINI_API_KEY}"
+exec "${FLUTTER_BIN}" "$@" \
+  --dart-define=AI_PROVIDER="${AI_PROVIDER}" \
+  --dart-define=LOCAL_AI_BASE_URL="${LOCAL_AI_BASE_URL}" \
+  --dart-define=LOCAL_AI_MODEL="${LOCAL_AI_MODEL}" \
+  --dart-define=LOCAL_AI_API_KEY="${LOCAL_AI_API_KEY}" \
+  --dart-define=GEMINI_API_KEY="${GEMINI_API_KEY:-}"

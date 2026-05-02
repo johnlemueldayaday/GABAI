@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:google_generative_ai/google_generative_ai.dart';
 import 'package:gabay/config/ai_config.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/services/chat_storage.dart';
+import 'package:gabay/services/chat_ai_service.dart';
+import 'package:gabay/services/gemini_http_service.dart';
+import 'package:gabay/services/local_openai_chat_service.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/bill_storage.dart';
@@ -78,10 +80,7 @@ class _RamseyPageState extends State<RamseyPage> {
   final _messages = <ChatMessage>[];
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
-  GenerativeModel? _model;
-  GenerativeModel? _fallbackModel;
-  ChatSession? _session;
-  ChatSession? _fallbackSession;
+  ChatAiService? _aiService;
   bool _isTyping = false;
   bool _isLoading = true;
 
@@ -97,21 +96,40 @@ class _RamseyPageState extends State<RamseyPage> {
   }
 
   Future<void> _init() async {
-    if (AIConfig.hasGeminiApiKey) {
+    final chatAvailable =
+        AIConfig.useLocalAi ? AIConfig.hasLocalAiConfig : AIConfig.hasGeminiApiKey;
+
+    if (!chatAvailable) {
+      _aiService = null;
+      await _loadMessages();
+      return;
+    }
+
+    if (chatAvailable) {
       _allBills = await BillStorage.loadBills();
-      
+
       final now = DateTime.now();
       final today = DateTime(now.year, now.month, now.day);
       final nextWeek = today.add(const Duration(days: 7));
-      
-      final overdueBills = _allBills.where((b) => b.dueDate.isBefore(today) && !b.isPaid).toList();
-      final upcomingBills = _allBills.where((b) => b.dueDate.isAtSameMomentAs(today) || (b.dueDate.isAfter(today) && b.dueDate.isBefore(nextWeek)) && !b.isPaid).toList();
-      final monthlyBills = _allBills.where((b) => b.dueDate.year == now.year && b.dueDate.month == now.month).toList();
-      
+
+      final overdueBills =
+          _allBills.where((b) => b.dueDate.isBefore(today) && !b.isPaid).toList();
+      final upcomingBills = _allBills
+          .where(
+            (b) =>
+                (b.dueDate.isAtSameMomentAs(today) ||
+                    (b.dueDate.isAfter(today) && b.dueDate.isBefore(nextWeek))) &&
+                !b.isPaid,
+          )
+          .toList();
+      final monthlyBills = _allBills
+          .where((b) => b.dueDate.year == now.year && b.dueDate.month == now.month)
+          .toList();
+
       final overdueTotal = overdueBills.fold(0.0, (sum, b) => sum + b.amount);
       final upcomingTotal = upcomingBills.fold(0.0, (sum, b) => sum + b.amount);
       final monthlyTotal = monthlyBills.fold(0.0, (sum, b) => sum + b.amount);
-      
+
       // Analyze shopping insights
       int greenCount = 0;
       int unhealthyCount = 0;
@@ -122,14 +140,14 @@ class _RamseyPageState extends State<RamseyPage> {
           if (cat == 'snacks' || cat == 'drinks') unhealthyCount++;
         }
       }
-      
+
       String context = "\n\n--- APP CONTEXT ---\n";
-      
+
       context += "BILLS TRACKER:\n";
       context += "- Overdue: ${overdueBills.length} bills (Total ₱${overdueTotal.toStringAsFixed(2)})\n";
       context += "- Upcoming (Next 7 days): ${upcomingBills.length} bills (Total ₱${upcomingTotal.toStringAsFixed(2)})\n";
       context += "- Current Month Total: ₱${monthlyTotal.toStringAsFixed(2)}\n";
-      
+
       context += "\nSHOPPING INSIGHTS:\n";
       context += "- Healthy Items (Vegetables/Fruits) bought recently: $greenCount\n";
       context += "- Less Healthy Items (Snacks/Drinks) bought recently: $unhealthyCount\n";
@@ -141,52 +159,32 @@ class _RamseyPageState extends State<RamseyPage> {
 
       final fullPrompt = _kSystemPromptBase + context;
 
-      _model = GenerativeModel(
-        model: 'gemini-1.5-flash',
-        apiKey: AIConfig.geminiApiKey,
-        systemInstruction: Content.system(fullPrompt),
-      );
-      _fallbackModel = GenerativeModel(
-        model: 'gemini-1.5-flash-8b',
-        apiKey: AIConfig.geminiApiKey,
-        systemInstruction: Content.system(fullPrompt),
-      );
-      _initSessions();
+      _aiService = AIConfig.useLocalAi ? LocalOpenAIChatService() : GeminiHttpService();
+      _aiService!.initWithSystemPrompt(fullPrompt);
       await _loadMessages();
     }
     setState(() => _isLoading = false);
   }
 
-  void _initSessions() {
-    if (_model != null && _fallbackModel != null) {
-      _session = _model!.startChat();
-      _fallbackSession = _fallbackModel!.startChat();
-    }
-  }
-
   Future<void> _loadMessages() async {
     final saved = await ChatStorage.load();
-    final history = <Content>[];
-    for (final m in saved) {
-      if (m.isUser) {
-        history.add(Content.text(m.text));
-      } else {
-        history.add(Content('model', [TextPart(m.text)]));
-      }
-    }
-    if (_model != null && _fallbackModel != null) {
-      _session = _model!.startChat(history: history);
-      _fallbackSession = _fallbackModel!.startChat(history: history);
+    // Load saved messages into HTTP service history
+    if (_aiService != null) {
+      final historyMaps = saved.map((m) => <String, String>{
+        'role': m.isUser ? 'user' : 'model',
+        'text': m.text,
+      }).toList();
+      _aiService!.loadHistory(historyMaps);
     }
     setState(() {
       _messages.addAll(saved);
       _isLoading = false;
     });
     if (_messages.isEmpty) {
-      if (AIConfig.hasGeminiApiKey) {
+      if (_aiService != null) {
         _addWelcome();
       } else {
-        _addMissingKeyMessage();
+        _addMissingAiMessage();
       }
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
@@ -222,12 +220,16 @@ class _RamseyPageState extends State<RamseyPage> {
     ];
   }
 
-  void _addMissingKeyMessage() {
+  void _addMissingAiMessage() {
+    final text = AIConfig.useLocalAi
+        ? 'Local AI is not configured yet.\n\n'
+            'Install Ollama, run `ollama pull ${AIConfig.localAiModel}`, then start the app again. '
+            'For Android emulator, run with `--dart-define=LOCAL_AI_BASE_URL=http://10.0.2.2:11434/v1`.'
+        : 'AI Assistant is not configured yet.\n\n'
+            'Add `GEMINI_API_KEY` to your local `.env`, then run the app with '
+            '`./scripts/flutter_with_env.sh run` or `.\\scripts\\flutter_with_env.ps1 run` so the key stays out of the frontend source.';
     final message = ChatMessage(
-      text:
-          'AI Assistant is not configured yet.\n\n'
-          'Add `GEMINI_API_KEY` to your local `.env`, then run the app with '
-          '`./scripts/flutter_with_env.sh run` or `.\\scripts\\flutter_with_env.ps1 run` so the key stays out of the frontend source.',
+      text: text,
       isUser: false,
       timestamp: DateTime.now(),
     );
@@ -266,7 +268,7 @@ class _RamseyPageState extends State<RamseyPage> {
 
   Future<void> _send(String text) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty || _isTyping || _session == null) return;
+    if (trimmed.isEmpty || _isTyping || _aiService == null) return;
     _controller.clear();
 
     setState(() {
@@ -288,24 +290,7 @@ class _RamseyPageState extends State<RamseyPage> {
     });
 
     try {
-      // Try primary model first, fall back on 503/overload errors
-      String reply;
-      try {
-        final response = await _session!.sendMessage(Content.text(fullText));
-        reply = response.text ?? 'Sorry, I could not generate a response.';
-      } catch (primaryError) {
-        final errStr = primaryError.toString();
-        if (errStr.contains('503') || errStr.contains('UNAVAILABLE') || errStr.contains('overloaded')) {
-          debugPrint('⚠️ Primary model busy, trying fallback...');
-          // Wait a moment then try fallback model
-          await Future.delayed(const Duration(seconds: 2));
-          _fallbackSession ??= _fallbackModel!.startChat(history: []);
-          final fallbackResponse = await _fallbackSession!.sendMessage(Content.text(fullText));
-          reply = fallbackResponse.text ?? 'Sorry, I could not generate a response.';
-        } else {
-          rethrow;
-        }
-      }
+      final reply = await _aiService!.sendMessage(fullText);
 
       // Check if the reply contains grocery list JSON and extract items
       final parsed = _parseGroceryJson(reply);
@@ -352,8 +337,13 @@ class _RamseyPageState extends State<RamseyPage> {
         userMessage = '⏳ API quota exceeded. Please wait a minute before trying again.';
       } else if (errStr.contains('API key not valid')) {
         userMessage = '🔑 The API key is invalid. Please check your configuration.';
+      } else if (AIConfig.useLocalAi &&
+          (errStr.contains('Connection refused') ||
+              errStr.contains('SocketException') ||
+              errStr.contains('Local AI server'))) {
+        userMessage = 'Local AI is not reachable. Make sure Ollama or llama.cpp server is running at ${AIConfig.localAiBaseUrl} with model `${AIConfig.localAiModel}`.';
       } else {
-        userMessage = '⚠️ Something went wrong. Please check your connection and try again.';
+        userMessage = '⚠️ Something went wrong: ${e.toString().split(':').last.trim()}';
       }
       setState(() {
         _messages.add(ChatMessage(
@@ -585,17 +575,14 @@ class _RamseyPageState extends State<RamseyPage> {
           TextButton(
             onPressed: () async {
               await ChatStorage.clear();
-              if (_model != null) {
-                _session = _model!.startChat(history: []);
-              }
-              if (_fallbackModel != null) {
-                _fallbackSession = _fallbackModel!.startChat(history: []);
-              }
+              _aiService?.clearHistory();
+              // Re-init with system prompt
+              await _init();
               setState(() => _messages.clear());
-              if (AIConfig.hasGeminiApiKey) {
+              if (_aiService != null) {
                 _addWelcome();
               } else {
-                _addMissingKeyMessage();
+                _addMissingAiMessage();
               }
               if (mounted) Navigator.pop(context);
             },
@@ -1044,6 +1031,7 @@ class _TypingBubbleState extends State<_TypingBubble>
         await Future.delayed(const Duration(milliseconds: 140));
       }
       await Future.delayed(const Duration(milliseconds: 280));
+      if (!mounted) return;
       for (final c in _controllers) {
         c.reverse();
       }

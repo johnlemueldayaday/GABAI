@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:gabay/config/ai_config.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/grocery_storage.dart';
@@ -178,7 +179,12 @@ class _SettingsPageState extends State<SettingsPage> {
                   _Divider(),
                   _InfoTile(label: 'Version', value: '1.0.0'),
                   _Divider(),
-                  _InfoTile(label: 'AI Model', value: 'Gemini 2.5 Flash'),
+                  _InfoTile(
+                    label: 'AI Model',
+                    value: AIConfig.useLocalAi
+                        ? 'Local: ${AIConfig.localAiModel}'
+                        : 'Gemini 2.0 Flash Lite',
+                  ),
                 ],
               ),
               const SizedBox(height: 8),
