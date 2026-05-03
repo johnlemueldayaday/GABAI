@@ -77,6 +77,11 @@ class GeminiHttpService implements ChatAiService {
 
     final body = jsonEncode({
       'contents': _history,
+      'tools': [
+        {
+          'googleSearch': {}
+        }
+      ],
       'generationConfig': {
         'temperature': 0.8,
         'topP': 0.95,
