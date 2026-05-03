@@ -14,6 +14,7 @@ import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/models/bill_models.dart';
+import 'package:gabay/pages/home.dart';
 
 const _kSystemPromptBase = '''
 You are Ramsey, a smart grocery budgeting and cooking assistant for Filipino households integrated into the GABAY app.
@@ -531,7 +532,14 @@ class _RamseyPageState extends State<RamseyPage> {
             action: SnackBarAction(
               label: 'VIEW LIST',
               textColor: Colors.white,
-              onPressed: () => Navigator.pop(context),
+              onPressed: () {
+                ScaffoldMessenger.of(context).clearSnackBars();
+                Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  (route) => false,
+                );
+              },
             ),
           ),
         );
