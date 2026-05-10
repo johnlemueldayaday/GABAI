@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:gabay/pages/home.dart';
-import 'package:gabay/pages/ramsey.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
@@ -323,7 +322,6 @@ class _RecentPageState extends State<RecentPage> {
           ],
         ),
       ),
-      floatingActionButton: const RamseyFab(),
     );
   }
 }

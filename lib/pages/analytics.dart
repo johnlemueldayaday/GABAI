@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:gabay/pages/ramsey.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
@@ -51,13 +50,20 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               ],
             )
           : _EmptyState(),
-      floatingActionButton: const RamseyFab(),
     );
   }
 
   Widget _buildSummaryGrid(List<GroceryList> lists) {
-    double totalSpend = lists.fold(0.0, (s, l) => s + l.items.fold(0.0, (si, i) => si + getItemTotal(i.price, i.qty, i.unit)));
-    
+    double totalSpend = lists.fold(
+      0.0,
+      (s, l) =>
+          s +
+          l.items.fold(
+            0.0,
+            (si, i) => si + getItemTotal(i.price, i.qty, i.unit),
+          ),
+    );
+
     // Grouping by time (Mock for demo since we only have now(), but structured correctly)
     double weeklySpend = totalSpend; // Filter by date logic would go here
     double monthlySpend = totalSpend;
@@ -100,7 +106,12 @@ class _StatCard extends StatelessWidget {
   final String label, value;
   final IconData icon;
   final Color color;
-  const _StatCard({required this.label, required this.value, required this.icon, required this.color});
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -116,13 +127,31 @@ class _StatCard extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(color: color.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
             child: Icon(icon, size: 14, color: color),
           ),
           const SizedBox(height: 12),
-          Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: kMuted, letterSpacing: 0.5)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: kMuted,
+              letterSpacing: 0.5,
+            ),
+          ),
           const SizedBox(height: 4),
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800, color: kTextCharcoal)),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: kTextCharcoal,
+            ),
+          ),
         ],
       ),
     );
@@ -148,7 +177,11 @@ class _TrendCard extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.auto_graph_rounded, size: 32, color: kPrimary.withValues(alpha: 0.2)),
+            Icon(
+              Icons.auto_graph_rounded,
+              size: 32,
+              color: kPrimary.withValues(alpha: 0.2),
+            ),
             const SizedBox(height: 12),
             Text(
               'Not enough data yet',
@@ -180,7 +213,11 @@ class _TrendCard extends StatelessWidget {
       height: 260,
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.circular(24), boxShadow: [kShadowSoft]),
+      decoration: BoxDecoration(
+        color: kCardBg,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [kShadowSoft],
+      ),
       child: LineChart(
         LineChartData(
           gridData: FlGridData(show: false),
@@ -189,7 +226,11 @@ class _TrendCard extends StatelessWidget {
           lineBarsData: [
             LineChartBarData(
               spots: List.generate(points.length, (i) {
-                final total = points[i].items.fold(0.0, (s, item) => s + getItemTotal(item.price, item.qty, item.unit));
+                final total = points[i].items.fold(
+                  0.0,
+                  (s, item) =>
+                      s + getItemTotal(item.price, item.qty, item.unit),
+                );
                 return FlSpot(i.toDouble(), total);
               }),
               isCurved: true,
@@ -198,17 +239,21 @@ class _TrendCard extends StatelessWidget {
               isStrokeCapRound: true,
               dotData: FlDotData(
                 show: true,
-                getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                  radius: 4,
-                  color: Colors.white,
-                  strokeWidth: 3,
-                  strokeColor: kPrimary,
-                ),
+                getDotPainter: (spot, percent, barData, index) =>
+                    FlDotCirclePainter(
+                      radius: 4,
+                      color: Colors.white,
+                      strokeWidth: 3,
+                      strokeColor: kPrimary,
+                    ),
               ),
               belowBarData: BarAreaData(
                 show: true,
                 gradient: LinearGradient(
-                  colors: [kPrimary.withValues(alpha: 0.2), kPrimary.withValues(alpha: 0)],
+                  colors: [
+                    kPrimary.withValues(alpha: 0.2),
+                    kPrimary.withValues(alpha: 0),
+                  ],
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                 ),
@@ -230,17 +275,29 @@ class _CategoryDonutCard extends StatelessWidget {
     Map<String, double> catSpent = {};
     for (var l in recentLists) {
       for (var i in l.items) {
-        catSpent[i.category] = (catSpent[i.category] ?? 0) + getItemTotal(i.price, i.qty, i.unit);
+        catSpent[i.category] =
+            (catSpent[i.category] ?? 0) + getItemTotal(i.price, i.qty, i.unit);
       }
     }
 
-    final sorted = catSpent.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
-    final colors = [kPrimary, const Color(0xFF6366F1), const Color(0xFFF59E0B), const Color(0xFFEC4899), const Color(0xFF06B6D4)];
+    final sorted = catSpent.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final colors = [
+      kPrimary,
+      const Color(0xFF6366F1),
+      const Color(0xFFF59E0B),
+      const Color(0xFFEC4899),
+      const Color(0xFF06B6D4),
+    ];
 
     return Container(
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.circular(24), boxShadow: [kShadowSoft]),
+      decoration: BoxDecoration(
+        color: kCardBg,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [kShadowSoft],
+      ),
       child: Row(
         children: [
           SizedBox(
@@ -270,18 +327,33 @@ class _CategoryDonutCard extends StatelessWidget {
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Row(
                     children: [
-                      Container(width: 8, height: 8, decoration: BoxDecoration(color: colors[index % colors.length], shape: BoxShape.circle)),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: colors[index % colors.length],
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           sorted[index].key,
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: kTextCharcoal),
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: kTextCharcoal,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                       Text(
                         '₱${sorted[index].value.toStringAsFixed(0)}',
-                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kTextCharcoal),
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: kTextCharcoal,
+                        ),
                       ),
                     ],
                   ),
@@ -307,7 +379,11 @@ class _BudgetComparisonCard extends StatelessWidget {
       height: 220,
       margin: const EdgeInsets.only(top: 12),
       padding: const EdgeInsets.fromLTRB(16, 24, 16, 16),
-      decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.circular(24), boxShadow: [kShadowSoft]),
+      decoration: BoxDecoration(
+        color: kCardBg,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [kShadowSoft],
+      ),
       child: BarChart(
         BarChartData(
           gridData: FlGridData(show: false),
@@ -315,12 +391,27 @@ class _BudgetComparisonCard extends StatelessWidget {
           borderData: FlBorderData(show: false),
           barGroups: List.generate(displayLists.length, (i) {
             final budget = displayLists[i].budget;
-            final actual = displayLists[i].items.fold(0.0, (s, item) => s + getItemTotal(item.price, item.qty, item.unit));
+            final actual = displayLists[i].items.fold(
+              0.0,
+              (s, item) => s + getItemTotal(item.price, item.qty, item.unit),
+            );
             return BarChartGroupData(
               x: i,
               barRods: [
-                BarChartRodData(toY: budget, color: kMuted.withValues(alpha: 0.2), width: 12, borderRadius: BorderRadius.circular(6)),
-                BarChartRodData(toY: actual, color: actual > budget ? Colors.red.withValues(alpha: 0.8) : kPrimary, width: 12, borderRadius: BorderRadius.circular(6)),
+                BarChartRodData(
+                  toY: budget,
+                  color: kMuted.withValues(alpha: 0.2),
+                  width: 12,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                BarChartRodData(
+                  toY: actual,
+                  color: actual > budget
+                      ? Colors.red.withValues(alpha: 0.8)
+                      : kPrimary,
+                  width: 12,
+                  borderRadius: BorderRadius.circular(6),
+                ),
               ],
             );
           }),
@@ -338,81 +429,163 @@ class _HistoryList extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: recentLists.map((l) {
-        final total = l.items.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
+        final total = l.items.fold(
+          0.0,
+          (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
+        );
         return GestureDetector(
           onTap: () {
-             // Show Breakdown Modal
-             showModalBottomSheet(
-               context: context,
-               isScrollControlled: true,
-               backgroundColor: Colors.transparent,
-               builder: (_) => Container(
-                 constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
-                 padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
-                 decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-                 child: Column(
-                   mainAxisSize: MainAxisSize.min,
-                   children: [
-                     Padding(
-                       padding: const EdgeInsets.all(24),
-                       child: Row(
-                         children: [
-                           Text(l.name, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: kTextCharcoal)),
-                           const Spacer(),
-                           IconButton(onPressed: () => Navigator.pop(context), icon: Icon(Icons.close, color: kMuted)),
-                         ],
-                       ),
-                     ),
-                     Divider(color: kBorder, height: 1),
-                     Flexible(
-                       child: ListView.separated(
-                         padding: const EdgeInsets.all(24),
-                         itemCount: l.items.length,
-                         separatorBuilder: (_, _) => const SizedBox(height: 12),
-                         itemBuilder: (context, i) {
-                           final item = l.items[i];
-                           return Row(
-                             children: [
-                               Text('${item.qty.toInt()} ${item.unit}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kMuted)),
-                               const SizedBox(width: 12),
-                               Expanded(child: Text(item.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kTextCharcoal))),
-                               Text('₱${getItemTotal(item.price, item.qty, item.unit).toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kTextCharcoal)),
-                             ],
-                           );
-                         },
-                       ),
-                     ),
-                   ],
-                 ),
-               ),
-             );
+            // Show Breakdown Modal
+            showModalBottomSheet(
+              context: context,
+              isScrollControlled: true,
+              backgroundColor: Colors.transparent,
+              builder: (_) => Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.8,
+                ),
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).padding.bottom,
+                ),
+                decoration: BoxDecoration(
+                  color: kCardBg,
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Row(
+                        children: [
+                          Text(
+                            l.name,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: kTextCharcoal,
+                            ),
+                          ),
+                          const Spacer(),
+                          IconButton(
+                            onPressed: () => Navigator.pop(context),
+                            icon: Icon(Icons.close, color: kMuted),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Divider(color: kBorder, height: 1),
+                    Flexible(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(24),
+                        itemCount: l.items.length,
+                        separatorBuilder: (_, _) => const SizedBox(height: 12),
+                        itemBuilder: (context, i) {
+                          final item = l.items[i];
+                          return Row(
+                            children: [
+                              Text(
+                                '${item.qty.toInt()} ${item.unit}',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: kMuted,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  item.name,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: kTextCharcoal,
+                                  ),
+                                ),
+                              ),
+                              Text(
+                                '₱${getItemTotal(item.price, item.qty, item.unit).toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: kTextCharcoal,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
           },
           child: Container(
             margin: const EdgeInsets.only(top: 12),
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.circular(16), boxShadow: [kShadowSoft]),
+            decoration: BoxDecoration(
+              color: kCardBg,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [kShadowSoft],
+            ),
             child: Row(
               children: [
                 Container(
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: kPrimary.withValues(alpha: 0.1), shape: BoxShape.circle),
-                  child: Icon(Icons.shopping_bag_outlined, color: kPrimary, size: 20),
+                  decoration: BoxDecoration(
+                    color: kPrimary.withValues(alpha: 0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.shopping_bag_outlined,
+                    color: kPrimary,
+                    size: 20,
+                  ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(l.name, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: kTextCharcoal)),
-                      Text('${l.items.length} items', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: kMuted)),
+                      Text(
+                        l.name,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: kTextCharcoal,
+                        ),
+                      ),
+                      Text(
+                        '${l.items.length} items',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: kMuted,
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
-                    Text('₱${total.toStringAsFixed(2)}', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: kTextCharcoal)),
-                    Text('Completed', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: kPrimary)),
+                    Text(
+                      '₱${total.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                    Text(
+                      'Completed',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        color: kPrimary,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -432,12 +605,15 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title.toUpperCase(),
-      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: kMuted, letterSpacing: 1.5),
+      style: TextStyle(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: kMuted,
+        letterSpacing: 1.5,
+      ),
     );
   }
 }
-
-// _AppDrawer removed as it is now shared in lib/widgets/app_drawer.dart
 
 class _EmptyState extends StatelessWidget {
   @override
@@ -446,11 +622,29 @@ class _EmptyState extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.insights_rounded, size: 64, color: kMuted.withValues(alpha: 0.3)),
+          Icon(
+            Icons.insights_rounded,
+            size: 64,
+            color: kMuted.withValues(alpha: 0.3),
+          ),
           const SizedBox(height: 16),
-          Text('No Insights Yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: kTextCharcoal)),
+          Text(
+            'No Insights Yet',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: kTextCharcoal,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text('Finish a shopping list to see your analytics.', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: kMuted)),
+          Text(
+            'Finish a shopping list to see your analytics.',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: kMuted,
+            ),
+          ),
         ],
       ),
     );

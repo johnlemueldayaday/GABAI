@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/grocery_models.dart';
 
@@ -7,16 +8,22 @@ class GroceryStorage {
   static const _recentListsKey = 'grocery_recent_lists';
   static const _activeIndexKey = 'grocery_active_index';
 
-  static Future<void> saveAll() async {
-    final prefs = await SharedPreferences.getInstance();
-    
-    final activeJson = jsonEncode(AppState.lists.map((e) => e.toJson()).toList());
-    final recentJson = jsonEncode(AppState.recentLists.map((e) => e.toJson()).toList());
-    
-    await prefs.setString(_activeListsKey, activeJson);
-    await prefs.setString(_recentListsKey, recentJson);
-    await prefs.setInt(_activeIndexKey, AppState.activeIndex);
+  static Timer? _saveTimer;
+
+  static void saveAll() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 500), () async {
+      final prefs = await SharedPreferences.getInstance();
+      
+      final activeJson = jsonEncode(AppState.lists.map((e) => e.toJson()).toList());
+      final recentJson = jsonEncode(AppState.recentLists.map((e) => e.toJson()).toList());
+      
+      await prefs.setString(_activeListsKey, activeJson);
+      await prefs.setString(_recentListsKey, recentJson);
+      await prefs.setInt(_activeIndexKey, AppState.activeIndex);
+    });
   }
+
 
   static Future<void> loadAll() async {
     final prefs = await SharedPreferences.getInstance();

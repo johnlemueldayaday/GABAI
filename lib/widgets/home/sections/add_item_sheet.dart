@@ -5,7 +5,7 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import 'package:gabay/models/grocery_models.dart';
-import 'package:gabay/widgets/home/grocery_database.dart';
+import 'package:gabay/data/grocery_database.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:gabay/widgets/home/sections/add_item_category_tabs.dart';
 import 'package:gabay/widgets/home/sections/add_item_entry_controls.dart';
@@ -237,7 +237,7 @@ class AddItemSheetState extends State<AddItemSheet>
   }
 
   List<Map<String, dynamic>> get _allDatabase => [
-    ...kGroceryDatabase,
+    ...GroceryDatabase.items,
     ...widget.customItems,
   ];
 

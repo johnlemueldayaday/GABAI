@@ -1,10 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:gabay/config/ai_config.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/grocery_storage.dart';
-import 'package:gabay/services/chat_storage.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -126,27 +124,6 @@ class _SettingsPageState extends State<SettingsPage> {
               _SettingsCard(
                 children: [
                   _ActionTile(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    label: 'Clear Chat History',
-                    subtitle: 'Delete all Ramsey conversations',
-                    iconColor: kTextCharcoal,
-                    onTap: () => _confirmAction(
-                      context,
-                      title: 'Clear Chat History?',
-                      message:
-                          'All your Ramsey conversations will be deleted. This cannot be undone.',
-                      confirmLabel: 'Clear',
-                      confirmColor: Colors.red.shade400,
-                      onConfirm: () async {
-                        await ChatStorage.clear();
-                        if (context.mounted) {
-                          _showSnack(context, '💬 Chat history cleared');
-                        }
-                      },
-                    ),
-                  ),
-                  _Divider(),
-                  _ActionTile(
                     icon: Icons.delete_sweep_outlined,
                     label: 'Reset All Data',
                     subtitle: 'Clear all shopping lists and history',
@@ -160,7 +137,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       confirmColor: Colors.red.shade600,
                       onConfirm: () async {
                         await GroceryStorage.clear();
-                        await ChatStorage.clear();
                         if (context.mounted) {
                           _showSnack(context, '🗑️ All data has been reset');
                         }
@@ -178,13 +154,6 @@ class _SettingsPageState extends State<SettingsPage> {
                   _InfoTile(label: 'App Name', value: 'GABAY'),
                   _Divider(),
                   _InfoTile(label: 'Version', value: '1.0.0'),
-                  _Divider(),
-                  _InfoTile(
-                    label: 'AI Model',
-                    value: AIConfig.useLocalAi
-                        ? 'Local: ${AIConfig.localAiModel}'
-                        : 'Gemini 2.0 Flash Lite',
-                  ),
                 ],
               ),
               const SizedBox(height: 8),

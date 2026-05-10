@@ -10,12 +10,9 @@ import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/settings_service.dart';
-import 'package:gabay/services/scanner_service.dart';
-import 'package:gabay/config/ai_config.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:gabay/pages/recent.dart';
 import 'package:gabay/pages/splash_screen.dart';
+import 'package:gabay/data/grocery_database.dart';
 
 class GroceryApp extends StatelessWidget {
   const GroceryApp({super.key});
@@ -107,197 +104,6 @@ double _stepQty(double current, int dir, String unit) {
   }
 }
 
-// ─── Grocery Database ──────────────────────────────────────────────────────
-final List<Map<String, dynamic>> kGroceryDatabase = [
-  // Fridge
-  {'name': 'Chicken', 'price': 210.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Milk', 'price': 95.0, 'unit': 'L', 'category': 'Fridge'},
-  {'name': 'Eggs', 'price': 240.0, 'unit': 'dozen', 'category': 'Fridge'},
-  {'name': 'Beef', 'price': 420.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Pork', 'price': 340.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Butter', 'price': 110.0, 'unit': 'pcs', 'category': 'Fridge'},
-  {'name': 'Cheese', 'price': 165.0, 'unit': 'pcs', 'category': 'Fridge'},
-  {'name': 'Yogurt', 'price': 85.0, 'unit': 'pcs', 'category': 'Fridge'},
-  {'name': 'Tofu', 'price': 40.0, 'unit': 'pcs', 'category': 'Fridge'},
-  {'name': 'Tilapia', 'price': 130.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Bangus', 'price': 180.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Galunggong', 'price': 200.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Squid', 'price': 280.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Shrimp', 'price': 380.0, 'unit': 'kg', 'category': 'Fridge'},
-  {'name': 'Hotdog', 'price': 85.0, 'unit': 'pack', 'category': 'Fridge'},
-  {'name': 'Longganisa', 'price': 95.0, 'unit': 'pack', 'category': 'Fridge'},
-  {'name': 'Tocino', 'price': 110.0, 'unit': 'pack', 'category': 'Fridge'},
-  {'name': 'Corned Beef', 'price': 75.0, 'unit': 'can', 'category': 'Fridge'},
-  {'name': 'Luncheon Meat', 'price': 85.0, 'unit': 'can', 'category': 'Fridge'},
-
-  // Pantry
-  {'name': 'Rice', 'price': 58.0, 'unit': 'kg', 'category': 'Pantry'},
-  {'name': 'Pasta', 'price': 55.0, 'unit': 'pack', 'category': 'Pantry'},
-  {'name': 'Cooking Oil', 'price': 90.0, 'unit': 'L', 'category': 'Pantry'},
-  {'name': 'Flour', 'price': 52.0, 'unit': 'kg', 'category': 'Pantry'},
-  {'name': 'Sugar', 'price': 75.0, 'unit': 'kg', 'category': 'Pantry'},
-  {'name': 'Soy Sauce', 'price': 42.0, 'unit': 'bottle', 'category': 'Pantry'},
-  {'name': 'Vinegar', 'price': 32.0, 'unit': 'bottle', 'category': 'Pantry'},
-  {'name': 'Canned Tuna', 'price': 48.0, 'unit': 'can', 'category': 'Pantry'},
-  {'name': 'Noodles', 'price': 15.0, 'unit': 'pack', 'category': 'Pantry'},
-  {'name': 'Sardines', 'price': 28.0, 'unit': 'can', 'category': 'Pantry'},
-  {'name': 'Tomato Sauce', 'price': 22.0, 'unit': 'can', 'category': 'Pantry'},
-  {'name': 'Coconut Milk', 'price': 38.0, 'unit': 'can', 'category': 'Pantry'},
-  {'name': 'Bread', 'price': 55.0, 'unit': 'loaf', 'category': 'Pantry'},
-  {'name': 'Oats', 'price': 85.0, 'unit': 'pack', 'category': 'Pantry'},
-  {
-    'name': 'Instant Noodles',
-    'price': 12.0,
-    'unit': 'pack',
-    'category': 'Pantry',
-  },
-  {'name': 'Pancake Mix', 'price': 65.0, 'unit': 'pack', 'category': 'Pantry'},
-  {
-    'name': 'Oyster Sauce',
-    'price': 52.0,
-    'unit': 'bottle',
-    'category': 'Pantry',
-  },
-  {'name': 'Fish Sauce', 'price': 38.0, 'unit': 'bottle', 'category': 'Pantry'},
-  {'name': 'Ketchup', 'price': 48.0, 'unit': 'bottle', 'category': 'Pantry'},
-  {'name': 'Mayonnaise', 'price': 72.0, 'unit': 'jar', 'category': 'Pantry'},
-
-  // Vegetables
-  {
-    'name': 'Kangkong',
-    'price': 20.0,
-    'unit': 'bundle',
-    'category': 'Vegetables',
-  },
-  {'name': 'Pechay', 'price': 25.0, 'unit': 'bundle', 'category': 'Vegetables'},
-  {'name': 'Ampalaya', 'price': 60.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {'name': 'Sitaw', 'price': 50.0, 'unit': 'bundle', 'category': 'Vegetables'},
-  {'name': 'Okra', 'price': 55.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {'name': 'Eggplant', 'price': 60.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {'name': 'Tomato (kg)', 'price': 100.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {'name': 'Tomato (pc)', 'price': 10.0, 'unit': 'pcs', 'category': 'Vegetables'},
-  {'name': 'Potato', 'price': 90.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {'name': 'Carrot', 'price': 75.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {'name': 'Cabbage', 'price': 55.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {'name': 'Sayote', 'price': 40.0, 'unit': 'kg', 'category': 'Vegetables'},
-  {
-    'name': 'Malunggay',
-    'price': 15.0,
-    'unit': 'bundle',
-    'category': 'Vegetables',
-  },
-  {'name': 'Camote', 'price': 45.0, 'unit': 'kg', 'category': 'Vegetables'},
-
-  // Fruits
-  {'name': 'Banana', 'price': 60.0, 'unit': 'kg', 'category': 'Fruits'},
-  {'name': 'Mango', 'price': 120.0, 'unit': 'kg', 'category': 'Fruits'},
-  {'name': 'Papaya', 'price': 50.0, 'unit': 'kg', 'category': 'Fruits'},
-  {'name': 'Pineapple', 'price': 65.0, 'unit': 'pcs', 'category': 'Fruits'},
-  {'name': 'Watermelon', 'price': 35.0, 'unit': 'kg', 'category': 'Fruits'},
-  {'name': 'Calamansi', 'price': 80.0, 'unit': 'kg', 'category': 'Fruits'},
-  {'name': 'Avocado', 'price': 110.0, 'unit': 'kg', 'category': 'Fruits'},
-  {'name': 'Coconut', 'price': 40.0, 'unit': 'pcs', 'category': 'Fruits'},
-
-  // Spices
-  {'name': 'Salt', 'price': 20.0, 'unit': 'pack', 'category': 'Spices'},
-  {'name': 'Pepper', 'price': 50.0, 'unit': 'pack', 'category': 'Spices'},
-  {'name': 'Garlic (kg)', 'price': 140.0, 'unit': 'kg', 'category': 'Spices'},
-  {'name': 'Garlic (pc)', 'price': 5.0, 'unit': 'pcs', 'category': 'Spices'},
-  {'name': 'Onion (kg)', 'price': 120.0, 'unit': 'kg', 'category': 'Spices'},
-  {'name': 'Onion (pc)', 'price': 10.0, 'unit': 'pcs', 'category': 'Spices'},
-  {'name': 'Ginger', 'price': 100.0, 'unit': 'kg', 'category': 'Spices'},
-  {'name': 'Bay Leaves', 'price': 18.0, 'unit': 'pack', 'category': 'Spices'},
-  {'name': 'Paprika', 'price': 60.0, 'unit': 'pack', 'category': 'Spices'},
-  {'name': 'Chili', 'price': 150.0, 'unit': 'kg', 'category': 'Spices'},
-  {'name': 'Turmeric', 'price': 55.0, 'unit': 'pack', 'category': 'Spices'},
-  {
-    'name': 'Seasoning Granules',
-    'price': 12.0,
-    'unit': 'pack',
-    'category': 'Spices',
-  },
-
-  // Snacks
-  {'name': 'Chips', 'price': 52.0, 'unit': 'pack', 'category': 'Snacks'},
-  {'name': 'Biscuits', 'price': 42.0, 'unit': 'pack', 'category': 'Snacks'},
-  {'name': 'Chocolate', 'price': 78.0, 'unit': 'pcs', 'category': 'Snacks'},
-  {'name': 'Crackers', 'price': 38.0, 'unit': 'pack', 'category': 'Snacks'},
-  {'name': 'Nuts', 'price': 95.0, 'unit': 'pack', 'category': 'Snacks'},
-  {'name': 'Polvoron', 'price': 55.0, 'unit': 'pack', 'category': 'Snacks'},
-  {'name': 'Chicharon', 'price': 65.0, 'unit': 'pack', 'category': 'Snacks'},
-  {'name': 'Peanuts', 'price': 45.0, 'unit': 'pack', 'category': 'Snacks'},
-  {'name': 'Popcorn', 'price': 35.0, 'unit': 'pack', 'category': 'Snacks'},
-  {'name': 'Candy', 'price': 20.0, 'unit': 'pack', 'category': 'Snacks'},
-
-  // Drinks
-  {'name': 'Coffee', 'price': 145.0, 'unit': 'pack', 'category': 'Drinks'},
-  {'name': 'Tea', 'price': 72.0, 'unit': 'box', 'category': 'Drinks'},
-  {'name': 'Juice', 'price': 85.0, 'unit': 'L', 'category': 'Drinks'},
-  {'name': 'Soda', 'price': 55.0, 'unit': 'bottle', 'category': 'Drinks'},
-  {'name': 'Water', 'price': 30.0, 'unit': 'bottle', 'category': 'Drinks'},
-  {'name': 'Energy Drink', 'price': 45.0, 'unit': 'can', 'category': 'Drinks'},
-  {
-    'name': 'Chocolate Drink',
-    'price': 95.0,
-    'unit': 'pack',
-    'category': 'Drinks',
-  },
-  {
-    'name': 'Powdered Juice',
-    'price': 18.0,
-    'unit': 'pack',
-    'category': 'Drinks',
-  },
-  {
-    'name': 'Bottled Iced Tea',
-    'price': 38.0,
-    'unit': 'bottle',
-    'category': 'Drinks',
-  },
-  {
-    'name': 'Coconut Water',
-    'price': 45.0,
-    'unit': 'bottle',
-    'category': 'Drinks',
-  },
-
-  // Household
-  {
-    'name': 'Dishwashing Liquid',
-    'price': 58.0,
-    'unit': 'bottle',
-    'category': 'Household',
-  },
-  {
-    'name': 'Laundry Detergent',
-    'price': 75.0,
-    'unit': 'pack',
-    'category': 'Household',
-  },
-  {
-    'name': 'Fabric Conditioner',
-    'price': 65.0,
-    'unit': 'pack',
-    'category': 'Household',
-  },
-  {'name': 'Bleach', 'price': 42.0, 'unit': 'bottle', 'category': 'Household'},
-  {
-    'name': 'Toilet Paper',
-    'price': 55.0,
-    'unit': 'roll',
-    'category': 'Household',
-  },
-  {
-    'name': 'Trash Bags',
-    'price': 48.0,
-    'unit': 'pack',
-    'category': 'Household',
-  },
-  {'name': 'Soap', 'price': 28.0, 'unit': 'pcs', 'category': 'Household'},
-  {'name': 'Shampoo', 'price': 12.0, 'unit': 'sachet', 'category': 'Household'},
-  {'name': 'Toothpaste', 'price': 65.0, 'unit': 'pcs', 'category': 'Household'},
-  {'name': 'Alcohol', 'price': 72.0, 'unit': 'bottle', 'category': 'Household'},
-];
 
 // ─── HomePage ─────────────────────────────────────────────────────────────
 class HomePage extends StatefulWidget {
@@ -518,78 +324,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     if (result != null) {
       setState(() => item.price = result);
       GroceryStorage.saveAll();
-    }
-  }
-
-  void _scanProduct() async {
-    final status = await Permission.camera.request();
-    if (status.isDenied) return;
-
-    final picker = ImagePicker();
-    final image = await picker.pickImage(source: ImageSource.camera);
-    if (image == null || !mounted) return;
-
-    if (!AIConfig.hasGeminiApiKey) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Gemini API Key missing. Please check your setup.'),
-            backgroundColor: Colors.orange,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-      return;
-    }
-
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => Center(
-        child: CircularProgressIndicator(color: kPrimary),
-      ),
-    );
-
-    final result = await ScannerService.scanProduct(image);
-
-    if (!mounted) return;
-    Navigator.pop(context); // Close loading
-
-    if (result != null) {
-      final name = result['name'] ?? 'Unknown Product';
-      final price = (result['price'] as num?)?.toDouble() ?? 0.0;
-
-      setState(() {
-        if (AppState.currentList != null) {
-          AppState.currentList!.items.add(GroceryItem(
-            id: DateTime.now().millisecondsSinceEpoch.toString(),
-            name: name,
-            price: price,
-            category: 'All',
-          ));
-        }
-      });
-      GroceryStorage.saveAll();
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Added $name (₱$price)'),
-            backgroundColor: kPrimary,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not detect product info.'),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
-      }
     }
   }
 
@@ -1008,13 +742,15 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _StickyBudgetDelegate(
-                    child: _BudgetCard(
-                      budget: _budget,
-                      total: _checkedTotal,
-                      plannedTotal: _plannedTotal,
-                      left: _left,
-                      progress: _progress,
-                      onTap: _editBudget,
+                    child: RepaintBoundary(
+                      child: _BudgetCard(
+                        budget: _budget,
+                        total: _checkedTotal,
+                        plannedTotal: _plannedTotal,
+                        left: _left,
+                        progress: _progress,
+                        onTap: _editBudget,
+                      ),
                     ),
                   ),
                 ),
@@ -1027,17 +763,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                 else
                   SliverList(
                     delegate: SliverChildBuilderDelegate((context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12),
-                        child: _ItemTile(
-                          item: _items[index],
-                          onToggle: () => _toggleItem(_items[index]),
-                          onDelete: () => _deleteItem(_items[index]),
-                          onQtyChange: (delta) =>
-                              _changeQty(_items[index], delta),
-                          onPriceEdit: () => _editPrice(_items[index]),
-                          onUnitEdit: () => _showUnitPicker(_items[index]),
-                          onNameEdit: () => _editItemName(_items[index]),
+                      return RepaintBoundary(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _ItemTile(
+                            item: _items[index],
+                            onToggle: () => _toggleItem(_items[index]),
+                            onDelete: () => _deleteItem(_items[index]),
+                            onQtyChange: (delta) =>
+                                _changeQty(_items[index], delta),
+                            onPriceEdit: () => _editPrice(_items[index]),
+                            onUnitEdit: () => _showUnitPicker(_items[index]),
+                            onNameEdit: () => _editItemName(_items[index]),
+                          ),
                         ),
                       );
                     }, childCount: _items.length),
@@ -1054,11 +792,6 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          _BouncingFAB(
-            onPressed: _scanProduct,
-            icon: Icons.camera_alt_rounded,
-          ),
-          const SizedBox(height: 16),
           _BouncingFAB(
             onPressed: _showAddItemSheet,
             icon: Icons.add,
@@ -1895,7 +1628,7 @@ class _AddItemSheetState extends State<_AddItemSheet>
     final map = <String, Map<String, dynamic>>{};
     
     // 1. Start with base DB
-    for (final item in kGroceryDatabase) {
+    for (final item in GroceryDatabase.items) {
       map[item['name'].toString().toLowerCase()] = item;
     }
     

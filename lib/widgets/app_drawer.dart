@@ -4,9 +4,9 @@ import 'package:google_fonts/google_fonts.dart';
 import '../pages/home.dart';
 import '../pages/recent.dart';
 import '../pages/analytics.dart';
-import '../pages/ramsey.dart';
 import '../pages/settings.dart';
 import '../pages/bills.dart';
+import '../pages/ramsey_chat.dart';
 import '../config/app_theme.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -113,7 +113,7 @@ class AppDrawer extends StatelessWidget {
             },
           ),
           _DrawerItem(
-            icon: Icons.auto_awesome_rounded,
+            icon: Icons.restaurant_menu_rounded,
             label: 'Ramsey',
             isSelected: currentPage == 'Ramsey',
             onTap: () {
@@ -121,7 +121,7 @@ class AppDrawer extends StatelessWidget {
               if (currentPage != 'Ramsey') {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (_) => const RamseyPage()),
+                  MaterialPageRoute(builder: (_) => const RamseyChatPage()),
                 );
               }
             },
