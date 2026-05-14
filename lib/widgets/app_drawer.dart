@@ -1,9 +1,9 @@
 // Force IDE re-parse
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import '../pages/home.dart';
+import '../pages/dashboard.dart';
+import '../pages/cart.dart' show CartPage;
 import '../pages/recent.dart';
-import '../pages/analytics.dart';
 import '../pages/settings.dart';
 import '../pages/bills.dart';
 import '../pages/ramsey_chat.dart';
@@ -57,15 +57,29 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
           _DrawerItem(
-            icon: Icons.shopping_cart_outlined,
-            label: 'Shopping',
-            isSelected: currentPage == 'Shopping',
+            icon: Icons.insights_rounded,
+            label: 'Dashboard',
+            isSelected: currentPage == 'Dashboard',
             onTap: () {
               Navigator.pop(context);
-              if (currentPage != 'Shopping') {
+              if (currentPage != 'Dashboard') {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  MaterialPageRoute(builder: (_) => const DashboardPage()),
+                );
+              }
+            },
+          ),
+          _DrawerItem(
+            icon: Icons.shopping_cart_outlined,
+            label: 'Cart',
+            isSelected: currentPage == 'Cart',
+            onTap: () {
+              Navigator.pop(context);
+              if (currentPage != 'Cart') {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const CartPage()),
                 );
               }
             },
@@ -80,20 +94,6 @@ class AppDrawer extends StatelessWidget {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(builder: (_) => const RecentPage()),
-                );
-              }
-            },
-          ),
-          _DrawerItem(
-            icon: Icons.insights_rounded,
-            label: 'Insights',
-            isSelected: currentPage == 'Insights',
-            onTap: () {
-              Navigator.pop(context);
-              if (currentPage != 'Insights') {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AnalyticsPage()),
                 );
               }
             },

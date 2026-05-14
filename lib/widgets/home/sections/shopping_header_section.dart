@@ -27,7 +27,7 @@ class ShoppingHeaderSection extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              'SHOPPING',
+              'CART',
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -45,10 +45,17 @@ class ShoppingHeaderSection extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       child: Row(
                         children: [
-                          Icon(Icons.delete_outline_rounded, size: 16, color: Colors.red),
+                          Icon(
+                            Icons.delete_outline_rounded,
+                            size: 16,
+                            color: Colors.red,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             'Clear',
@@ -72,10 +79,17 @@ class ShoppingHeaderSection extends StatelessWidget {
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
                       child: Row(
                         children: [
-                          Icon(Icons.check_circle_outline_rounded, size: 16, color: kPrimary),
+                          Icon(
+                            Icons.check_circle_outline_rounded,
+                            size: 16,
+                            color: kPrimary,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             'Finish',

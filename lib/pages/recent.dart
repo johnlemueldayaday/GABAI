@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:gabay/pages/home.dart';
+import 'package:gabay/pages/cart.dart' show CartDetailPage;
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
@@ -22,7 +22,9 @@ class _RecentPageState extends State<RecentPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.8),
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
         padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
         decoration: BoxDecoration(
           color: kCardBg,
@@ -39,7 +41,11 @@ class _RecentPageState extends State<RecentPage> {
                   Expanded(
                     child: Text(
                       '${recent.name} Receipt',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: kTextCharcoal),
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                        color: kTextCharcoal,
+                      ),
                     ),
                   ),
                   IconButton(
@@ -54,7 +60,10 @@ class _RecentPageState extends State<RecentPage> {
             Divider(color: kBorder, height: 1),
             Flexible(
               child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 16,
+                ),
                 itemCount: recent.items.length,
                 shrinkWrap: true,
                 separatorBuilder: (_, _) => const SizedBox(height: 12),
@@ -63,18 +72,42 @@ class _RecentPageState extends State<RecentPage> {
                   return Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: kMutedBg.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(6)),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: kMutedBg.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
                         child: Text(
-                          '${item.qty == item.qty.truncateToDouble() ? item.qty.toInt() : item.qty} ${item.unit}', 
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: kTextCharcoal)
+                          '${item.qty == item.qty.truncateToDouble() ? item.qty.toInt() : item.qty} ${item.unit}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: kTextCharcoal,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: Text(item.name, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kTextCharcoal)),
+                        child: Text(
+                          item.name,
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: kTextCharcoal,
+                          ),
+                        ),
                       ),
-                      Text('₱${getItemTotal(item.price, item.qty, item.unit).toStringAsFixed(2)}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: kTextCharcoal)),
+                      Text(
+                        '₱${getItemTotal(item.price, item.qty, item.unit).toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: kTextCharcoal,
+                        ),
+                      ),
                     ],
                   );
                 },
@@ -233,7 +266,11 @@ class _RecentPageState extends State<RecentPage> {
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    Icon(Icons.edit_outlined, size: 16, color: kMuted),
+                                    Icon(
+                                      Icons.edit_outlined,
+                                      size: 16,
+                                      color: kMuted,
+                                    ),
                                   ],
                                 ),
                               ),
@@ -242,7 +279,11 @@ class _RecentPageState extends State<RecentPage> {
                           const SizedBox(width: 12),
                           IconButton(
                             onPressed: () => _showItemsSheet(context, recent),
-                            icon: Icon(Icons.remove_red_eye_outlined, color: kTextCharcoal, size: 24),
+                            icon: Icon(
+                              Icons.remove_red_eye_outlined,
+                              color: kTextCharcoal,
+                              size: 24,
+                            ),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(minWidth: 32),
                           ),
@@ -288,7 +329,7 @@ class _RecentPageState extends State<RecentPage> {
                             Navigator.pushReplacement(
                               context,
                               MaterialPageRoute(
-                                builder: (_) => const HomePage(),
+                                builder: (_) => const CartDetailPage(),
                               ),
                             );
                           },

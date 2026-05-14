@@ -104,16 +104,540 @@ double _stepQty(double current, int dir, String unit) {
   }
 }
 
-
-// ─── HomePage ─────────────────────────────────────────────────────────────
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+// ─── ShoppingPage ─────────────────────────────────────────────────────────────
+class CartPage extends StatefulWidget {
+  const CartPage({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<CartPage> createState() => _CartPageState();
 }
 
-class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
+class _CartPageState extends State<CartPage> {
+  void _openCart(int index) {
+    AppState.activeIndex = index;
+    GroceryStorage.saveAll();
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CartDetailPage()),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  Future<void> _showCreateCartSheet() async {
+    final created = await showModalBottomSheet<GroceryList>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _CreateCartSheet(),
+    );
+
+    if (created == null) return;
+
+    setState(() {
+      AppState.lists.add(created);
+      AppState.activeIndex = AppState.lists.length - 1;
+    });
+    GroceryStorage.saveAll();
+
+    if (!mounted) return;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const CartDetailPage()),
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: kBackground,
+      drawer: const AppDrawer(currentPage: 'Cart'),
+      appBar: AppBar(
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Icon(Icons.menu_rounded, color: kTextCharcoal),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        title: const Text('My Carts'),
+      ),
+      body: AppState.lists.isEmpty
+          ? _EmptyCartsView(onAddCart: _showCreateCartSheet)
+          : ListView.separated(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 96),
+              itemCount: AppState.lists.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
+              itemBuilder: (context, index) {
+                final cart = AppState.lists[index];
+                final total = cart.items.fold(
+                  0.0,
+                  (sum, item) =>
+                      sum + getItemTotal(item.price, item.qty, item.unit),
+                );
+                return _CartTile(
+                  cart: cart,
+                  total: total,
+                  onTap: () => _openCart(index),
+                );
+              },
+            ),
+      floatingActionButton: AppState.lists.isEmpty
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _showCreateCartSheet,
+              backgroundColor: kPrimary,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.add),
+              label: const Text('Add Cart'),
+            ),
+    );
+  }
+}
+
+class _EmptyCartsView extends StatelessWidget {
+  final VoidCallback onAddCart;
+  const _EmptyCartsView({required this.onAddCart});
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 30),
+        child: Column(
+          children: [
+            const Spacer(flex: 2),
+            SizedBox(
+              width: 230,
+              height: 180,
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  Positioned(
+                    right: 16,
+                    bottom: 22,
+                    child: Icon(
+                      Icons.shopping_cart_outlined,
+                      size: 88,
+                      color: kTextCharcoal.withValues(alpha: 0.22),
+                    ),
+                  ),
+                  Positioned(
+                    left: 46,
+                    bottom: 18,
+                    child: Icon(
+                      Icons.search_rounded,
+                      size: 118,
+                      color: kPrimary.withValues(alpha: 0.72),
+                    ),
+                  ),
+                  Positioned(
+                    left: 42,
+                    top: 34,
+                    child: Icon(
+                      Icons.person_search_rounded,
+                      size: 82,
+                      color: kTextCharcoal.withValues(alpha: 0.82),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            Text(
+              'Start by creating a cart',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: kTextCharcoal,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Your shopping carts will be shown here. Start by adding a new cart.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 12,
+                height: 1.35,
+                fontWeight: FontWeight.w500,
+                color: kMuted,
+              ),
+            ),
+            const SizedBox(height: 22),
+            SizedBox(
+              width: double.infinity,
+              height: 48,
+              child: ElevatedButton.icon(
+                onPressed: onAddCart,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Add Cart'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kPrimary,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+            const Spacer(flex: 3),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CartTile extends StatelessWidget {
+  final GroceryList cart;
+  final double total;
+  final VoidCallback onTap;
+  const _CartTile({
+    required this.cart,
+    required this.total,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: kCardBg,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: [kShadowSoft],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: kPrimary.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.shopping_cart_outlined, color: kPrimary),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    cart.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: kTextCharcoal,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    cart.store.trim().isEmpty
+                        ? '${cart.items.length} items'
+                        : '${cart.items.length} items • ${cart.store}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: kMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  'â‚±${total.toStringAsFixed(2)}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: kTextCharcoal,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Icon(Icons.chevron_right_rounded, color: kMuted),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateCartSheet extends StatefulWidget {
+  const _CreateCartSheet();
+
+  @override
+  State<_CreateCartSheet> createState() => _CreateCartSheetState();
+}
+
+class _CreateCartSheetState extends State<_CreateCartSheet> {
+  final _nameCtrl = TextEditingController(text: 'New cart');
+  final _budgetCtrl = TextEditingController();
+  final _storeCtrl = TextEditingController();
+  final _nameFocus = FocusNode();
+  final _budgetFocus = FocusNode();
+  final _storeFocus = FocusNode();
+  late final List<String> _storeOptions;
+
+  bool get _hasBudget {
+    final text = _budgetCtrl.text.trim();
+    final value = double.tryParse(text);
+    return text.isNotEmpty && value != null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _storeOptions = _storeHistory();
+    if (_storeOptions.isNotEmpty) {
+      _storeCtrl.text = _storeOptions.first;
+    }
+    _budgetCtrl.addListener(() => setState(() {}));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nameFocus.requestFocus();
+    });
+  }
+
+  List<String> _storeHistory() {
+    final lists = [...AppState.lists, ...AppState.recentLists]
+      ..sort((a, b) => b.date.compareTo(a.date));
+    final stores = <String>[];
+    for (final list in lists) {
+      final store = list.store.trim();
+      if (store.isNotEmpty && !stores.contains(store)) {
+        stores.add(store);
+      }
+    }
+    return stores;
+  }
+
+  @override
+  void dispose() {
+    _nameFocus.dispose();
+    _budgetFocus.dispose();
+    _storeFocus.dispose();
+    _nameCtrl.dispose();
+    _budgetCtrl.dispose();
+    _storeCtrl.dispose();
+    super.dispose();
+  }
+
+  void _saveCart() {
+    final name = _nameCtrl.text.trim().isEmpty
+        ? 'New cart'
+        : _nameCtrl.text.trim();
+    if (!_hasBudget) return;
+    final budget = double.parse(_budgetCtrl.text.trim());
+    Navigator.pop(
+      context,
+      GroceryList(name, budget: budget, store: _storeCtrl.text.trim()),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sheetHeight = MediaQuery.of(context).size.height * 0.5;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SizedBox(
+        height: sheetHeight,
+        child: Container(
+          padding: EdgeInsets.fromLTRB(
+            24,
+            10,
+            24,
+            24 + MediaQuery.of(context).padding.bottom,
+          ),
+          decoration: BoxDecoration(
+            color: kCardBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.max,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: kBorder,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Text(
+                    'Create New Cart',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: kTextCharcoal,
+                    ),
+                  ),
+                  const Spacer(),
+                  TextButton(
+                    onPressed: () {},
+                    style: TextButton.styleFrom(foregroundColor: kPrimary),
+                    child: const Text('Templates'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _CreateCartField(
+                label: 'Name',
+                child: TextField(
+                  controller: _nameCtrl,
+                  focusNode: _nameFocus,
+                  autofocus: true,
+                  onTap: () => _nameFocus.requestFocus(),
+                  textAlign: TextAlign.end,
+                  decoration: const InputDecoration(
+                    border: InputBorder.none,
+                    hintText: 'New cart',
+                  ),
+                ),
+              ),
+              _CreateCartField(
+                label: 'Budget',
+                child: TextField(
+                  controller: _budgetCtrl,
+                  focusNode: _budgetFocus,
+                  onTap: () => _budgetFocus.requestFocus(),
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  textAlign: TextAlign.end,
+                  decoration: InputDecoration(
+                    border: InputBorder.none,
+                    hintText: 'â‚± 0.00',
+                    hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.65)),
+                  ),
+                ),
+              ),
+              _CreateCartField(
+                label: 'Store',
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return DropdownMenu<String>(
+                      controller: _storeCtrl,
+                      focusNode: _storeFocus,
+                      width: constraints.maxWidth,
+                      requestFocusOnTap: true,
+                      enableFilter: true,
+                      enableSearch: true,
+                      trailingIcon: Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: kMuted,
+                      ),
+                      selectedTrailingIcon: Icon(
+                        Icons.keyboard_arrow_up_rounded,
+                        color: kMuted,
+                      ),
+                      textStyle: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: kTextCharcoal,
+                      ),
+                      inputDecorationTheme: const InputDecorationTheme(
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      dropdownMenuEntries: _storeOptions
+                          .map(
+                            (store) => DropdownMenuEntry<String>(
+                              value: store,
+                              label: store,
+                            ),
+                          )
+                          .toList(),
+                      onSelected: (value) {
+                        if (value != null) _storeCtrl.text = value;
+                      },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 14),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton(
+                  onPressed: _hasBudget ? _saveCart : null,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kPrimary,
+                    disabledBackgroundColor: kMutedBg,
+                    foregroundColor: Colors.white,
+                    disabledForegroundColor: kMuted,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Save Cart'),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CreateCartField extends StatelessWidget {
+  final String label;
+  final Widget child;
+  const _CreateCartField({required this.label, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: kTextCharcoal,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(child: child),
+        ],
+      ),
+    );
+  }
+}
+
+class CartDetailPage extends StatefulWidget {
+  const CartDetailPage({super.key});
+
+  @override
+  State<CartDetailPage> createState() => _CartDetailPageState();
+}
+
+class _CartDetailPageState extends State<CartDetailPage>
+    with TickerProviderStateMixin {
   String get _listName => AppState.currentList?.name ?? _fallbackName;
   set _listName(String v) {
     if (AppState.currentList != null) {
@@ -151,8 +675,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     });
   }
 
-  double get _checkedTotal =>
-      _items.where((i) => i.isDone).fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
+  double get _checkedTotal => _items
+      .where((i) => i.isDone)
+      .fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
   double get _plannedTotal =>
       _items.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
   double get _left => _budget - _checkedTotal;
@@ -169,12 +694,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Rename List',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: kTextCharcoal,
+          ),
         ),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500, color: kTextCharcoal),
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w500,
+            color: kTextCharcoal,
+          ),
           decoration: InputDecoration(
             hintText: 'List name',
             hintStyle: TextStyle(color: kMuted),
@@ -212,12 +743,18 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Edit Name',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: kTextCharcoal,
+          ),
         ),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500, color: kTextCharcoal),
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w500,
+            color: kTextCharcoal,
+          ),
           decoration: InputDecoration(
             hintText: 'Item name',
             hintStyle: TextStyle(color: kMuted),
@@ -438,7 +975,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       return;
     }
 
-    final double totalSpent = checkedItems.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
+    final double totalSpent = checkedItems.fold(
+      0.0,
+      (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
+    );
 
     showDialog(
       context: context,
@@ -446,8 +986,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          'Finish Shopping?',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
+          'Finish Cart?',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: kTextCharcoal,
+          ),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -494,7 +1037,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             const SizedBox(height: 12),
             Text(
               '${checkedItems.length} items will be moved to history. Unchecked items will stay in your list.',
-              style: TextStyle(fontSize: 12, color: kTextCharcoal.withValues(alpha: 0.5), fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 12,
+                color: kTextCharcoal.withValues(alpha: 0.5),
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -507,8 +1054,11 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           TextButton(
             onPressed: () {
               setState(() {
-                final recent = GroceryList(_listName);
-                recent.budget = _budget;
+                final recent = GroceryList(
+                  _listName,
+                  budget: _budget,
+                  store: AppState.currentList?.store ?? '',
+                );
                 recent.items = checkedItems
                     .map(
                       (e) => GroceryItem(
@@ -522,17 +1072,17 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                       ),
                     )
                     .toList();
-                
+
                 AppState.recentLists.insert(0, recent);
 
                 // Remove only the finished items from current list
                 _items.removeWhere((i) => i.isDone);
-                
+
                 GroceryStorage.saveAll();
               });
-              
+
               Navigator.pop(context);
-              
+
               // Navigate to Recent Page
               Navigator.push(
                 context,
@@ -543,7 +1093,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               foregroundColor: Colors.white,
               backgroundColor: kPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('Finish & Save'),
           ),
@@ -561,7 +1113,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Clear All Items?',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: kTextCharcoal,
+          ),
         ),
         content: Text(
           'This will permanently remove all items from this list.',
@@ -603,9 +1158,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('Shopping'),
+        title: const Text('Cart'),
       ),
-      drawer: const AppDrawer(currentPage: 'Shopping'),
+      drawer: const AppDrawer(currentPage: 'Cart'),
       body: AnimatedOpacity(
         duration: const Duration(milliseconds: 600),
         opacity: _isInit ? 1.0 : 0.0,
@@ -627,7 +1182,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            'SHOPPING',
+                            'CART',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.w700,
@@ -727,11 +1282,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                               ),
                             ),
                             const SizedBox(width: 10),
-                            Icon(
-                              Icons.edit_outlined,
-                              size: 20,
-                              color: kMuted,
-                            ),
+                            Icon(Icons.edit_outlined, size: 20, color: kMuted),
                           ],
                         ),
                       ),
@@ -791,12 +1342,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          _BouncingFAB(
-            onPressed: _showAddItemSheet,
-            icon: Icons.add,
-          ),
-        ],
+        children: [_BouncingFAB(onPressed: _showAddItemSheet, icon: Icons.add)],
       ),
     );
   }
@@ -813,7 +1359,11 @@ class _StickyBudgetDelegate extends SliverPersistentHeaderDelegate {
   double get maxExtent => 220;
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
     return Container(
       color: kBackground, // Match the page background
       padding: const EdgeInsets.only(bottom: 12),
@@ -1475,9 +2025,10 @@ class _AddItemSheetState extends State<_AddItemSheet>
       vsync: this,
       duration: const Duration(milliseconds: 1100),
     );
-    _micPulseScale = Tween<double>(begin: 1.0, end: 1.08).animate(
-      CurvedAnimation(parent: _micPulseCtrl, curve: Curves.easeInOut),
-    );
+    _micPulseScale = Tween<double>(
+      begin: 1.0,
+      end: 1.08,
+    ).animate(CurvedAnimation(parent: _micPulseCtrl, curve: Curves.easeInOut));
     _sheetAnimCtrl.forward();
     _initSpeech();
   }
@@ -1626,12 +2177,12 @@ class _AddItemSheetState extends State<_AddItemSheet>
 
   List<Map<String, dynamic>> get _allDatabase {
     final map = <String, Map<String, dynamic>>{};
-    
+
     // 1. Start with base DB
     for (final item in GroceryDatabase.items) {
       map[item['name'].toString().toLowerCase()] = item;
     }
-    
+
     // 2. Overwrite with history (more relevant prices/units)
     for (final item in _historyItems) {
       map[item['name'].toString().toLowerCase()] = item;
@@ -1647,7 +2198,7 @@ class _AddItemSheetState extends State<_AddItemSheet>
 
   List<Map<String, dynamic>> get _filteredSuggestions {
     final query = _searchCtrl.text.trim().toLowerCase();
-    
+
     // Get list of names from history in order of recency
     final historyNames = <String>[];
     for (final list in AppState.recentLists) {
@@ -1668,22 +2219,26 @@ class _AddItemSheetState extends State<_AddItemSheet>
     filtered.sort((a, b) {
       final aName = a['name'].toString();
       final bName = b['name'].toString();
-      
+
       // Check session recency first
       final aSessionIndex = widget.recentItemNames.indexOf(aName);
       final bSessionIndex = widget.recentItemNames.indexOf(bName);
-      
+
       // Check history recency second
       final aHistoryIndex = historyNames.indexOf(aName);
       final bHistoryIndex = historyNames.indexOf(bName);
 
       // Prioritize session recency (items just added to the current list)
-      if (aSessionIndex != -1 && bSessionIndex != -1) return aSessionIndex.compareTo(bSessionIndex);
+      if (aSessionIndex != -1 && bSessionIndex != -1) {
+        return aSessionIndex.compareTo(bSessionIndex);
+      }
       if (aSessionIndex != -1) return -1;
       if (bSessionIndex != -1) return 1;
 
       // Then prioritize history recency
-      if (aHistoryIndex != -1 && bHistoryIndex != -1) return aHistoryIndex.compareTo(bHistoryIndex);
+      if (aHistoryIndex != -1 && bHistoryIndex != -1) {
+        return aHistoryIndex.compareTo(bHistoryIndex);
+      }
       if (aHistoryIndex != -1) return -1;
       if (bHistoryIndex != -1) return 1;
 
@@ -1919,7 +2474,9 @@ class _AddItemSheetState extends State<_AddItemSheet>
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                            color: _isListening ? kPrimary : Colors.red.shade400,
+                            color: _isListening
+                                ? kPrimary
+                                : Colors.red.shade400,
                             shape: BoxShape.circle,
                           ),
                         ),

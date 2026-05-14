@@ -17,7 +17,7 @@ class HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
           onPressed: () => Scaffold.of(context).openDrawer(),
         ),
       ),
-      title: const Text('Shopping'),
+      title: const Text('Cart'),
     );
   }
 }

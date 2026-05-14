@@ -280,7 +280,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       'bottle',
       'can',
       'box',
-      'bundle'
+      'bundle',
     ];
     final result = await showModalBottomSheet<String>(
       context: context,
@@ -304,11 +304,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               ),
             ),
             const SizedBox(height: 20),
-            Text('Select Unit',
-                style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: kTextCharcoal)),
+            Text(
+              'Select Unit',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: kTextCharcoal,
+              ),
+            ),
             const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -323,16 +326,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 10),
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
                       decoration: BoxDecoration(
                         color: isSelected
                             ? kPrimary
                             : kMutedBg.withValues(alpha: 0.3),
                         borderRadius: BorderRadius.circular(14),
                         border: Border.all(
-                            color: isSelected
-                                ? kPrimary
-                                : kBorder.withValues(alpha: 0.5)),
+                          color: isSelected
+                              ? kPrimary
+                              : kBorder.withValues(alpha: 0.5),
+                        ),
                       ),
                       child: Text(
                         u,
@@ -372,8 +378,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       return;
     }
 
-    final double totalSpent =
-        checkedItems.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit));
+    final double totalSpent = checkedItems.fold(
+      0.0,
+      (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
+    );
 
     showDialog(
       context: context,
@@ -382,7 +390,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Finish Shopping?',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: kTextCharcoal,
+          ),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -430,7 +441,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             Text(
               '${checkedItems.length} items will be moved to history. Unchecked items will stay in your list.',
               style: TextStyle(
-                  fontSize: 12, color: kTextCharcoal.withValues(alpha: 0.5), fontWeight: FontWeight.w500),
+                fontSize: 12,
+                color: kTextCharcoal.withValues(alpha: 0.5),
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ],
         ),
@@ -480,7 +494,8 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
               backgroundColor: kPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
+                borderRadius: BorderRadius.circular(12),
+              ),
             ),
             child: const Text('Finish & Save'),
           ),
@@ -498,7 +513,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
           'Clear All Items?',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal),
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: kTextCharcoal,
+          ),
         ),
         content: Text(
           'This will permanently remove all items from this list.',
@@ -533,7 +551,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: const HomeAppBar(),
-      drawer: const AppDrawer(currentPage: 'Shopping'),
+      drawer: const AppDrawer(currentPage: 'Cart'),
       body: HomeBody(
         isInit: _isInit,
         listName: _listName,
