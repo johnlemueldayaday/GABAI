@@ -69,9 +69,11 @@ class GroceryList {
 class AppState {
   static List<GroceryList> lists = [];
   static List<GroceryList> recentLists = [];
+  static List<GroceryItem> inventory = [];
   static int activeIndex = -1;
   static GroceryList? get currentList =>
       activeIndex >= 0 && activeIndex < lists.length
           ? lists[activeIndex]
           : null;
 }
+

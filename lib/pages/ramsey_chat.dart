@@ -56,16 +56,16 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
         label: 'Suggest a dish based on my budget.',
       ),
       const _QuickQuestionItem(
+        icon: Icons.kitchen_rounded,
+        label: 'What can I cook with my groceries?',
+      ),
+      const _QuickQuestionItem(
         icon: Icons.receipt_long_rounded,
         label: 'Do I have any upcoming bills?',
       ),
       const _QuickQuestionItem(
         icon: Icons.insights_rounded,
-        label: 'Show my spending analytics.',
-      ),
-      const _QuickQuestionItem(
-        icon: Icons.calendar_month_rounded,
-        label: 'Generate a weekly meal plan.',
+        label: 'How much did I spend today?',
       ),
     ];
   }
@@ -230,8 +230,7 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
 
                 // 3. Starter Questions (only if 1 or fewer messages)
                 if (!_isTyping && _savedMessages.length <= 1) {
-                  if (remaining == 0) return _QuickQuestions(questions: _starterQuestions, onTap: _send);
-                  remaining--;
+                  if (remaining == 0) return _QuickQuestions(questions: _starterQuestions, isInitial: true, onTap: _send);
                 }
 
                 // 4. Quick Replies
@@ -409,13 +408,15 @@ class _MessageBubble extends StatelessWidget {
 class _QuickQuestions extends StatelessWidget {
   final List<_QuickQuestionItem> questions;
   final ValueChanged<String> onTap;
+  final bool isInitial;
 
-  const _QuickQuestions({required this.questions, required this.onTap});
+  const _QuickQuestions({required this.questions, required this.onTap, this.isInitial = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
+      margin: isInitial ? const EdgeInsets.only(top: 130) : EdgeInsets.zero,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -515,7 +516,7 @@ class _QuestionPill extends StatelessWidget {
               Flexible(
                 child: Text(
                   label,
-                  textAlign: TextAlign.right,
+                  textAlign: TextAlign.left,
                   style: GoogleFonts.inter(
                     color: kPrimary,
                     fontSize: 14,

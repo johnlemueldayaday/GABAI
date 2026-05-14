@@ -3,8 +3,9 @@ import 'dart:math';
 import 'package:gabay/data/grocery_database.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/models/bill_models.dart';
+import 'package:gabay/services/grocery_storage.dart';
 
-enum RamseyStep { mealPrompt, cravingPrompt, dishPrompt }
+enum RamseyStep { mealPrompt, cravingPrompt, dishPrompt, budgetPrompt, confirmCooking }
 
 class _SpendingSnapshot {
   final String label;
@@ -56,6 +57,7 @@ class RamseyCookingAssistant {
   RamseyStep _step = RamseyStep.mealPrompt;
   String? _meal;
   String? _craving;
+  RamseyDish? _lastSuggestedDish;
   List<RamseyDish> _currentOptions = [];
   List<String> _lastDishNames = [];
   _SpendingSnapshot? _lastSpending;
@@ -70,8 +72,13 @@ class RamseyCookingAssistant {
         "I can help you track bills, manage your budget, analyze your spending habits, "
         "and suggest what to cook based on your budget or recent groceries. "
         "How can I help you today?",
+        quickReplies: [
+          'What can I cook with my groceries?',
+          'Suggest a dish based on my budget.',
+          'Do I have any upcoming bills?',
+          'How much did I spend today?',
+        ],
       );
-
   bool get hasRecentFridgeItems => _recentIngredientKeywords().isNotEmpty;
 
   RamseyReply handle(String rawInput) {
@@ -82,8 +89,15 @@ class RamseyCookingAssistant {
       return _spendingBreakdownReply(_lastSpending!);
     }
 
+    if (_isInventoryUpdate(normalized)) {
+      return _handleInventoryUpdate(normalized);
+    }
+
     if (_isSpendingAsk(normalized)) {
       _resetCooking();
+      if (_needsSpendingRange(normalized)) {
+        return _askSpendingRangeReply();
+      }
       return _spendingSummaryReply(normalized);
     }
 
@@ -93,8 +107,14 @@ class RamseyCookingAssistant {
         _meal = RamseyCookingAssistant.detectMeal(DateTime.now());
         _currentOptions = _pickDishesByBudget(amount);
         _step = RamseyStep.dishPrompt;
-        return _dishOptionsReply();
+        return _budgetDishOptionsReply(amount);
       }
+    }
+
+    if (_isBudgetBasedSuggestionAsk(normalized)) {
+      _resetCooking();
+      _step = RamseyStep.budgetPrompt;
+      return _askForBudgetReply();
     }
 
     if (_isMealPlanAsk(normalized)) {
@@ -108,6 +128,10 @@ class RamseyCookingAssistant {
 
     if (_isBillAsk(normalized)) {
       return _billsSummaryReply();
+    }
+
+    if (_isFridgeCookingAsk(normalized)) {
+      return _fridgeCookingReply();
     }
 
     if (_isBudgetAsk(normalized)) {
@@ -169,6 +193,31 @@ class RamseyCookingAssistant {
       return _dishOptionsReply();
     }
 
+    if (_step == RamseyStep.budgetPrompt) {
+      final amount = _parseAmount(normalized);
+      if (amount != null) {
+        _meal = RamseyCookingAssistant.detectMeal(DateTime.now());
+        _currentOptions = _pickDishesByBudget(amount);
+        _step = RamseyStep.dishPrompt;
+        return _budgetDishOptionsReply(amount);
+      }
+      // If they didn't provide a number, ask again
+      return _askForBudgetReply();
+    }
+
+    if (_step == RamseyStep.confirmCooking) {
+      if (normalized == 'yes' || normalized.contains('yep') || normalized.contains('used')) {
+        return _confirmCookingReply(true);
+      }
+      if (normalized == 'no' || normalized.contains('not yet') || normalized.contains('nope')) {
+        return _confirmCookingReply(false);
+      }
+      return const RamseyReply(
+        "Did you cook the dish? Reply 'yes' if you want me to subtract the used ingredients from your virtual fridge.",
+        quickReplies: ['Yes', 'No'],
+      );
+    }
+
     if (_step == RamseyStep.dishPrompt) {
       if (normalized == 'yes' ||
           normalized == 'more' ||
@@ -179,7 +228,9 @@ class RamseyCookingAssistant {
 
       final number = int.tryParse(normalized);
       if (number != null && number >= 1 && number <= _currentOptions.length) {
-        return _recipeReply(_currentOptions[number - 1]);
+        _lastSuggestedDish = _currentOptions[number - 1];
+        _step = RamseyStep.confirmCooking;
+        return _recipeReply(_lastSuggestedDish!, askToUpdateInventory: true);
       }
 
       final selectedCraving = _cravingFromInput(normalized);
@@ -248,6 +299,32 @@ class RamseyCookingAssistant {
         input.contains('how much did i');
   }
 
+  bool _needsSpendingRange(String input) {
+    return _isSpendingAsk(input) &&
+        !input.contains('today') &&
+        !input.contains('this day') &&
+        !input.contains('yesterday') &&
+        !input.contains('this week') &&
+        !input.contains('last week') &&
+        !input.contains('this month') &&
+        !input.contains('last month') &&
+        !input.contains('this year');
+  }
+
+  RamseyReply _askSpendingRangeReply() {
+    final prompts = [
+      'Do you want your spending for today, this week, or this month?',
+      'Should I check how much you spent today, this week, or this month?',
+      'I can check your spend for today, this week, or this month. Which one should I use?',
+    ];
+    final prompt = prompts[_random.nextInt(prompts.length)];
+
+    return RamseyReply(
+      prompt,
+      quickReplies: const ['Today', 'This week', 'This month'],
+    );
+  }
+
   bool _isBreakdownAsk(String input) {
     return input == 'yes' ||
         input == 'oo' ||
@@ -289,6 +366,44 @@ class RamseyCookingAssistant {
         input.contains('what can i');
   }
 
+  RamseyReply _fridgeCookingReply() {
+    final inventoryContext = _buildGroceryContext();
+    final inventoryKeywords = _currentInventoryKeywords();
+    if (inventoryKeywords.isEmpty) {
+      return const RamseyReply(
+        "I don't have any recent grocery data from the last 3–5 days. "
+        "Please update inventory or add your latest items so I can suggest dishes accurately.",
+      );
+    }
+
+    final suggestions = _pickDishesForInventory(inventoryKeywords);
+    if (suggestions.isEmpty) {
+      return RamseyReply(
+        "I found your recent groceries but couldn't match them to a recipe yet. "
+        "Try adding more fresh ingredients or updating your inventory.",
+      );
+    }
+
+    final lines = suggestions.asMap().entries.map((entry) {
+      final dish = entry.value;
+      final missing = _missingIngredients(dish, inventoryKeywords);
+      final cost = _missingIngredientsCost(missing);
+      final missingText = missing.isEmpty
+          ? 'None — you already have the main ingredients.'
+          : missing.join(', ');
+      return "${entry.key + 1}. ${dish.name}\n"
+          "Missing Ingredients: $missingText\n"
+          "Estimated Cost: ₱${cost.toStringAsFixed(0)}";
+    }).join('\n\n');
+
+    return RamseyReply(
+      "Current Context: $inventoryContext\n\n"
+      "Based on your recent groceries, here are the best meal suggestions:\n\n"
+      "$lines",
+      quickReplies: const ['Start over', 'Suggest another dish'],
+    );
+  }
+
   bool _isBillAsk(String input) {
     return input.contains('bill') ||
         input.contains('bayad') ||
@@ -312,6 +427,33 @@ class RamseyCookingAssistant {
 
   bool _isExplicitBudgetAsk(String input) {
     return input.contains('my budget is') || input.contains('budget ko lang');
+  }
+
+  bool _isBudgetBasedSuggestionAsk(String input) {
+    return input.contains('suggest a dish based on my budget') ||
+        input.contains('suggest dish based on budget') ||
+        input.contains('dish based on my budget') ||
+        input.contains('what can i cook with') ||
+        input.contains('cook with my budget') ||
+        input.contains('suggest based on budget') ||
+        input.contains('recommend based on budget');
+  }
+
+  bool _isFridgeCookingAsk(String input) {
+    return input.contains('what can i cook') ||
+        input.contains('what can i cook with') ||
+        input.contains('what can i cook using') ||
+        input.contains('what is in my fridge') ||
+        input.contains('use my groceries') ||
+        input.contains('with my groceries');
+  }
+
+  bool _isInventoryUpdate(String input) {
+    return input.startsWith('ramsey, update inventory:') ||
+        input.startsWith('ramsey update inventory:') ||
+        input.startsWith('update inventory:') ||
+        input.startsWith('ramsey update inventory') ||
+        input.startsWith('ramsey, update inventory');
   }
 
   double? _parseAmount(String input) {
@@ -429,6 +571,244 @@ class RamseyCookingAssistant {
     return names;
   }
 
+  Set<String> _currentInventoryKeywords() {
+    final keywords = _recentIngredientKeywords();
+    for (final item in AppState.inventory) {
+      keywords.addAll(_keywordsFor(item.name));
+    }
+    return keywords;
+  }
+
+  List<GroceryList> _recentListsWithinDays(int days) {
+    final cutoff = _dateOnly(DateTime.now().subtract(Duration(days: days)));
+    return AppState.recentLists
+        .where((list) => !_dateOnly(list.date).isBefore(cutoff))
+        .toList();
+  }
+
+  String _buildGroceryContext() {
+    final recentLists = _recentListsWithinDays(5);
+    final entries = <String>[];
+
+    for (final list in recentLists) {
+      final items = list.items
+          .map((item) => item.name)
+          .toSet()
+          .take(6)
+          .toList();
+      if (items.isEmpty) continue;
+      final dayLabel = _weekdayName(list.date.weekday);
+      entries.add('Bought ${items.join(', ')} on $dayLabel');
+    }
+
+    if (AppState.inventory.isNotEmpty) {
+      entries.add(_inventorySummary());
+    }
+
+    return entries.join('. ');
+  }
+
+  List<RamseyDish> _pickDishesForInventory(Set<String> inventoryKeywords) {
+    final scored = _dishes.map((dish) {
+      final matchCount = dish.ingredientKeywords
+          .where(inventoryKeywords.contains)
+          .length;
+      final missingCount = _missingIngredients(dish, inventoryKeywords).length;
+      return (dish, matchCount, missingCount);
+    }).where((entry) => entry.$2 > 0).toList();
+
+    scored.sort((a, b) {
+      if (b.$2 != a.$2) return b.$2.compareTo(a.$2);
+      if (a.$3 != b.$3) return a.$3.compareTo(b.$3);
+      return _calculateDishPrice(a.$1).compareTo(_calculateDishPrice(b.$1));
+    });
+
+    var filtered = scored.map((entry) => entry.$1).toList();
+    if (filtered.length > 5) {
+      filtered = filtered.sublist(0, 5);
+    }
+    return filtered;
+  }
+
+  List<String> _missingIngredients(RamseyDish dish, Set<String> inventoryKeywords) {
+    final missing = <String>[];
+    for (final ingredient in dish.ingredients) {
+      if (_isStapleIngredient(ingredient)) continue;
+      final ingredientKeywords = _keywordsFor(ingredient);
+      if (ingredientKeywords.any(inventoryKeywords.contains)) continue;
+      missing.add(ingredient);
+    }
+    return missing;
+  }
+
+  double _missingIngredientsCost(List<String> missingIngredients) {
+    var cost = 0.0;
+    for (final ingredient in missingIngredients) {
+      final match = _findGroceryPrice(ingredient);
+      if (match != null) {
+        cost += (match['price'] as num).toDouble();
+      } else {
+        cost += 60.0;
+      }
+    }
+    return cost;
+  }
+
+  bool _isStapleIngredient(String ingredient) {
+    final stapleWords = [
+      'salt',
+      'pepper',
+      'oil',
+      'water',
+      'sugar',
+      'vinegar',
+      'butter',
+      'soy sauce',
+      'fish sauce',
+      'seasoning',
+    ];
+    final normalized = ingredient.toLowerCase();
+    return stapleWords.any(normalized.contains);
+  }
+
+  RamseyReply _handleInventoryUpdate(String input) {
+    final match = RegExp(r'update inventory[:]?\s*(?:i just bought )?(.*)', caseSensitive: false)
+        .firstMatch(input);
+    if (match == null) {
+      return const RamseyReply(
+        "I couldn't find the inventory items. Please say: Ramsey, update inventory: I just bought chicken, garlic, and onion.",
+      );
+    }
+
+    final itemsText = match.group(1)?.trim() ?? '';
+    final items = itemsText
+        .split(RegExp(r',| and | & '))
+        .map((item) => item.trim())
+        .where((item) => item.isNotEmpty)
+        .toList();
+
+    if (items.isEmpty) {
+      return const RamseyReply(
+        "I couldn't detect any items. Please list the groceries you just bought after 'update inventory:'.",
+      );
+    }
+
+    _addInventoryItems(items);
+    GroceryStorage.saveAll();
+    return RamseyReply(
+      'Inventory updated. I will use these items along with your recent groceries to suggest recipes.',
+      quickReplies: const ['What can I cook with my groceries?', 'Suggest a dish based on my budget.'],
+    );
+  }
+
+  void _addInventoryItems(List<String> items) {
+    for (final name in items) {
+      final normalized = name.trim();
+      if (normalized.isEmpty) continue;
+      final existing = AppState.inventory.firstWhere(
+        (item) => item.name.toLowerCase() == normalized.toLowerCase(),
+        orElse: () => GroceryItem(
+          id: '${normalized.toLowerCase()}-${DateTime.now().millisecondsSinceEpoch}',
+          name: normalized,
+          qty: 0,
+          unit: 'pcs',
+          price: 0,
+          category: 'Pantry',
+        ),
+      );
+
+      if (AppState.inventory.contains(existing)) {
+        existing.qty += 1;
+      } else {
+        existing.qty = 1;
+        AppState.inventory.add(existing);
+      }
+    }
+  }
+
+  RamseyReply _confirmCookingReply(bool cooked) {
+    if (_lastSuggestedDish == null) {
+      _step = RamseyStep.mealPrompt;
+      return const RamseyReply(
+        'I have no active recipe to update. Ask me to suggest a dish again.',
+      );
+    }
+
+    if (!cooked) {
+      _step = RamseyStep.mealPrompt;
+      _lastSuggestedDish = null;
+      return RamseyReply(
+        'No problem! I will wait until you cook it. If you want, I can suggest something else.',
+        quickReplies: const ['Start over', 'Suggest another dish'],
+      );
+    }
+
+    final used = _subtractIngredientsFromInventory(_lastSuggestedDish!);
+    GroceryStorage.saveAll();
+    _step = RamseyStep.mealPrompt;
+    _lastSuggestedDish = null;
+
+    if (used.isEmpty) {
+      return RamseyReply(
+        'I marked the dish as cooked, but I could not match the exact ingredients in your virtual fridge. Your inventory remains unchanged.',
+        quickReplies: const ['Start over', 'Suggest another dish'],
+      );
+    }
+
+    return RamseyReply(
+      'Nice! I updated the virtual fridge by subtracting the ingredients I could match: ${used.join(', ')}.',
+      quickReplies: const ['Start over', 'Suggest another dish'],
+    );
+  }
+
+  List<String> _subtractIngredientsFromInventory(RamseyDish dish) {
+    final usedItems = <String>[];
+    for (final ingredient in dish.ingredients) {
+      if (_isStapleIngredient(ingredient)) continue;
+      final ingredientKeywords = _keywordsFor(ingredient);
+      final match = AppState.inventory.firstWhere(
+        (item) => ingredientKeywords.any((itemKeyword) =>
+            _keywordsFor(item.name).contains(itemKeyword)),
+        orElse: () => GroceryItem(
+          id: '',
+          name: '',
+        ),
+      );
+
+      if (match.id.isEmpty) continue;
+      if (!usedItems.contains(match.name)) {
+        usedItems.add(match.name);
+      }
+      match.qty -= 1;
+      if (match.qty <= 0) {
+        AppState.inventory.remove(match);
+      }
+    }
+    return usedItems;
+  }
+
+  String _inventorySummary() {
+    if (AppState.inventory.isEmpty) return 'Your virtual fridge is empty.';
+    final items = AppState.inventory
+        .take(6)
+        .map((item) => '${item.name} x${item.qty.toStringAsFixed(0)}')
+        .toList();
+    return 'Virtual fridge contains ${items.join(', ')}.';
+  }
+
+  String _weekdayName(int weekday) {
+    const names = [
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    return names[weekday - 1];
+  }
+
   RamseyReply _spendingSummaryReply(String input) {
     final snapshot = _spendingSnapshot(input);
     _lastSpending = snapshot;
@@ -442,14 +822,21 @@ class RamseyCookingAssistant {
     final biggest = _biggestPurchase(snapshot.trips);
     final topCategory = _topCategory(snapshot.trips);
 
+    final header = snapshot.label == 'today'
+        ? 'Today'
+        : snapshot.label == 'this week'
+            ? 'This week'
+            : snapshot.label == 'this month'
+                ? 'This month'
+                : 'Period: ${_formatRange(snapshot.start, snapshot.end)}';
+
     return RamseyReply(
-      "Here's your spending summary.\n\n"
-      "Period: ${_formatRange(snapshot.start, snapshot.end)}\n"
+      "$header\n"
       "Total spent: ₱${total.toStringAsFixed(2)}\n"
       "No. of trips: ${snapshot.trips.length}\n"
       "Biggest purchase: ${biggest.$1} - ₱${biggest.$2.toStringAsFixed(2)}\n"
       "Most bought category: $topCategory\n\n"
-      "Want to see the full breakdown?",
+      "Would you like to see the full breakdown?",
       quickReplies: const ['Yes', 'Show breakdown'],
     );
   }
@@ -494,6 +881,10 @@ class RamseyCookingAssistant {
       start = thisMonday.subtract(const Duration(days: 7));
       end = thisMonday.subtract(const Duration(days: 1));
       label = 'last week';
+    } else if (input.contains('today') || input.contains('this day')) {
+      start = _dateOnly(now);
+      end = _dateOnly(now);
+      label = 'today';
     } else if (input.contains('this month')) {
       start = DateTime(now.year, now.month);
       end = _dateOnly(now);
@@ -627,7 +1018,9 @@ class RamseyCookingAssistant {
       return diffA.compareTo(diffB);
     });
 
-    return dishesWithPrices.take(5).map((e) => e.$1).toList();
+    final bestMatches = dishesWithPrices.take(10).toList();
+    bestMatches.shuffle(_random);
+    return bestMatches.take(5).map((e) => e.$1).toList();
   }
 
   RamseyReply _budgetMealPlanReply(double weeklyBudget) {
@@ -726,6 +1119,14 @@ class RamseyCookingAssistant {
       'coconut': ['coconut', 'gata'],
       'banana': ['banana', 'saba'],
       'bread': ['bread', 'pandesal'],
+      'cheese': ['cheese', 'queso', 'keso'],
+      'milk': ['milk', 'gatas', 'evaporated milk'],
+      'butter': ['butter'],
+      'flour': ['flour'],
+      'lettuce': ['lettuce'],
+      'bell pepper': ['bell pepper', 'capsicum'],
+      'garlic': ['garlic', 'bawang'],
+      'onion': ['onion', 'sibuyas'],
     };
 
     for (final entry in checks.entries) {
@@ -754,7 +1155,39 @@ class RamseyCookingAssistant {
     );
   }
 
-  RamseyReply _recipeReply(RamseyDish dish) {
+  RamseyReply _askForBudgetReply() {
+    final queries = [
+      "What is your budget in pesos? Please type only the amount.",
+      "Enter your budget amount so I can suggest dishes that fit it.",
+      "How much are you planning to spend? Just send the number.",
+      "Magkano ang limit mo? I will suggest dishes by that amount.",
+      "Type the budget amount in pesos and I'll find the best dish options.",
+    ];
+
+    final randomQuery = queries[_random.nextInt(queries.length)];
+
+    return RamseyReply(randomQuery);
+  }
+
+  RamseyReply _budgetDishOptionsReply(double amount) {
+    final list = _currentOptions
+        .asMap()
+        .entries
+        .map((entry) {
+          final dishPrice = _calculateDishPrice(entry.value);
+          return "${entry.key + 1}. ${entry.value.name} - ~₱${dishPrice.toStringAsFixed(0)}";
+        })
+        .join('\n');
+
+    return RamseyReply(
+      "Here are the best choices for you **₱${amount.toStringAsFixed(0)}**:\n\n"
+      "$list\n\n"
+      "Just type the number to see the full recipe and ingredients!",
+      quickReplies: const ['1', '2', '3', '4', '5'],
+    );
+  }
+
+  RamseyReply _recipeReply(RamseyDish dish, {bool askToUpdateInventory = false}) {
     final ingredients = dish.ingredients
         .map((item) => '- $item ${_ingredientPriceLabel(item)}')
         .join('\n');
@@ -764,6 +1197,10 @@ class RamseyCookingAssistant {
         .map((entry) => '${entry.key + 1}. ${entry.value}')
         .join('\n');
 
+    final followUp = askToUpdateInventory
+        ? '\nOnce you cook this, reply yes and I will subtract the used ingredients from your virtual fridge.'
+        : '';
+
     return RamseyReply(
       "Great choice! Here's how to cook ${dish.name}.\n\n"
       "Ingredients:\n"
@@ -771,9 +1208,10 @@ class RamseyCookingAssistant {
       "Instructions:\n"
       "$steps\n\n"
       "Cooking time: ${dish.minutes} mins\n"
-      "Good for: ${dish.servings} servings\n\n"
-      "Want something else? Say 'start over'.",
-      quickReplies: const ['Start over'],
+      "Good for: ${dish.servings} servings\n"
+      "$followUp\n"
+      "If you want something else, say 'start over'.",
+      quickReplies: const ['Yes', 'No', 'Start over'],
     );
   }
 
@@ -1760,5 +2198,143 @@ const List<RamseyDish> _dishes = [
     tags: {'Healthy', 'Soupy'},
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'fish', 'vegetable', 'tomato'},
+  ),
+  RamseyDish(
+    name: 'Spaghetti Bolognese',
+    shortInfo: 'Classic pasta with tomato meat sauce',
+    ingredients: [
+      '200g spaghetti',
+      '250g ground beef',
+      'Tomato sauce',
+      'Garlic',
+      'Onion',
+      'Olive oil',
+      'Salt and pepper',
+    ],
+    instructions: [
+      'Cook spaghetti according to package directions.',
+      'Saute garlic and onion in olive oil.',
+      'Add ground beef and cook until browned.',
+      'Pour in tomato sauce and simmer.',
+      'Serve sauce over spaghetti.',
+    ],
+    minutes: 35,
+    servings: 4,
+    tags: {'Anything'},
+    meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'beef', 'tomato', 'noodle'},
+  ),
+  RamseyDish(
+    name: 'Vegetable Stir Fry',
+    shortInfo: 'Quick mixed vegetable stir-fry',
+    ingredients: [
+      'Mixed vegetables',
+      'Garlic',
+      'Soy sauce',
+      'Cooking oil',
+      'Salt and pepper',
+    ],
+    instructions: [
+      'Heat oil and saute garlic.',
+      'Add mixed vegetables and stir-fry.',
+      'Season with soy sauce, salt, and pepper.',
+      'Cook until vegetables are crisp-tender.',
+      'Serve with rice or noodles.',
+    ],
+    minutes: 20,
+    servings: 3,
+    tags: {'Healthy', 'Anything'},
+    meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'vegetable', 'garlic', 'soy sauce'},
+  ),
+  RamseyDish(
+    name: 'Grilled Cheese Sandwich',
+    shortInfo: 'Simple melted cheese sandwich',
+    ingredients: [
+      '2 slices bread',
+      '2 slices cheese',
+      'Butter',
+    ],
+    instructions: [
+      'Butter one side of each bread slice.',
+      'Place cheese between bread with buttered sides out.',
+      'Cook in a pan over medium heat until golden.',
+      'Flip and cook the other side.',
+      'Slice and serve hot.',
+    ],
+    minutes: 12,
+    servings: 1,
+    tags: {'Anything'},
+    meals: {'Breakfast', 'Snack'},
+    ingredientKeywords: {'bread', 'cheese', 'butter'},
+  ),
+  RamseyDish(
+    name: 'Chicken Caesar Salad',
+    shortInfo: 'Fresh salad with grilled chicken',
+    ingredients: [
+      'Lettuce',
+      'Grilled chicken strips',
+      'Croutons',
+      'Parmesan cheese',
+      'Caesar dressing',
+    ],
+    instructions: [
+      'Wash and chop lettuce.',
+      'Toss lettuce with grilled chicken and croutons.',
+      'Add parmesan cheese.',
+      'Drizzle Caesar dressing and mix lightly.',
+      'Serve chilled.',
+    ],
+    minutes: 20,
+    servings: 2,
+    tags: {'Healthy', 'Anything'},
+    meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'lettuce', 'chicken', 'cheese'},
+  ),
+  RamseyDish(
+    name: 'Pancakes with Banana',
+    shortInfo: 'Fluffy pancakes with sliced banana',
+    ingredients: [
+      '1 cup flour',
+      '1 egg',
+      '1 cup milk',
+      '1 banana',
+      'Sugar',
+      'Butter',
+    ],
+    instructions: [
+      'Mix flour, egg, milk, sugar, and mashed banana.',
+      'Heat a pan and melt a little butter.',
+      'Pour batter into rounds on the pan.',
+      'Cook until bubbles form, then flip.',
+      'Serve warm with sliced banana.',
+    ],
+    minutes: 20,
+    servings: 3,
+    tags: {'Anything'},
+    meals: {'Breakfast', 'Snack'},
+    ingredientKeywords: {'flour', 'egg', 'milk', 'banana'},
+  ),
+  RamseyDish(
+    name: 'Tuna Sandwich',
+    shortInfo: 'Easy canned tuna sandwich',
+    ingredients: [
+      '2 slices bread',
+      '1 can tuna',
+      'Mayonnaise',
+      'Onion',
+      'Salt and pepper',
+    ],
+    instructions: [
+      'Drain tuna and mix with mayonnaise, chopped onion, salt, and pepper.',
+      'Spread tuna mixture on bread slices.',
+      'Top with the other slice of bread.',
+      'Cut in half and serve.',
+    ],
+    minutes: 10,
+    servings: 1,
+    tags: {'Anything'},
+    meals: {'Breakfast', 'Lunch', 'Snack'},
+    ingredientKeywords: {'bread', 'fish', 'onion'},
   ),
 ];
