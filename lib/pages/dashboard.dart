@@ -57,6 +57,7 @@ class _DashboardPageState extends State<DashboardPage> {
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
         children: [
+          const _GreetingSection(),
           _buildSummaryGrid(recentLists),
           const SizedBox(height: 24),
           _SectionHeader(title: 'Spending Trend'),
@@ -96,25 +97,25 @@ class _DashboardPageState extends State<DashboardPage> {
           child: _StatCard(
             label: 'WEEKLY',
             value: '₱${weeklySpend.toStringAsFixed(0)}',
-            icon: Icons.calendar_view_week,
-            color: kPrimary,
+            icon: Icons.view_week_rounded,
+            color: const Color(0xFF10B981),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: _StatCard(
             label: 'MONTHLY',
             value: '₱${monthlySpend.toStringAsFixed(0)}',
-            icon: Icons.calendar_month,
+            icon: Icons.calendar_today_rounded,
             color: const Color(0xFF6366F1),
           ),
         ),
-        const SizedBox(width: 12),
+        const SizedBox(width: 10),
         Expanded(
           child: _StatCard(
             label: 'QUARTERLY',
             value: '₱${quarterlySpend.toStringAsFixed(0)}',
-            icon: Icons.assessment,
+            icon: Icons.bar_chart_rounded,
             color: const Color(0xFFF59E0B),
           ),
         ),
@@ -137,15 +138,20 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 20),
       decoration: BoxDecoration(
         color: kCardBg,
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(28),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 20,
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
             offset: const Offset(0, 4),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
           ),
         ],
       ),
@@ -153,29 +159,29 @@ class _StatCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(icon, size: 18, color: color),
+            child: Icon(icon, size: 20, color: color),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           Text(
             label,
             style: GoogleFonts.plusJakartaSans(
               fontSize: 10,
-              fontWeight: FontWeight.w600,
-              color: kMuted,
-              letterSpacing: 0.8,
+              fontWeight: FontWeight.w700,
+              color: kMuted.withValues(alpha: 0.7),
+              letterSpacing: 0.5,
             ),
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 6),
           Text(
             value,
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
+              fontSize: 19,
+              fontWeight: FontWeight.w800,
               color: kTextCharcoal,
             ),
           ),
@@ -212,147 +218,186 @@ class _NoDataOverlay extends StatelessWidget {
 }
 
 Widget _bottomTitle(double value, TitleMeta meta) {
+  const days = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  final index = value.toInt();
+  if (index < 0 || index >= 7) return const SizedBox();
+
   return SideTitleWidget(
     meta: meta,
+    space: 10,
     child: Text(
-      value.toInt().toString(),
-      style: TextStyle(
-        fontSize: 10,
-        fontWeight: FontWeight.w600,
-        color: kMuted,
+      days[index],
+      style: GoogleFonts.plusJakartaSans(
+        fontSize: 11,
+        fontWeight: FontWeight.w700,
+        color: kMuted.withValues(alpha: 0.8),
       ),
     ),
   );
 }
 
 Widget _leftTitle(double value, TitleMeta meta) {
+  if (value == meta.max || value == meta.min) return const SizedBox();
   return SideTitleWidget(
     meta: meta,
+    space: 8,
     child: Text(
-      value.toInt().toString(),
-      style: TextStyle(
+      '₱${value.toInt()}',
+      style: GoogleFonts.plusJakartaSans(
         fontSize: 10,
         fontWeight: FontWeight.w600,
-        color: kMuted,
+        color: kMuted.withValues(alpha: 0.6),
       ),
     ),
   );
 }
 
-class _TrendCard extends StatelessWidget {
+class _TrendCard extends StatefulWidget {
   final List<GroceryList> recentLists;
   const _TrendCard({required this.recentLists});
 
   @override
+  State<_TrendCard> createState() => _TrendCardState();
+}
+
+class _TrendCardState extends State<_TrendCard> {
+  int _touchedIndex = -1;
+
+  @override
   Widget build(BuildContext context) {
-    final points = recentLists.reversed.toList();
-    final spots = List.generate(points.length, (i) {
-      final total = points[i].items.fold(
-        0.0,
-        (s, item) => s + getItemTotal(item.price, item.qty, item.unit),
-      );
-      return FlSpot(i.toDouble(), total);
-    });
-    final maxSpend = spots.fold(
+    final now = DateTime.now();
+    final sunday = now.subtract(Duration(days: now.weekday % 7));
+    final startOfWeek = DateTime(sunday.year, sunday.month, sunday.day);
+
+    final weeklyData = List.generate(7, (index) => 0.0);
+
+    for (final list in widget.recentLists) {
+      final difference = list.date.difference(startOfWeek).inDays;
+      if (difference >= 0 && difference < 7) {
+        final total = list.items.fold(
+            0.0,
+            (sum, item) =>
+                sum + getItemTotal(item.price, item.qty, item.unit));
+        weeklyData[difference] += total;
+      }
+    }
+
+
+    final maxSpend = weeklyData.fold(
       0.0,
-      (max, spot) => spot.y > max ? spot.y : max,
+      (max, val) => val > max ? val : max,
     );
-    final canPlotTrend = spots.length >= 2;
+    final chartMax = maxSpend > 0 ? maxSpend * 1.3 : 500.0;
+    final hasData = weeklyData.any((v) => v > 0);
 
     return Container(
-      height: 260,
+      height: 280,
       margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(12, 24, 24, 12),
       decoration: BoxDecoration(
         color: kCardBg,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [kShadowSoft],
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 30,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Stack(
         children: [
-          LineChart(
-            LineChartData(
-              minX: 0,
-              maxX: canPlotTrend ? (spots.length - 1).toDouble() : 4,
-              minY: 0,
-              maxY: canPlotTrend && maxSpend > 0 ? maxSpend * 1.2 : 100,
-              gridData: FlGridData(
-                show: true,
-                drawVerticalLine: false,
-                horizontalInterval: canPlotTrend && maxSpend > 0
-                    ? (maxSpend * 1.2) / 4
-                    : 25,
-                getDrawingHorizontalLine: (_) =>
-                    FlLine(color: kBorder, strokeWidth: 1),
+          BarChart(
+            BarChartData(
+              maxY: chartMax,
+              barTouchData: BarTouchData(
+                touchTooltipData: BarTouchTooltipData(
+                  getTooltipColor: (_) => kTextCharcoal,
+                  getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                    return BarTooltipItem(
+                      '₱${rod.toY.toStringAsFixed(0)}',
+                      GoogleFonts.plusJakartaSans(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    );
+                  },
+                ),
+                touchCallback: (event, response) {
+                  if (response == null || response.spot == null) {
+                    setState(() => _touchedIndex = -1);
+                    return;
+                  }
+                  setState(() =>
+                      _touchedIndex = response.spot!.touchedBarGroupIndex);
+                },
               ),
               titlesData: FlTitlesData(
-                topTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
-                rightTitles: const AxisTitles(
-                  sideTitles: SideTitles(showTitles: false),
-                ),
+                show: true,
+                rightTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                topTitles:
+                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 26,
-                    interval: 1,
                     getTitlesWidget: _bottomTitle,
+                    reservedSize: 32,
                   ),
                 ),
                 leftTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
-                    reservedSize: 34,
-                    interval: canPlotTrend && maxSpend > 0
-                        ? (maxSpend * 1.2) / 4
-                        : 25,
+                    reservedSize: 50,
+                    interval: chartMax / 4,
                     getTitlesWidget: _leftTitle,
                   ),
                 ),
               ),
-              borderData: FlBorderData(
+              borderData: FlBorderData(show: false),
+              gridData: FlGridData(
                 show: true,
-                border: Border(
-                  left: BorderSide(color: kBorder),
-                  bottom: BorderSide(color: kBorder),
+                drawVerticalLine: false,
+                horizontalInterval: chartMax / 4,
+                getDrawingHorizontalLine: (value) => FlLine(
+                  color: kBorder.withValues(alpha: 0.3),
+                  strokeWidth: 1,
+                  dashArray: [5, 5],
                 ),
               ),
-              lineBarsData: canPlotTrend
-                  ? [
-                      LineChartBarData(
-                        spots: spots,
-                        isCurved: true,
-                        color: kPrimary,
-                        barWidth: 4,
-                        isStrokeCapRound: true,
-                        dotData: FlDotData(
-                          show: true,
-                          getDotPainter: (spot, percent, barData, index) =>
-                              FlDotCirclePainter(
-                                radius: 4,
-                                color: Colors.white,
-                                strokeWidth: 3,
-                                strokeColor: kPrimary,
-                              ),
-                        ),
-                        belowBarData: BarAreaData(
-                          show: true,
-                          gradient: LinearGradient(
-                            colors: [
-                              kPrimary.withValues(alpha: 0.2),
-                              kPrimary.withValues(alpha: 0),
-                            ],
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                          ),
-                        ),
+              barGroups: List.generate(7, (i) {
+                final isTouched = _touchedIndex == i;
+                return BarChartGroupData(
+                  x: i,
+                  barRods: [
+                    BarChartRodData(
+                      toY: weeklyData[i],
+                      gradient: LinearGradient(
+                        colors: [
+                          kPrimary,
+                          kPrimary.withValues(alpha: isTouched ? 0.9 : 0.7),
+                        ],
+                        begin: Alignment.bottomCenter,
+                        end: Alignment.topCenter,
                       ),
-                    ]
-                  : [],
+                      width: 20,
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(6)),
+                      backDrawRodData: BackgroundBarChartRodData(
+                        show: true,
+                        toY: chartMax,
+                        color: kMuted.withValues(alpha: 0.05),
+                      ),
+                    ),
+                  ],
+                );
+              }),
             ),
+            duration: const Duration(milliseconds: 400),
+            curve: Curves.easeInOutCubic,
           ),
-          if (!canPlotTrend) const _NoDataOverlay(),
+          if (!hasData) const _NoDataOverlay(),
         ],
       ),
     );
@@ -666,93 +711,11 @@ class _HistoryList extends StatelessWidget {
           );
           return GestureDetector(
             onTap: () {
-              // Show Breakdown Modal
               showModalBottomSheet(
                 context: context,
                 isScrollControlled: true,
                 backgroundColor: Colors.transparent,
-                builder: (_) => Container(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.of(context).size.height * 0.8,
-                  ),
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.of(context).padding.bottom,
-                  ),
-                  decoration: BoxDecoration(
-                    color: kCardBg,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(24),
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: Row(
-                          children: [
-                            Text(
-                              l.name,
-                              style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w800,
-                                color: kTextCharcoal,
-                              ),
-                            ),
-                            const Spacer(),
-                            IconButton(
-                              onPressed: () => Navigator.pop(context),
-                              icon: Icon(Icons.close, color: kMuted),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Divider(color: kBorder, height: 1),
-                      Flexible(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.all(24),
-                          itemCount: l.items.length,
-                          separatorBuilder: (_, _) =>
-                              const SizedBox(height: 12),
-                          itemBuilder: (context, i) {
-                            final item = l.items[i];
-                            return Row(
-                              children: [
-                                Text(
-                                  '${item.qty.toInt()} ${item.unit}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: kMuted,
-                                  ),
-                                ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    item.name,
-                                    style: TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: kTextCharcoal,
-                                    ),
-                                  ),
-                                ),
-                                Text(
-                                  '₱${getItemTotal(item.price, item.qty, item.unit).toStringAsFixed(2)}',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontWeight: FontWeight.w700,
-                                    color: kTextCharcoal,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                builder: (_) => _HistoryBreakdownSheet(list: l),
               );
             },
             child: Container(
@@ -876,6 +839,378 @@ class _SectionHeader extends StatelessWidget {
           color: kMuted,
           letterSpacing: 1.2,
         ),
+      ),
+    );
+  }
+}
+
+class _GreetingSection extends StatelessWidget {
+  const _GreetingSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 3D Avatar Image
+          Transform.translate(
+            offset: const Offset(0, 15),
+            child: Container(
+              width: 100,
+              height: 100,
+              decoration: const BoxDecoration(
+                image: DecorationImage(
+                  image: AssetImage('assets/images/greeting_avatar.png'),
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ),
+          // Chat Bubble with Tail
+          Expanded(
+            child: CustomPaint(
+              painter: _BubblePainter(kCardBg),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                margin: const EdgeInsets.only(left: 10, top: 10, right: 10),
+                child: Text(
+                  'Hi, welcome!',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: kTextCharcoal,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BubblePainter extends CustomPainter {
+  final Color color;
+  _BubblePainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    final path = Path();
+    const r = 24.0; // corner radius
+    const tw = 10.0; // tail width
+
+    // Start path after the tail area on the top-left
+    path.moveTo(tw + r, 0);
+    path.lineTo(size.width - r, 0);
+    path.quadraticBezierTo(size.width, 0, size.width, r);
+    path.lineTo(size.width, size.height - r);
+    path.quadraticBezierTo(size.width, size.height, size.width - r, size.height);
+    path.lineTo(tw + r, size.height);
+    path.quadraticBezierTo(tw, size.height, tw, size.height - r);
+
+    // Left side with the tail pointing left
+    path.lineTo(tw, 45); // move down to where the tail starts
+    path.lineTo(0, 35); // the tip of the tail (pointing to the person)
+    path.lineTo(tw, 25); // back to the bubble wall
+    path.lineTo(tw, r);
+    path.quadraticBezierTo(tw, 0, tw + r, 0);
+    path.close();
+
+    // Draw a soft shadow first
+    canvas.drawShadow(path.shift(const Offset(0, 4)),
+        Colors.black.withValues(alpha: 0.05), 12, true);
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _HistoryBreakdownSheet extends StatelessWidget {
+  final GroceryList list;
+  const _HistoryBreakdownSheet({required this.list});
+
+  @override
+  Widget build(BuildContext context) {
+    // 1. Group by category
+    final Map<String, double> catTotals = {};
+    final Map<String, int> catCounts = {};
+    double totalSpend = 0.0;
+
+    for (var i in list.items) {
+      final t = getItemTotal(i.price, i.qty, i.unit);
+      catTotals[i.category] = (catTotals[i.category] ?? 0) + t;
+      catCounts[i.category] = (catCounts[i.category] ?? 0) + 1;
+      totalSpend += t;
+    }
+
+    final sorted = catTotals.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+
+    final colors = [
+      const Color(0xFF3B82F6), // Blue
+      const Color(0xFFEF4444), // Red
+      const Color(0xFF10B981), // Emerald
+      const Color(0xFFF59E0B), // Amber
+      const Color(0xFF8B5CF6), // Violet
+      const Color(0xFFEC4899), // Pink
+    ];
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.92,
+      ),
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).padding.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: kBackground,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      child: Column(
+        children: [
+          // Header with Close Button
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 12, 0),
+            child: Row(
+              children: [
+                const Spacer(),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: Icon(Icons.close_rounded, color: kMuted),
+                ),
+              ],
+            ),
+          ),
+
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              physics: const BouncingScrollPhysics(),
+              children: [
+                // 2. Large Donut Chart
+                SizedBox(
+                  height: 240,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PieChart(
+                        PieChartData(
+                          sectionsSpace: 4,
+                          centerSpaceRadius: 80,
+                          sections: List.generate(sorted.length, (index) {
+                            return PieChartSectionData(
+                              color: colors[index % colors.length],
+                              value: sorted[index].value,
+                              title: '',
+                              radius: 28,
+                            );
+                          }),
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Spent',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                              color: kMuted,
+                            ),
+                          ),
+                          Text(
+                            '₱${totalSpend.toStringAsFixed(2)}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                              color: kTextCharcoal,
+                            ),
+                          ),
+                          if (list.budget > 0) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Budget ₱${list.budget.toStringAsFixed(2)}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: kMuted,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 32),
+
+                // 3. Comparison Callout
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: kCardBg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: kBorder.withValues(alpha: 0.5)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'See how all your trips compare',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: kTextCharcoal,
+                              ),
+                            ),
+                            Text(
+                              'View spending recap by category, item, and store',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                color: kMuted,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Icon(Icons.chevron_right_rounded, color: kMuted),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 32),
+
+                // 4. "What you bought" Header
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'What you bought',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: kCardBg,
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: kBorder),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.filter_list_rounded, size: 14, color: kTextCharcoal),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Highest Spent',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: kTextCharcoal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+
+                const SizedBox(height: 16),
+
+                // 5. Category List Items
+                ...List.generate(sorted.length, (index) {
+                  final entry = sorted[index];
+                  final color = colors[index % colors.length];
+                  final percent = entry.value / totalSpend;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: kCardBg,
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 20,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                entry.key,
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: kTextCharcoal,
+                                ),
+                              ),
+                            ),
+                            Text(
+                              '₱${entry.value.toStringAsFixed(2)}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: kTextCharcoal,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Icon(Icons.chevron_right_rounded, size: 20, color: kMuted),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '${catCounts[entry.key]} item${catCounts[entry.key] == 1 ? '' : 's'}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                              color: kMuted,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: percent,
+                            minHeight: 8,
+                            backgroundColor: kMutedBg,
+                            valueColor: AlwaysStoppedAnimation<Color>(color),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+                const SizedBox(height: 40),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
