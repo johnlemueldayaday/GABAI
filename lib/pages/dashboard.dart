@@ -7,6 +7,7 @@ import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -89,7 +90,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
     double weeklySpend = totalSpend;
     double monthlySpend = totalSpend;
-    double quarterlySpend = totalSpend;
 
     return Row(
       children: [
@@ -108,15 +108,6 @@ class _DashboardPageState extends State<DashboardPage> {
             value: '₱${monthlySpend.toStringAsFixed(0)}',
             icon: Icons.calendar_today_rounded,
             color: const Color(0xFF6366F1),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _StatCard(
-            label: 'QUARTERLY',
-            value: '₱${quarterlySpend.toStringAsFixed(0)}',
-            icon: Icons.bar_chart_rounded,
-            color: const Color(0xFFF59E0B),
           ),
         ),
       ],
@@ -155,34 +146,40 @@ class _StatCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(14),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, size: 20, color: color),
+            child: Icon(icon, size: 16, color: color),
           ),
-          const SizedBox(height: 16),
-          Text(
-            label,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: kMuted.withValues(alpha: 0.7),
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 19,
-              fontWeight: FontWeight.w800,
-              color: kTextCharcoal,
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 8,
+                    fontWeight: FontWeight.w700,
+                    color: kMuted.withValues(alpha: 0.7),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                Text(
+                  value,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: kTextCharcoal,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -275,18 +272,14 @@ class _TrendCardState extends State<_TrendCard> {
       final difference = list.date.difference(startOfWeek).inDays;
       if (difference >= 0 && difference < 7) {
         final total = list.items.fold(
-            0.0,
-            (sum, item) =>
-                sum + getItemTotal(item.price, item.qty, item.unit));
+          0.0,
+          (sum, item) => sum + getItemTotal(item.price, item.qty, item.unit),
+        );
         weeklyData[difference] += total;
       }
     }
 
-
-    final maxSpend = weeklyData.fold(
-      0.0,
-      (max, val) => val > max ? val : max,
-    );
+    final maxSpend = weeklyData.fold(0.0, (max, val) => val > max ? val : max);
     final chartMax = maxSpend > 0 ? maxSpend * 1.3 : 500.0;
     final hasData = weeklyData.any((v) => v > 0);
 
@@ -329,16 +322,19 @@ class _TrendCardState extends State<_TrendCard> {
                     setState(() => _touchedIndex = -1);
                     return;
                   }
-                  setState(() =>
-                      _touchedIndex = response.spot!.touchedBarGroupIndex);
+                  setState(
+                    () => _touchedIndex = response.spot!.touchedBarGroupIndex,
+                  );
                 },
               ),
               titlesData: FlTitlesData(
                 show: true,
-                rightTitles:
-                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                topTitles:
-                    const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                rightTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
+                topTitles: const AxisTitles(
+                  sideTitles: SideTitles(showTitles: false),
+                ),
                 bottomTitles: AxisTitles(
                   sideTitles: SideTitles(
                     showTitles: true,
@@ -382,8 +378,9 @@ class _TrendCardState extends State<_TrendCard> {
                         end: Alignment.topCenter,
                       ),
                       width: 20,
-                      borderRadius:
-                          const BorderRadius.vertical(top: Radius.circular(6)),
+                      borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(6),
+                      ),
                       backDrawRodData: BackgroundBarChartRodData(
                         show: true,
                         toY: chartMax,
@@ -443,21 +440,47 @@ class _CategoryDonutCard extends StatelessWidget {
             width: 140,
             height: 140,
             child: hasCategories
-                ? PieChart(
-                    PieChartData(
-                      sectionsSpace: 4,
-                      centerSpaceRadius: 40,
-                      sections: List.generate(sorted.length.clamp(0, 5), (
-                        index,
-                      ) {
-                        return PieChartSectionData(
-                          color: colors[index % colors.length],
-                          value: sorted[index].value,
-                          title: '',
-                          radius: 12,
-                        );
-                      }),
-                    ),
+                ? Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PieChart(
+                        PieChartData(
+                          sectionsSpace: 4,
+                          centerSpaceRadius: 46,
+                          sections: List.generate(sorted.length.clamp(0, 5), (
+                            index,
+                          ) {
+                            return PieChartSectionData(
+                              color: colors[index % colors.length],
+                              value: sorted[index].value,
+                              title: '',
+                              radius: 12,
+                            );
+                          }),
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '₱${catSpent.values.fold(0.0, (a, b) => a + b).toStringAsFixed(0)}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: kTextCharcoal,
+                            ),
+                          ),
+                          Text(
+                            'Total',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: kMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   )
                 : DecoratedBox(
                     decoration: BoxDecoration(
@@ -569,21 +592,47 @@ class _BillsPieCard extends StatelessWidget {
             width: 140,
             height: 140,
             child: hasBills
-                ? PieChart(
-                    PieChartData(
-                      sectionsSpace: 4,
-                      centerSpaceRadius: 40,
-                      sections: List.generate(sorted.length.clamp(0, 6), (
-                        index,
-                      ) {
-                        return PieChartSectionData(
-                          color: colors[index % colors.length],
-                          value: sorted[index].value,
-                          title: '',
-                          radius: 12,
-                        );
-                      }),
-                    ),
+                ? Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      PieChart(
+                        PieChartData(
+                          sectionsSpace: 4,
+                          centerSpaceRadius: 46,
+                          sections: List.generate(sorted.length.clamp(0, 6), (
+                            index,
+                          ) {
+                            return PieChartSectionData(
+                              color: colors[index % colors.length],
+                              value: sorted[index].value,
+                              title: '',
+                              radius: 12,
+                            );
+                          }),
+                        ),
+                      ),
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '₱${billTotals.values.fold(0.0, (a, b) => a + b).toStringAsFixed(0)}',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: kTextCharcoal,
+                            ),
+                          ),
+                          Text(
+                            'Total',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: kMuted,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   )
                 : DecoratedBox(
                     decoration: BoxDecoration(
@@ -844,50 +893,116 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _GreetingSection extends StatelessWidget {
+class _GreetingSection extends StatefulWidget {
   const _GreetingSection();
+
+  @override
+  State<_GreetingSection> createState() => _GreetingSectionState();
+}
+
+class _GreetingSectionState extends State<_GreetingSection> {
+  String _greetingMessage = 'Hi, welcome!';
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGreeting();
+  }
+
+  Future<void> _loadGreeting() async {
+    final bills = await BillStorage.loadBills();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final sevenDaysLater = today.add(const Duration(days: 7));
+
+    // Find upcoming bills within 7 days
+    final upcomingBills = bills.where((bill) {
+      final billDay = DateTime(
+        bill.dueDate.year,
+        bill.dueDate.month,
+        bill.dueDate.day,
+      );
+      return billDay.isAfter(today) &&
+          billDay.isBefore(sevenDaysLater.add(const Duration(days: 1))) &&
+          !bill.isPaid;
+    }).toList();
+
+    if (upcomingBills.isNotEmpty) {
+      // Sort by due date to show the earliest
+      upcomingBills.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+      final firstBill = upcomingBills.first;
+      final dateStr = DateFormat(
+        'EEEE',
+      ).format(firstBill.dueDate).toLowerCase();
+
+      setState(() {
+        _greetingMessage =
+            'hey, you have upcoming ${firstBill.type.toLowerCase()} bill this $dateStr, worth ₱${firstBill.amount.toStringAsFixed(2)}.';
+        _isLoading = false;
+      });
+    } else {
+      setState(() {
+        _greetingMessage = 'Hi, welcome!';
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 24),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 3D Avatar Image
-          Transform.translate(
-            offset: const Offset(0, 15),
-            child: Container(
-              width: 100,
-              height: 100,
-              decoration: const BoxDecoration(
-                image: DecorationImage(
-                  image: AssetImage('assets/images/greeting_avatar.png'),
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
-          ),
-          // Chat Bubble with Tail
-          Expanded(
-            child: CustomPaint(
-              painter: _BubblePainter(kCardBg),
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // 3D Avatar Image
+            Transform.translate(
+              offset: Offset.zero,
               child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
-                margin: const EdgeInsets.only(left: 10, top: 10, right: 10),
-                child: Text(
-                  'Hi, welcome!',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: kTextCharcoal,
+                width: 130,
+                height: 130,
+                decoration: const BoxDecoration(
+                  image: DecorationImage(
+                    image: AssetImage('assets/images/greeting_avatar.png'),
+                    fit: BoxFit.contain,
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+            // Chat Bubble with Tail
+            Flexible(
+              child: IntrinsicWidth(
+                child: CustomPaint(
+                  painter: _BubblePainter(kCardBg),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    margin: const EdgeInsets.only(left: 10, top: 0, right: 0),
+                  child: _isLoading
+                      ? SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor: AlwaysStoppedAnimation<Color>(kPrimary),
+                          ),
+                        )
+                      : Text(
+                          _greetingMessage,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                            color: kTextCharcoal,
+                          ),
+                        ),
+                ),
+              ),
+            ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -912,7 +1027,12 @@ class _BubblePainter extends CustomPainter {
     path.lineTo(size.width - r, 0);
     path.quadraticBezierTo(size.width, 0, size.width, r);
     path.lineTo(size.width, size.height - r);
-    path.quadraticBezierTo(size.width, size.height, size.width - r, size.height);
+    path.quadraticBezierTo(
+      size.width,
+      size.height,
+      size.width - r,
+      size.height,
+    );
     path.lineTo(tw + r, size.height);
     path.quadraticBezierTo(tw, size.height, tw, size.height - r);
 
@@ -925,8 +1045,12 @@ class _BubblePainter extends CustomPainter {
     path.close();
 
     // Draw a soft shadow first
-    canvas.drawShadow(path.shift(const Offset(0, 4)),
-        Colors.black.withValues(alpha: 0.05), 12, true);
+    canvas.drawShadow(
+      path.shift(const Offset(0, 4)),
+      Colors.black.withValues(alpha: 0.05),
+      12,
+      true,
+    );
 
     canvas.drawPath(path, paint);
   }
@@ -969,9 +1093,7 @@ class _HistoryBreakdownSheet extends StatelessWidget {
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.92,
       ),
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.of(context).padding.bottom,
-      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
       decoration: BoxDecoration(
         color: kBackground,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
@@ -1021,19 +1143,19 @@ class _HistoryBreakdownSheet extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            'Spent',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                              color: kMuted,
-                            ),
-                          ),
-                          Text(
-                            '₱${totalSpend.toStringAsFixed(2)}',
+                            '₱${totalSpend.toStringAsFixed(0)}',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 28,
                               fontWeight: FontWeight.w800,
                               color: kTextCharcoal,
+                            ),
+                          ),
+                          Text(
+                            'Total',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                              color: kMuted,
                             ),
                           ),
                           if (list.budget > 0) ...[
@@ -1108,7 +1230,10 @@ class _HistoryBreakdownSheet extends StatelessWidget {
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: kCardBg,
                         borderRadius: BorderRadius.circular(999),
@@ -1116,7 +1241,11 @@ class _HistoryBreakdownSheet extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.filter_list_rounded, size: 14, color: kTextCharcoal),
+                          Icon(
+                            Icons.filter_list_rounded,
+                            size: 14,
+                            color: kTextCharcoal,
+                          ),
                           const SizedBox(width: 6),
                           Text(
                             'Highest Spent',
@@ -1177,7 +1306,11 @@ class _HistoryBreakdownSheet extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Icon(Icons.chevron_right_rounded, size: 20, color: kMuted),
+                            Icon(
+                              Icons.chevron_right_rounded,
+                              size: 20,
+                              color: kMuted,
+                            ),
                           ],
                         ),
                         const SizedBox(height: 4),

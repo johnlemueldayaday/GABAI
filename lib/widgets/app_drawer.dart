@@ -22,26 +22,33 @@ class AppDrawer extends StatelessWidget {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(24, 60, 24, 30),
-            child: Row(
+            padding: const EdgeInsets.fromLTRB(24, 80, 24, 30),
+            child: Stack(
+              alignment: Alignment.centerLeft,
               children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  decoration: BoxDecoration(
-                    color: kPrimary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(14),
+                Padding(
+                  padding: const EdgeInsets.only(left: 56),
+                  child: Text(
+                    'GABAY',
+                    style: GoogleFonts.luckiestGuy(
+                      fontSize: 48,
+                      color: kTextCharcoal,
+                      shadows: [
+                        Shadow(
+                          color: Colors.black.withValues(alpha: 0.15),
+                          offset: const Offset(4, 4),
+                          blurRadius: 10,
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Icon(Icons.wallet_rounded, color: kPrimary, size: 26),
                 ),
-                const SizedBox(width: 16),
-                Text(
-                  'GABAY',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: kTextCharcoal,
-                    letterSpacing: 2,
+                SizedBox(
+                  width: 80,
+                  height: 80,
+                  child: Image.asset(
+                    'assets/images/navbaravatar.png',
+                    fit: BoxFit.contain,
                   ),
                 ),
               ],

@@ -1,3 +1,18 @@
+// Predefined bill types
+const List<String> predefinedBillTypes = [
+  'Electricity',
+  'Water',
+  'Internet',
+  'Home Credit',
+  'Phone',
+  'Gas',
+  'Insurance',
+  'Rent',
+  'Subscription',
+  'Tuition',
+  'Medical',
+];
+
 class Bill {
   final String id;
   final String type; // Name/Type

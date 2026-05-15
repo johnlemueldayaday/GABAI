@@ -65,12 +65,67 @@ class RamseyCookingAssistant {
     _allBills = bills;
   }
 
-  RamseyReply get greeting => const RamseyReply(
-        "Kumusta! I'm Ramsey, your all-in-one smart assistant. 🇵🇭\n\n"
-        "I can help you track bills, manage your budget, analyze your spending habits, "
-        "and suggest what to cook based on your budget or recent groceries. "
-        "How can I help you today?",
+  List<Bill> _getUpcomingBillsWithin7Days() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final sevenDaysLater = today.add(const Duration(days: 7));
+    
+    final upcoming = _allBills.where((bill) {
+      final billDate = DateTime(bill.dueDate.year, bill.dueDate.month, bill.dueDate.day);
+      return (billDate.isAfter(today) || billDate.isAtSameMomentAs(today)) && 
+             billDate.isBefore(sevenDaysLater.add(const Duration(days: 1))) &&
+             !bill.isPaid;
+    }).toList();
+    
+    upcoming.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    return upcoming;
+  }
+
+  RamseyReply get greeting {
+    final upcomingBills = _getUpcomingBillsWithin7Days();
+    
+    if (upcomingBills.isNotEmpty) {
+      String billMessage = '';
+      if (upcomingBills.length == 1) {
+        final bill = upcomingBills.first;
+        final dayOfWeek = _getDayOfWeekName(bill.dueDate);
+        final formatted = _formatDateNicely(bill.dueDate);
+        billMessage = "📌 Hey! You have an upcoming ${bill.type} bill due on $dayOfWeek, $formatted (₱${bill.amount.toStringAsFixed(2)})\n\n";
+      } else {
+        billMessage = "📌 Hey! You have ${upcomingBills.length} bills coming up:\n";
+        for (var i = 0; i < upcomingBills.length && i < 3; i++) {
+          final bill = upcomingBills[i];
+          final formatted = _formatDateNicely(bill.dueDate);
+          billMessage += "  • ${bill.type} - $formatted (₱${bill.amount.toStringAsFixed(2)})\n";
+        }
+        billMessage += "\n";
+      }
+      
+      return RamseyReply(
+        "${billMessage}I'm Ramsey, your smart assistant. I can help you track bills, manage your budget, "
+        "and suggest what to cook based on your budget or recent groceries. What can I help you with?",
+        quickReplies: ['Show all bills', 'What can I cook?'],
       );
+    }
+    
+    return const RamseyReply(
+      "Kumusta! I'm Ramsey, your all-in-one smart assistant. 🇵🇭\n\n"
+      "I can help you track bills, manage your budget, analyze your spending habits, "
+      "and suggest what to cook based on your budget or recent groceries. "
+      "How can I help you today?",
+    );
+  }
+
+  String _getDayOfWeekName(DateTime date) {
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return days[date.weekday - 1];
+  }
+
+  String _formatDateNicely(DateTime date) {
+    final monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                       'July', 'August', 'September', 'October', 'November', 'December'];
+    return '${monthNames[date.month - 1]} ${date.day}';
+  }
 
   bool get hasRecentFridgeItems => _recentIngredientKeywords().isNotEmpty;
 

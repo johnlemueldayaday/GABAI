@@ -90,34 +90,20 @@ class _SplashScreenState extends State<SplashScreen>
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            width: 100,
-                            height: 100,
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              shape: BoxShape.circle,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withValues(alpha: 0.1),
-                                  blurRadius: 20,
-                                  offset: const Offset(0, 10),
-                                ),
-                              ],
-                            ),
-                            child: Icon(
-                              Icons.wallet_rounded,
-                              size: 50,
-                              color: kPrimary,
+                          SizedBox(
+                            width: 220,
+                            height: 220,
+                            child: Image.asset(
+                              'assets/images/welcomeavatar.png',
+                              fit: BoxFit.contain,
                             ),
                           ),
                           const SizedBox(height: 24),
                           Text(
                             'GABAY',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 32,
-                              fontWeight: FontWeight.w800,
+                            style: GoogleFonts.luckiestGuy(
+                              fontSize: 48,
                               color: Colors.white,
-                              letterSpacing: 4,
                             ),
                           ),
                           const SizedBox(height: 8),

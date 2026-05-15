@@ -456,6 +456,9 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
   final _amountCtrl = TextEditingController();
   final _typeCtrl = TextEditingController();
   String _selectedFrequency = 'Monthly';
+  String? _selectedBillType;
+  bool _showCustomInput = false;
+  
   final List<String> _frequencies = [
     'Everyday',
     'Weekly',
@@ -635,41 +638,63 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
               children: [
                 Text('Add New Bill', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal)),
                 const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: _typeCtrl,
-                        style: TextStyle(color: kTextCharcoal),
-                        decoration: InputDecoration(
-                          hintText: 'Bill Name',
-                          hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kPrimary)),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      flex: 1,
-                      child: TextField(
-                        controller: _amountCtrl,
-                        keyboardType: TextInputType.number,
-                        style: TextStyle(color: kTextCharcoal),
-                        decoration: InputDecoration(
-                          hintText: 'Amount',
-                          hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kBorder)),
-                          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kPrimary)),
-                        ),
-                      ),
-                    ),
+                // Bill Type Dropdown
+                // ignore: deprecated_member_use
+                DropdownButtonFormField<String>(
+                  value: _selectedBillType,
+                  dropdownColor: kCardBg,
+                  style: TextStyle(color: kTextCharcoal, fontSize: 14),
+                  decoration: InputDecoration(
+                    labelText: 'Bill Type',
+                    labelStyle: TextStyle(color: kMuted),
+                    hintText: 'Select or add bill type',
+                    hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kPrimary)),
+                  ),
+                  items: [
+                    ...predefinedBillTypes.map((type) => DropdownMenuItem(value: type, child: Text(type))),
+                    const DropdownMenuItem(value: '_custom_', child: Text('+ Add Custom Type')),
                   ],
+                  onChanged: (v) => setState(() {
+                    if (v == '_custom_') {
+                      _showCustomInput = true;
+                      _selectedBillType = null;
+                    } else {
+                      _showCustomInput = false;
+                      _selectedBillType = v;
+                      _typeCtrl.clear();
+                    }
+                  }),
                 ),
-                const SizedBox(height: 12),
+                if (_showCustomInput) ...[
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: _typeCtrl,
+                    style: TextStyle(color: kTextCharcoal),
+                    decoration: InputDecoration(
+                      hintText: 'Enter custom bill type',
+                      hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kBorder)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kPrimary)),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _amountCtrl,
+                  keyboardType: TextInputType.number,
+                  style: TextStyle(color: kTextCharcoal),
+                  decoration: InputDecoration(
+                    hintText: 'Amount',
+                    hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12),
+                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kBorder)),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: kPrimary)),
+                  ),
+                ),
                 DropdownButtonFormField<String>(
                   // ignore: deprecated_member_use
                   value: _selectedFrequency,
@@ -692,8 +717,9 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                   child: ElevatedButton(
                     onPressed: () async {
                       final amount = double.tryParse(_amountCtrl.text);
-                      final type = _typeCtrl.text.trim();
-                      if (amount != null && type.isNotEmpty) {
+                      final type = _showCustomInput ? _typeCtrl.text.trim() : _selectedBillType;
+                      
+                      if (amount != null && type != null && type.isNotEmpty) {
                         final confirmed = await showGeneralDialog<bool>(
                           context: context,
                           barrierDismissible: true,
@@ -783,8 +809,17 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                           
                           _amountCtrl.clear();
                           _typeCtrl.clear();
+                          _selectedBillType = null;
+                          _showCustomInput = false;
                           setState(() {});
                         }
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Please fill in all fields', style: GoogleFonts.plusJakartaSans()),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
                       }
                     },
                     style: ElevatedButton.styleFrom(
@@ -795,7 +830,6 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                     ),
                     child: const Text('Add Bill'),
                   ),
-
                 ),
               ],
             ),

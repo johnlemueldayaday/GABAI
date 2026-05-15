@@ -312,37 +312,9 @@ class _EmptyCartsView extends StatelessWidget {
             SizedBox(
               width: 230,
               height: 180,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  Positioned(
-                    right: 16,
-                    bottom: 22,
-                    child: Icon(
-                      Icons.shopping_cart_outlined,
-                      size: 88,
-                      color: kTextCharcoal.withValues(alpha: 0.22),
-                    ),
-                  ),
-                  Positioned(
-                    left: 46,
-                    bottom: 18,
-                    child: Icon(
-                      Icons.search_rounded,
-                      size: 118,
-                      color: kPrimary.withValues(alpha: 0.72),
-                    ),
-                  ),
-                  Positioned(
-                    left: 42,
-                    top: 34,
-                    child: Icon(
-                      Icons.person_search_rounded,
-                      size: 82,
-                      color: kTextCharcoal.withValues(alpha: 0.82),
-                    ),
-                  ),
-                ],
+              child: Image.asset(
+                'assets/images/avatarmanincart.png',
+                fit: BoxFit.contain,
               ),
             ),
             const SizedBox(height: 18),
@@ -1591,14 +1563,26 @@ class _BudgetCard extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [kPrimarySoft, kCardBg],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+          gradient: RadialGradient(
+            colors: [
+              kPrimarySoft.withValues(alpha: 0.6),
+              kCardBg,
+            ],
+            center: Alignment.center,
+            radius: 1.5,
           ),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [kShadowSoft],
-          border: Border.all(color: kBorder, width: 2),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+              color: kTextCharcoal.withValues(alpha: 0.04),
+              blurRadius: 40,
+              offset: const Offset(0, 12),
+            ),
+          ],
+          border: Border.all(
+            color: kBorder.withValues(alpha: 0.6),
+            width: 1,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

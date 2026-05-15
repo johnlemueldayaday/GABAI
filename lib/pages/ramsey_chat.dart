@@ -73,13 +73,19 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
   @override
   void initState() {
     super.initState();
-    _loadBills();
-    if (_savedMessages.isEmpty) {
+    _initializeChat();
+  }
+
+  Future<void> _initializeChat() async {
+    await _loadBills();
+    if (mounted && _savedMessages.isEmpty) {
       final greeting = _assistant.greeting;
-      _savedMessages.add(_ChatMessage(text: greeting.text, isUser: false));
-      _savedQuickReplies = greeting.quickReplies;
+      setState(() {
+        _savedMessages.add(_ChatMessage(text: greeting.text, isUser: false));
+        _savedQuickReplies = greeting.quickReplies;
+      });
+      _scrollToBottom();
     }
-    _scrollToBottom();
   }
 
   @override
@@ -91,12 +97,11 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
     super.dispose();
   }
 
-  void _loadBills() {
-    BillStorage.loadBills().then((bills) {
-      if (mounted) {
-        _assistant.updateBills(bills);
-      }
-    });
+  Future<void> _loadBills() async {
+    final bills = await BillStorage.loadBills();
+    if (mounted) {
+      _assistant.updateBills(bills);
+    }
   }
 
   void _send([String? value]) {
@@ -264,12 +269,12 @@ class _RamseyHeader extends StatelessWidget {
         Container(
           width: 44,
           height: 44,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(color: kPrimary, shape: BoxShape.circle),
-          child: const Icon(
-            Icons.restaurant_menu_rounded,
-            color: Colors.white,
-            size: 24,
+          decoration: const BoxDecoration(
+            shape: BoxShape.circle,
+            image: DecorationImage(
+              image: AssetImage('assets/images/ramseychef.png'),
+              fit: BoxFit.cover,
+            ),
           ),
         ),
         const SizedBox(width: 12),
@@ -371,36 +376,64 @@ class _MessageBubble extends StatelessWidget {
 
     return Align(
       alignment: alignment,
-      child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.82,
-        ),
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: color,
-          borderRadius: BorderRadius.circular(20).copyWith(
-            bottomLeft: message.isUser ? const Radius.circular(20) : const Radius.circular(4),
-            bottomRight: message.isUser ? const Radius.circular(4) : const Radius.circular(20),
-          ),
-          border: message.isUser ? null : Border.all(color: kBorder),
-          boxShadow: message.isUser ? [] : [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.03),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          if (!message.isUser) ...[
+            Container(
+              width: 32,
+              height: 32,
+              margin: const EdgeInsets.only(bottom: 10, right: 8),
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                image: DecorationImage(
+                  image: AssetImage('assets/images/ramseychef.png'),
+                  fit: BoxFit.cover,
+                ),
+              ),
             ),
           ],
-        ),
-        child: Text(
-          message.text,
-          style: GoogleFonts.inter(
-            color: textColor,
-            fontSize: 14,
-            height: 1.45,
-            fontWeight: FontWeight.w400,
+          Flexible(
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.72,
+              ),
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(20).copyWith(
+                  bottomLeft: message.isUser
+                      ? const Radius.circular(20)
+                      : const Radius.circular(4),
+                  bottomRight: message.isUser
+                      ? const Radius.circular(4)
+                      : const Radius.circular(20),
+                ),
+                border: message.isUser ? null : Border.all(color: kBorder),
+                boxShadow: message.isUser
+                    ? []
+                    : [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+              ),
+              child: Text(
+                message.text,
+                style: GoogleFonts.inter(
+                  color: textColor,
+                  fontSize: 14,
+                  height: 1.45,
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
