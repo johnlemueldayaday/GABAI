@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/home/tactile_button.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // Renders the add-to-list submit button in the add-item sheet.
 class AddItemSubmitButton extends StatelessWidget {
@@ -22,7 +23,7 @@ class AddItemSubmitButton extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           width: double.infinity,
-          height: 52,
+          height: 54,
           decoration: BoxDecoration(
             gradient: hasText
                 ? LinearGradient(
@@ -31,14 +32,14 @@ class AddItemSubmitButton extends StatelessWidget {
                     end: Alignment.bottomRight,
                   )
                 : null,
-            color: hasText ? null : kMutedBg,
-            borderRadius: BorderRadius.circular(14),
+            color: hasText ? null : kMuted.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(16),
             boxShadow: hasText
                 ? [
                     BoxShadow(
-                      color: kPrimary.withValues(alpha: 0.25),
-                      offset: const Offset(0, 6),
-                      blurRadius: 12,
+                      color: kPrimary.withValues(alpha: 0.3),
+                      offset: const Offset(0, 8),
+                      blurRadius: 16,
                     ),
                   ]
                 : [],
@@ -46,10 +47,10 @@ class AddItemSubmitButton extends StatelessWidget {
           child: Center(
             child: Text(
               'Add to List',
-              style: TextStyle(
+              style: GoogleFonts.plusJakartaSans(
                 color: hasText ? Colors.white : kMuted,
                 fontSize: 16,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),

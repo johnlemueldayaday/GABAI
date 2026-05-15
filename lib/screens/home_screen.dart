@@ -11,7 +11,7 @@ import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:gabay/widgets/home/sections/add_item_sheet.dart';
 import 'package:gabay/widgets/home/sections/home_fab_stack.dart';
 import 'package:gabay/widgets/home/sections/numeric_keypad_sheet.dart';
-import 'package:gabay/pages/recent.dart';
+
 
 // Renders the grocery wallet app shell and theme.
 class GroceryApp extends StatelessWidget {
@@ -205,6 +205,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 
   void _showAddItemSheet() {
+    final store = AppState.currentList?.store ?? '';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -216,20 +217,20 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       builder: (_) => AddItemSheet(
         customItems: _customItems,
         recentItemNames: _recentItemNames,
-        lastPrices: _lastPrices,
-        onAdd: (item) {
-          setState(() => _items.add(item));
+        storeName: store,
+        onAddBatch: (items) {
+          setState(() {
+            for (final item in items) {
+              _items.add(item);
+              _recentItemNames.remove(item.name);
+              _recentItemNames.insert(0, item.name);
+              _lastPrices[item.name] = item.price;
+            }
+          });
           GroceryStorage.saveAll();
         },
         onSaveCustom: (customItem) =>
             setState(() => _customItems.add(customItem)),
-        onRecordUsage: (name, price) {
-          setState(() {
-            _recentItemNames.remove(name);
-            _recentItemNames.insert(0, name);
-            _lastPrices[name] = price;
-          });
-        },
       ),
     );
   }
@@ -378,75 +379,59 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
       return;
     }
 
-    final double totalSpent = checkedItems.fold(
-      0.0,
-      (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
-    );
+    setState(() {
+      final recent = GroceryList(_listName);
+      recent.budget = _budget;
+      recent.items = checkedItems
+          .map(
+            (e) => GroceryItem(
+              id: e.id,
+              name: e.name,
+              qty: e.qty,
+              unit: e.unit,
+              price: e.price,
+              isDone: true,
+              category: e.category,
+            ),
+          )
+          .toList();
 
+      AppState.recentLists.insert(0, recent);
+
+      // Remove only the finished items from current list
+      _items.removeWhere((i) => i.isDone);
+
+      GroceryStorage.saveAll();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Trip marked as finished and saved to history.'),
+        backgroundColor: kPrimary,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  void _deleteList() {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          'Finish Shopping?',
+          'Delete Cart?',
           style: GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.w700,
-            color: kTextCharcoal,
+            color: Colors.red,
           ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'You are about to save this trip to history.',
-              style: GoogleFonts.plusJakartaSans(
-                color: kTextCharcoal.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: kPrimary.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: kPrimary.withValues(alpha: 0.1)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'TOTAL SPENT:',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: kMuted,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                  Text(
-                    '₱${totalSpent.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: kPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '${checkedItems.length} items will be moved to history. Unchecked items will stay in your list.',
-              style: TextStyle(
-                fontSize: 12,
-                color: kTextCharcoal.withValues(alpha: 0.5),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
+        content: Text(
+          'This will permanently delete this cart and all its items.',
+          style: GoogleFonts.plusJakartaSans(
+            color: kTextCharcoal.withValues(alpha: 0.7),
+            fontWeight: FontWeight.w500,
+          ),
         ),
         actions: [
           TextButton(
@@ -457,47 +442,19 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
           TextButton(
             onPressed: () {
               setState(() {
-                final recent = GroceryList(_listName);
-                recent.budget = _budget;
-                recent.items = checkedItems
-                    .map(
-                      (e) => GroceryItem(
-                        id: e.id,
-                        name: e.name,
-                        qty: e.qty,
-                        unit: e.unit,
-                        price: e.price,
-                        isDone: true,
-                        category: e.category,
-                      ),
-                    )
-                    .toList();
-
-                AppState.recentLists.insert(0, recent);
-
-                // Remove only the finished items from current list
-                _items.removeWhere((i) => i.isDone);
-
+                if (AppState.activeIndex >= 0 && AppState.activeIndex < AppState.lists.length) {
+                  AppState.lists.removeAt(AppState.activeIndex);
+                  AppState.activeIndex = AppState.lists.isNotEmpty ? 0 : -1;
+                }
+                _items.clear();
+                _listName = 'New List';
+                _budget = 0.0;
                 GroceryStorage.saveAll();
               });
-
               Navigator.pop(context);
-
-              // Navigate to Recent Page
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const RecentPage()),
-              );
             },
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: kPrimary,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text('Finish & Save'),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -566,6 +523,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         onEditListName: _editListName,
         onFinishList: _finishList,
         onClearAll: _clearAllItems,
+        onDeleteList: _deleteList,
         onEditBudget: _editBudget,
         onToggleItem: _toggleItem,
         onDeleteItem: _deleteItem,

@@ -6,6 +6,7 @@ import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -39,11 +40,18 @@ class _DashboardPageState extends State<DashboardPage> {
       appBar: AppBar(
         leading: Builder(
           builder: (context) => IconButton(
-            icon: Icon(Icons.menu_rounded, color: kTextCharcoal),
+            icon: Icon(Icons.menu_rounded, color: kTextCharcoal, size: 28),
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('Dashboard'),
+        title: Text(
+          'Dashboard',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        centerTitle: true,
       ),
       drawer: const AppDrawer(currentPage: 'Dashboard'),
       body: ListView(
@@ -129,39 +137,45 @@ class _StatCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: kCardBg,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [kShadowSoft],
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: color.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(icon, size: 14, color: color),
+            child: Icon(icon, size: 18, color: color),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 14),
           Text(
             label,
-            style: TextStyle(
+            style: GoogleFonts.plusJakartaSans(
               fontSize: 10,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w600,
               color: kMuted,
-              letterSpacing: 0.5,
+              letterSpacing: 0.8,
             ),
           ),
           const SizedBox(height: 4),
           Text(
             value,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
               color: kTextCharcoal,
             ),
           ),
@@ -571,7 +585,7 @@ class _BillsPieCard extends StatelessWidget {
                               ),
                             ),
                             Text(
-                              'â‚±${sorted[index].value.toStringAsFixed(0)}',
+                              '₱${sorted[index].value.toStringAsFixed(0)}',
                               style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w700,
@@ -852,13 +866,16 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      title.toUpperCase(),
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        color: kMuted,
-        letterSpacing: 1.5,
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 4),
+      child: Text(
+        title.toUpperCase(),
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: kMuted,
+          letterSpacing: 1.2,
+        ),
       ),
     );
   }

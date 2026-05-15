@@ -10,9 +10,11 @@ import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/settings_service.dart';
-import 'package:gabay/pages/recent.dart';
+
 import 'package:gabay/pages/splash_screen.dart';
 import 'package:gabay/data/grocery_database.dart';
+import 'package:gabay/widgets/home/sections/store_picker_sheet.dart';
+import 'package:gabay/widgets/home/sections/add_item_sheet.dart';
 
 class GroceryApp extends StatelessWidget {
   const GroceryApp({super.key});
@@ -35,10 +37,10 @@ class GroceryApp extends StatelessWidget {
               backgroundColor: kBackground,
               elevation: 0,
               foregroundColor: kTextCharcoal,
-              centerTitle: false,
+              centerTitle: true,
               titleTextStyle: GoogleFonts.plusJakartaSans(
                 color: kTextCharcoal,
-                fontSize: 16,
+                fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -149,6 +151,83 @@ class _CartPageState extends State<CartPage> {
     });
   }
 
+  void _deleteCart(int index) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Delete Cart?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: Colors.red)),
+        content: Text('This will permanently delete this cart and all its items.', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: kMuted))),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                AppState.lists.removeAt(index);
+                GroceryStorage.saveAll();
+              });
+              Navigator.pop(context);
+            },
+            child: Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _clearCart(int index) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Clear Items?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+        content: Text('This will remove all items from this cart.', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: kMuted))),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                AppState.lists[index].items.clear();
+                GroceryStorage.saveAll();
+              });
+              Navigator.pop(context);
+            },
+            child: Text('Clear', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _renameCart(int index) async {
+    final ctrl = TextEditingController(text: AppState.lists[index].name);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Rename Cart', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: InputDecoration(hintText: 'New name', focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: kPrimary))),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: kMuted))),
+          TextButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: Text('Save', style: TextStyle(color: kPrimary))),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      setState(() {
+        AppState.lists[index].name = result;
+        GroceryStorage.saveAll();
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -157,11 +236,17 @@ class _CartPageState extends State<CartPage> {
       appBar: AppBar(
         leading: Builder(
           builder: (context) => IconButton(
-            icon: Icon(Icons.menu_rounded, color: kTextCharcoal),
+            icon: Icon(Icons.menu_rounded, color: kTextCharcoal, size: 28),
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('My Carts'),
+        title: Text(
+          'My Carts',
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
       ),
       body: AppState.lists.isEmpty
           ? _EmptyCartsView(onAddCart: _showCreateCartSheet)
@@ -180,18 +265,34 @@ class _CartPageState extends State<CartPage> {
                   cart: cart,
                   total: total,
                   onTap: () => _openCart(index),
+                  onDelete: () => _deleteCart(index),
+                  onClear: () => _clearCart(index),
+                  onRename: () => _renameCart(index),
                 );
               },
             ),
       floatingActionButton: AppState.lists.isEmpty
           ? null
-          : FloatingActionButton.extended(
-              onPressed: _showCreateCartSheet,
-              backgroundColor: kPrimary,
-              foregroundColor: Colors.white,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Cart'),
+          : Container(
+              height: 56,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: FloatingActionButton.extended(
+                onPressed: _showCreateCartSheet,
+                backgroundColor: kPrimary,
+                elevation: 4,
+                highlightElevation: 2,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                icon: const Icon(Icons.add_rounded, color: Colors.white),
+                label: Text(
+                  'Add New Cart',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
             ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
     );
   }
 }
@@ -295,83 +396,130 @@ class _CartTile extends StatelessWidget {
   final GroceryList cart;
   final double total;
   final VoidCallback onTap;
+  final VoidCallback onDelete;
+  final VoidCallback onClear;
+  final VoidCallback onRename;
+
   const _CartTile({
     required this.cart,
     required this.total,
     required this.onTap,
+    required this.onDelete,
+    required this.onClear,
+    required this.onRename,
   });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: kCardBg,
-          borderRadius: BorderRadius.circular(18),
-          boxShadow: [kShadowSoft],
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                color: kPrimary.withValues(alpha: 0.12),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.shopping_cart_outlined, color: kPrimary),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    cart.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: kTextCharcoal,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    cart.store.trim().isEmpty
-                        ? '${cart.items.length} items'
-                        : '${cart.items.length} items • ${cart.store}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: kMuted,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 12),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: kCardBg,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            offset: const Offset(0, 4),
+            blurRadius: 16,
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
               children: [
-                Text(
-                  'â‚±${total.toStringAsFixed(2)}',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: kTextCharcoal,
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: kPrimary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.shopping_bag_rounded, color: kPrimary, size: 22),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        cart.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: kTextCharcoal,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        cart.store.trim().isEmpty
+                            ? '${cart.items.length} items'
+                            : '${cart.items.length} items • ${cart.store}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: kMuted,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 2),
-                Icon(Icons.chevron_right_rounded, color: kMuted),
+                const SizedBox(width: 8),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      '₱${total.toStringAsFixed(2)}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Icon(Icons.chevron_right_rounded, color: kMuted.withValues(alpha: 0.4), size: 20),
+                  ],
+                ),
+                PopupMenuButton<String>(
+                  icon: Icon(Icons.more_vert_rounded, color: kMuted, size: 20),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: EdgeInsets.zero,
+                  onSelected: (value) {
+                    if (value == 'delete') {
+                      onDelete();
+                    } else if (value == 'clear') {
+                      onClear();
+                    } else if (value == 'rename') {
+                      onRename();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    PopupMenuItem(
+                      value: 'rename',
+                      child: Text('Rename', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600)),
+                    ),
+                    PopupMenuItem(
+                      value: 'clear',
+                      child: Text('Clear Items', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600)),
+                    ),
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: Text('Delete', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.red)),
+                    ),
+                  ],
+                ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -451,151 +599,191 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final sheetHeight = MediaQuery.of(context).size.height * 0.5;
-
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
-      child: SizedBox(
-        height: sheetHeight,
-        child: Container(
-          padding: EdgeInsets.fromLTRB(
-            24,
-            10,
-            24,
-            24 + MediaQuery.of(context).padding.bottom,
-          ),
-          decoration: BoxDecoration(
-            color: kCardBg,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.max,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: kBorder,
-                  borderRadius: BorderRadius.circular(999),
-                ),
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+          20,
+          12,
+          20,
+          24 + MediaQuery.of(context).padding.bottom,
+        ),
+        decoration: BoxDecoration(
+          color: kBackground, // Use a light background for the sheet
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle
+            Container(
+              width: 36,
+              height: 4,
+              decoration: BoxDecoration(
+                color: kMuted.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(2),
               ),
-              const SizedBox(height: 18),
-              Row(
-                children: [
-                  Text(
-                    'Create New Cart',
+            ),
+            const SizedBox(height: 24),
+            
+            // Header
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Create New Cart',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 19,
+                    fontWeight: FontWeight.w600,
+                    color: kTextCharcoal,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {},
+                  style: TextButton.styleFrom(
+                    foregroundColor: kPrimary,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                  ),
+                  child: Text(
+                    'Templates',
                     style: GoogleFonts.plusJakartaSans(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: kTextCharcoal,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                  const Spacer(),
-                  TextButton(
-                    onPressed: () {},
-                    style: TextButton.styleFrom(foregroundColor: kPrimary),
-                    child: const Text('Templates'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              _CreateCartField(
-                label: 'Name',
-                child: TextField(
-                  controller: _nameCtrl,
-                  focusNode: _nameFocus,
-                  autofocus: true,
-                  onTap: () => _nameFocus.requestFocus(),
-                  textAlign: TextAlign.end,
-                  decoration: const InputDecoration(
-                    border: InputBorder.none,
-                    hintText: 'New cart',
-                  ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 16),
+
+            // Grouped Fields (iOS Style)
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: kBorder.withValues(alpha: 0.5)),
               ),
-              _CreateCartField(
-                label: 'Budget',
-                child: TextField(
-                  controller: _budgetCtrl,
-                  focusNode: _budgetFocus,
-                  onTap: () => _budgetFocus.requestFocus(),
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  textAlign: TextAlign.end,
-                  decoration: InputDecoration(
-                    border: InputBorder.none,
-                    hintText: 'â‚± 0.00',
-                    hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.65)),
-                  ),
-                ),
-              ),
-              _CreateCartField(
-                label: 'Store',
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                    return DropdownMenu<String>(
-                      controller: _storeCtrl,
-                      focusNode: _storeFocus,
-                      width: constraints.maxWidth,
-                      requestFocusOnTap: true,
-                      enableFilter: true,
-                      enableSearch: true,
-                      trailingIcon: Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: kMuted,
-                      ),
-                      selectedTrailingIcon: Icon(
-                        Icons.keyboard_arrow_up_rounded,
-                        color: kMuted,
-                      ),
-                      textStyle: GoogleFonts.plusJakartaSans(
+              child: Column(
+                children: [
+                  _CreateCartField(
+                    label: 'Name',
+                    child: TextField(
+                      controller: _nameCtrl,
+                      focusNode: _nameFocus,
+                      autofocus: true,
+                      textAlign: TextAlign.end,
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 16,
                         fontWeight: FontWeight.w500,
                         color: kTextCharcoal,
                       ),
-                      inputDecorationTheme: const InputDecorationTheme(
+                      decoration: const InputDecoration(
                         border: InputBorder.none,
-                        contentPadding: EdgeInsets.zero,
+                        hintText: 'e.g. Weekly Groceries',
+                        contentPadding: EdgeInsets.symmetric(horizontal: 16),
                       ),
-                      dropdownMenuEntries: _storeOptions
-                          .map(
-                            (store) => DropdownMenuEntry<String>(
-                              value: store,
-                              label: store,
-                            ),
-                          )
-                          .toList(),
-                      onSelected: (value) {
-                        if (value != null) _storeCtrl.text = value;
-                      },
-                    );
-                  },
-                ),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _hasBudget ? _saveCart : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimary,
-                    disabledBackgroundColor: kMutedBg,
-                    foregroundColor: Colors.white,
-                    disabledForegroundColor: kMuted,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text('Save Cart'),
+                  Divider(height: 1, indent: 16, endIndent: 16, color: kBorder.withValues(alpha: 0.5)),
+                  _CreateCartField(
+                    label: 'Budget',
+                    child: TextField(
+                      controller: _budgetCtrl,
+                      focusNode: _budgetFocus,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      textAlign: TextAlign.end,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: kTextCharcoal,
+                      ),
+                      decoration: InputDecoration(
+                        border: InputBorder.none,
+                        hintText: '₱ 0.00',
+                        hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                      ),
+                    ),
+                  ),
+                  Divider(height: 1, indent: 16, endIndent: 16, color: kBorder.withValues(alpha: 0.5)),
+                  _CreateCartField(
+                    label: 'Store',
+                    child: GestureDetector(
+                      onTap: () async {
+                        FocusScope.of(context).unfocus();
+                        await showModalBottomSheet(
+                          context: context,
+                          isScrollControlled: true,
+                          backgroundColor: Colors.transparent,
+                          builder: (context) => StorePickerSheet(
+                            recentStores: _storeOptions,
+                            onStoreSelected: (store) {
+                              setState(() {
+                                _storeCtrl.text = store;
+                              });
+                            },
+                          ),
+                        );
+                      },
+                      behavior: HitTestBehavior.opaque,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              _storeCtrl.text.isEmpty ? 'Select store' : _storeCtrl.text,
+                              textAlign: TextAlign.end,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                                color: _storeCtrl.text.isEmpty 
+                                    ? kMuted.withValues(alpha: 0.5) 
+                                    : kTextCharcoal,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            Icons.chevron_right_rounded,
+                            color: kMuted.withValues(alpha: 0.4),
+                            size: 22,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 32),
+
+            // Maya-style Primary Button
+            SizedBox(
+              width: double.infinity,
+              height: 54,
+              child: ElevatedButton(
+                onPressed: _hasBudget ? _saveCart : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kPrimary,
+                  disabledBackgroundColor: kMuted.withValues(alpha: 0.1),
+                  foregroundColor: Colors.white,
+                  disabledForegroundColor: kMuted.withValues(alpha: 0.5),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                ),
+                child: Text(
+                  'Save Cart',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -609,15 +797,18 @@ class _CreateCartField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 48,
+    return Container(
+      height: 56,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             label,
             style: GoogleFonts.plusJakartaSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
+              fontSize: 15,
+              fontWeight: FontWeight.w500,
               color: kTextCharcoal,
             ),
           ),
@@ -800,6 +991,7 @@ class _CartDetailPageState extends State<CartDetailPage>
   }
 
   void _showAddItemSheet() {
+    final store = AppState.currentList?.store ?? '';
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -808,23 +1000,23 @@ class _CartDetailPageState extends State<CartDetailPage>
         vsync: this,
         duration: const Duration(milliseconds: 500),
       ),
-      builder: (_) => _AddItemSheet(
+      builder: (_) => AddItemSheet(
         customItems: _customItems,
         recentItemNames: _recentItemNames,
-        lastPrices: _lastPrices,
-        onAdd: (item) {
-          setState(() => _items.add(item));
+        storeName: store,
+        onAddBatch: (items) {
+          setState(() {
+            for (final item in items) {
+              _items.add(item);
+              _recentItemNames.remove(item.name);
+              _recentItemNames.insert(0, item.name);
+              _lastPrices[item.name] = item.price;
+            }
+          });
           GroceryStorage.saveAll();
         },
         onSaveCustom: (customItem) =>
             setState(() => _customItems.add(customItem)),
-        onRecordUsage: (name, price) {
-          setState(() {
-            _recentItemNames.remove(name);
-            _recentItemNames.insert(0, name);
-            _lastPrices[name] = price;
-          });
-        },
       ),
     );
   }
@@ -975,75 +1167,68 @@ class _CartDetailPageState extends State<CartDetailPage>
       return;
     }
 
-    final double totalSpent = checkedItems.fold(
-      0.0,
-      (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
+    setState(() {
+      final recent = GroceryList(
+        _listName,
+        budget: _budget,
+        store: AppState.currentList?.store ?? '',
+      );
+      recent.items = checkedItems
+          .map(
+            (e) => GroceryItem(
+              id: e.id,
+              name: e.name,
+              qty: e.qty,
+              unit: e.unit,
+              price: e.price,
+              isDone: true,
+              category: e.category,
+            ),
+          )
+          .toList();
+
+      AppState.recentLists.insert(0, recent);
+
+      // Remove the entire list from "My Carts" since it's now in History
+      if (AppState.activeIndex >= 0 &&
+          AppState.activeIndex < AppState.lists.length) {
+        AppState.lists.removeAt(AppState.activeIndex);
+        AppState.activeIndex = -1;
+      }
+
+      GroceryStorage.saveAll();
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Trip finished and moved to Recent Groceries.'),
+        backgroundColor: kPrimary,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
 
+    Navigator.pop(context); // Go back to My Carts
+  }
+
+  void _deleteList() {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          'Finish Cart?',
+          'Delete Cart?',
           style: GoogleFonts.plusJakartaSans(
             fontWeight: FontWeight.w700,
-            color: kTextCharcoal,
+            color: Colors.red,
           ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'You are about to save this trip to history.',
-              style: GoogleFonts.plusJakartaSans(
-                color: kTextCharcoal.withValues(alpha: 0.7),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: kPrimary.withValues(alpha: 0.05),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: kPrimary.withValues(alpha: 0.1)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'TOTAL SPENT:',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: kMuted,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                  Text(
-                    '₱${totalSpent.toStringAsFixed(2)}',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: kPrimary,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '${checkedItems.length} items will be moved to history. Unchecked items will stay in your list.',
-              style: TextStyle(
-                fontSize: 12,
-                color: kTextCharcoal.withValues(alpha: 0.5),
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
+        content: Text(
+          'This will permanently delete this cart and all its items.',
+          style: GoogleFonts.plusJakartaSans(
+            color: kTextCharcoal.withValues(alpha: 0.7),
+            fontWeight: FontWeight.w500,
+          ),
         ),
         actions: [
           TextButton(
@@ -1054,50 +1239,19 @@ class _CartDetailPageState extends State<CartDetailPage>
           TextButton(
             onPressed: () {
               setState(() {
-                final recent = GroceryList(
-                  _listName,
-                  budget: _budget,
-                  store: AppState.currentList?.store ?? '',
-                );
-                recent.items = checkedItems
-                    .map(
-                      (e) => GroceryItem(
-                        id: e.id,
-                        name: e.name,
-                        qty: e.qty,
-                        unit: e.unit,
-                        price: e.price,
-                        isDone: true,
-                        category: e.category,
-                      ),
-                    )
-                    .toList();
-
-                AppState.recentLists.insert(0, recent);
-
-                // Remove only the finished items from current list
-                _items.removeWhere((i) => i.isDone);
-
+                if (AppState.activeIndex >= 0 && AppState.activeIndex < AppState.lists.length) {
+                  AppState.lists.removeAt(AppState.activeIndex);
+                  AppState.activeIndex = AppState.lists.isNotEmpty ? 0 : -1;
+                }
+                _items.clear();
+                _listName = 'New List';
+                _budget = 0.0;
                 GroceryStorage.saveAll();
               });
-
               Navigator.pop(context);
-
-              // Navigate to Recent Page
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const RecentPage()),
-              );
             },
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white,
-              backgroundColor: kPrimary,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: const Text('Finish & Save'),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Delete'),
           ),
         ],
       ),
@@ -1151,6 +1305,7 @@ class _CartDetailPageState extends State<CartDetailPage>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: kBackground,
       appBar: AppBar(
         leading: Builder(
           builder: (context) => IconButton(
@@ -1158,7 +1313,129 @@ class _CartDetailPageState extends State<CartDetailPage>
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('Cart'),
+        centerTitle: false,
+        title: GestureDetector(
+          onTap: _editListName,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _listName,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: kTextCharcoal,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              if (AppState.currentList?.store.isNotEmpty ?? false)
+                Text(
+                  AppState.currentList!.store,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: kMuted,
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: Icon(Icons.more_vert_rounded, color: kMuted, size: 24),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            color: kBackground,
+            surfaceTintColor: Colors.transparent,
+            onSelected: (value) {
+              if (value == 'clear') {
+                _clearAllItems();
+              } else if (value == 'delete') {
+                _deleteList();
+              } else if (value == 'rename') {
+                _editListName();
+              } else if (value == 'finish') {
+                _finishList();
+              }
+            },
+            itemBuilder: (context) => [
+              PopupMenuItem(
+                value: 'finish',
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle_outline_rounded,
+                        size: 18, color: kPrimary),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Finish Trip',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: kPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const PopupMenuDivider(),
+              PopupMenuItem(
+                value: 'rename',
+                child: Row(
+                  children: [
+                    Icon(Icons.edit_outlined, size: 18, color: kTextCharcoal),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Rename List',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'clear',
+                child: Row(
+                  children: [
+                    Icon(Icons.remove_shopping_cart_outlined,
+                        size: 18, color: kTextCharcoal),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Clear Items',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuItem(
+                value: 'delete',
+                child: Row(
+                  children: [
+                    Icon(Icons.delete_outline_rounded,
+                        size: 18, color: Colors.red),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Delete Cart',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.red,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(width: 8),
+        ],
       ),
       drawer: const AppDrawer(currentPage: 'Cart'),
       body: AnimatedOpacity(
@@ -1173,123 +1450,7 @@ class _CartDetailPageState extends State<CartDetailPage>
             child: CustomScrollView(
               physics: const BouncingScrollPhysics(),
               slivers: [
-                SliverToBoxAdapter(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            'CART',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: kMuted,
-                              letterSpacing: 2.0,
-                            ),
-                          ),
-                          Row(
-                            children: [
-                              _TactileButton(
-                                onTap: _clearAllItems,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.red.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 8,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.delete_outline_rounded,
-                                          size: 16,
-                                          color: Colors.red,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          'Clear',
-                                          style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            color: Colors.red,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              _TactileButton(
-                                onTap: _finishList,
-                                child: Container(
-                                  decoration: BoxDecoration(
-                                    color: kPrimary.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 8,
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          Icons.check_circle_outline_rounded,
-                                          size: 16,
-                                          color: kPrimary,
-                                        ),
-                                        const SizedBox(width: 6),
-                                        Text(
-                                          'Finish',
-                                          style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            color: kPrimary,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      GestureDetector(
-                        onTap: _editListName,
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                _listName,
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w800,
-                                  color: kTextCharcoal,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.visible,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Icon(Icons.edit_outlined, size: 20, color: kMuted),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
-                  ),
-                ),
+                const SliverToBoxAdapter(child: SizedBox(height: 12)),
                 SliverPersistentHeader(
                   pinned: true,
                   delegate: _StickyBudgetDelegate(

@@ -22,35 +22,26 @@ class AppDrawer extends StatelessWidget {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(24, 80, 24, 20),
-            decoration: BoxDecoration(color: kBackground),
-            child: Stack(
-              alignment: Alignment.center,
+            padding: const EdgeInsets.fromLTRB(24, 60, 24, 30),
+            child: Row(
               children: [
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: SizedBox(
-                    width: 42,
-                    height: 42,
-                    child: ClipOval(
-                      child: Image.asset(
-                        'assets/images/logo.png',
-                        fit: BoxFit.cover,
-                      ),
-                    ),
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: kPrimary.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(14),
                   ),
+                  child: Icon(Icons.wallet_rounded, color: kPrimary, size: 26),
                 ),
+                const SizedBox(width: 16),
                 Text(
                   'GABAY',
-                  style: GoogleFonts.bangers(
-                    textStyle: TextStyle(
-                      color: kTextCharcoal,
-                      fontSize: 40,
-                      fontVariations: const [
-                        FontVariation('ital', 0),
-                        FontVariation('wght', 400),
-                      ],
-                    ),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: kTextCharcoal,
+                    letterSpacing: 2,
                   ),
                 ),
               ],
@@ -175,9 +166,10 @@ class _DrawerItem extends StatelessWidget {
       leading: Icon(icon, color: isSelected ? kPrimary : kTextCharcoal),
       title: Text(
         label,
-        style: TextStyle(
+        style: GoogleFonts.plusJakartaSans(
           color: isSelected ? kPrimary : kTextCharcoal,
-          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+          fontSize: 15,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
         ),
       ),
       onTap: onTap,

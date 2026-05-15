@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gabay/config/app_theme.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 // Renders the add-item search field with microphone control.
 class AddItemSearchField extends StatelessWidget {
@@ -24,13 +25,15 @@ class AddItemSearchField extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
         decoration: BoxDecoration(
-          color: kBackground,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: kBorder),
+          color: kMutedBg.withValues(alpha: 0.35),
+          borderRadius: BorderRadius.circular(14),
+          border: isListening
+              ? Border.all(color: kPrimary.withValues(alpha: 0.5), width: 1.5)
+              : Border.all(color: Colors.transparent),
           boxShadow: isListening
               ? [
                   BoxShadow(
-                    color: kPrimary.withValues(alpha: 0.16),
+                    color: kPrimary.withValues(alpha: 0.12),
                     blurRadius: 18,
                     spreadRadius: 1,
                   ),
@@ -40,17 +43,21 @@ class AddItemSearchField extends StatelessWidget {
         child: TextField(
           controller: controller,
           onChanged: onChanged,
-          style: TextStyle(
-            fontSize: 14,
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 15,
             fontWeight: FontWeight.w500,
             color: kTextCharcoal,
           ),
           decoration: InputDecoration(
             hintText: 'Search or type a new item...',
-            hintStyle: TextStyle(color: kMuted, fontSize: 14),
+            hintStyle: GoogleFonts.plusJakartaSans(
+              color: kMuted,
+              fontSize: 15,
+              fontWeight: FontWeight.w400,
+            ),
             prefixIcon: Icon(Icons.search_rounded, color: kMuted, size: 20),
             suffixIcon: Padding(
-              padding: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.only(right: 8),
               child: Center(
                 child: ScaleTransition(
                   scale: micPulseScale,
@@ -73,7 +80,7 @@ class AddItemSearchField extends StatelessWidget {
                           isListening
                               ? Icons.graphic_eq_rounded
                               : Icons.mic_none_rounded,
-                          size: 19,
+                          size: 20,
                           color: isListening ? kPrimary : kMuted,
                         ),
                       ),

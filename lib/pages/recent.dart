@@ -126,10 +126,7 @@ class _RecentPageState extends State<RecentPage> {
       builder: (_) => AlertDialog(
         backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(
-          'Rename History',
-          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
-        ),
+        title: Text('Rename History', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
         content: TextField(
           controller: ctrl,
           autofocus: true,
@@ -137,22 +134,12 @@ class _RecentPageState extends State<RecentPage> {
           decoration: InputDecoration(
             hintText: 'List name',
             hintStyle: TextStyle(color: kMuted),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: kPrimary, width: 2),
-            ),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: kPrimary, width: 2)),
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            style: TextButton.styleFrom(foregroundColor: kMuted),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-            style: TextButton.styleFrom(foregroundColor: kPrimary),
-            child: const Text('Save'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: kMuted))),
+          TextButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: Text('Save', style: TextStyle(color: kPrimary))),
         ],
       ),
     );
@@ -160,6 +147,31 @@ class _RecentPageState extends State<RecentPage> {
       setState(() => recent.name = result);
       GroceryStorage.saveAll();
     }
+  }
+
+  void _deleteRecent(int index) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: kCardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text('Delete History?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: Colors.red)),
+        content: Text('This will permanently delete this shopping trip from your history.', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: kMuted))),
+          TextButton(
+            onPressed: () {
+              setState(() {
+                AppState.recentLists.removeAt(index);
+                GroceryStorage.saveAll();
+              });
+              Navigator.pop(context);
+            },
+            child: Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -173,15 +185,15 @@ class _RecentPageState extends State<RecentPage> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: const Text('Recent'),
+        title: const Text('Recent Groceries'),
         elevation: 0,
         backgroundColor: kBackground,
         foregroundColor: kTextCharcoal,
         centerTitle: false,
         titleTextStyle: GoogleFonts.plusJakartaSans(
           color: kTextCharcoal,
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
         ),
       ),
       drawer: const AppDrawer(currentPage: 'Recent'),
@@ -191,25 +203,7 @@ class _RecentPageState extends State<RecentPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'HISTORY',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: kMuted,
-                letterSpacing: 2.0,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Recent Groceries',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                color: kTextCharcoal,
-              ),
-            ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 12),
 
             if (AppState.recentLists.isEmpty)
               Padding(
@@ -226,7 +220,12 @@ class _RecentPageState extends State<RecentPage> {
                 ),
               )
             else
-              ...AppState.recentLists.map((recent) {
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: AppState.recentLists.length,
+                itemBuilder: (context, index) {
+                  final recent = AppState.recentLists[index];
                 return Container(
                   margin: const EdgeInsets.only(bottom: 16),
                   padding: const EdgeInsets.all(16),
@@ -276,16 +275,37 @@ class _RecentPageState extends State<RecentPage> {
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
+                          const SizedBox(width: 8),
                           IconButton(
                             onPressed: () => _showItemsSheet(context, recent),
                             icon: Icon(
                               Icons.remove_red_eye_outlined,
-                              color: kTextCharcoal,
-                              size: 24,
+                              color: kMuted,
+                              size: 22,
                             ),
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(minWidth: 32),
+                          ),
+                          PopupMenuButton<String>(
+                            icon: Icon(Icons.more_vert_rounded, color: kMuted, size: 22),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                            onSelected: (value) {
+                              if (value == 'delete') {
+                                _deleteRecent(index);
+                              } else if (value == 'rename') {
+                                _editRecentName(recent);
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              PopupMenuItem(
+                                value: 'rename',
+                                child: Text('Rename', style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w600)),
+                              ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Delete', style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.red)),
+                              ),
+                            ],
                           ),
                         ],
                       ),

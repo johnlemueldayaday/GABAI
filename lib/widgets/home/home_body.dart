@@ -20,6 +20,7 @@ class HomeBody extends StatelessWidget {
   final VoidCallback onEditListName;
   final VoidCallback onFinishList;
   final VoidCallback onClearAll;
+  final VoidCallback onDeleteList;
   final VoidCallback onEditBudget;
   final void Function(GroceryItem item) onToggleItem;
   final void Function(GroceryItem item) onDeleteItem;
@@ -43,6 +44,7 @@ class HomeBody extends StatelessWidget {
     required this.onEditListName,
     required this.onFinishList,
     required this.onClearAll,
+    required this.onDeleteList,
     required this.onEditBudget,
     required this.onToggleItem,
     required this.onDeleteItem,
@@ -75,6 +77,7 @@ class HomeBody extends StatelessWidget {
                       onEditListName: onEditListName,
                       onFinishList: onFinishList,
                       onClearAll: onClearAll,
+                      onDeleteList: onDeleteList,
                     ),
                     const SizedBox(height: 24),
                     BudgetOverviewSection(
