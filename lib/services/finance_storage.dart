@@ -64,9 +64,7 @@ class FinanceStorage {
     final accounts = await loadAccounts();
     final lower = name.toLowerCase().trim();
     try {
-      return accounts.firstWhere(
-        (a) => a.name.toLowerCase().trim() == lower,
-      );
+      return accounts.firstWhere((a) => a.name.toLowerCase().trim() == lower);
     } catch (_) {
       return null;
     }
@@ -108,35 +106,56 @@ class FinanceStorage {
 
   /// Add a transaction, update the linked account balance, and persist both.
   /// This is the core method that Tarsi's `add_transaction` tool will call.
+  /// Throws an exception if the transaction would result in a negative balance for Cash, E-Wallet, or Bank accounts.
   static Future<void> addTransaction(FinanceTransaction txn) async {
-    // 1. Save the transaction
+    // 1. Load the account to check balance constraints
+    final accounts = await loadAccounts();
+    final index = accounts.indexWhere((a) => a.id == txn.accountId);
+    if (index == -1) {
+      throw Exception('Account not found');
+    }
+
+    final account = accounts[index];
+    double newBalance;
+    if (txn.type == 'INCOME') {
+      newBalance = account.balance + txn.amount;
+    } else {
+      newBalance = account.balance - txn.amount;
+    }
+
+    // Check for negative balance on Cash, E-Wallet, and Bank accounts
+    if (_isNonNegativeAccount(account.type) && newBalance < 0) {
+      throw Exception(
+        'Insufficient funds. Transaction would result in a negative balance for ${account.name} (${account.type}).',
+      );
+    }
+
+    // 2. Save the transaction
     final transactions = await loadTransactions();
     transactions.add(txn);
     await saveTransactions(transactions);
 
-    // 2. Update the account balance
-    final accounts = await loadAccounts();
-    final index = accounts.indexWhere((a) => a.id == txn.accountId);
-    if (index != -1) {
-      final account = accounts[index];
-      double newBalance;
-      if (txn.type == 'INCOME') {
-        newBalance = account.balance + txn.amount;
-      } else {
-        newBalance = account.balance - txn.amount;
-      }
-      accounts[index] = account.copyWith(balance: newBalance);
-      await saveAccounts(accounts);
-    }
+    // 3. Update the account balance
+    accounts[index] = account.copyWith(balance: newBalance);
+    await saveAccounts(accounts);
   }
 
   /// Transfer money between two accounts and log it as two transactions.
   /// This is the core method that Tarsi's `transfer_money` tool will call.
+  /// Throws an exception if the source account has insufficient funds.
   static Future<void> transferMoney({
     required Account fromAccount,
     required Account toAccount,
     required double amount,
   }) async {
+    // Check if source account has sufficient funds
+    if (_isNonNegativeAccount(fromAccount.type) &&
+        fromAccount.balance < amount) {
+      throw Exception(
+        'Insufficient funds in ${fromAccount.name}. Balance: ${fromAccount.balance.toStringAsFixed(2)}',
+      );
+    }
+
     final now = DateTime.now();
     final txnId = now.millisecondsSinceEpoch.toString();
 
@@ -220,10 +239,57 @@ class FinanceStorage {
   //  CLEAR ALL
   // ──────────────────────────────────────────────
 
+  /// Directly set the stored net worth value.
+  static Future<void> setNetWorth(double value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('finance_net_worth', value);
+  }
+
   /// Wipe all financial data (accounts + transactions).
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_accountsKey);
     await prefs.remove(_transactionsKey);
+  }
+
+  /// Delete the last transaction and revert the account balance.
+  /// Returns the deleted transaction, or null if no transactions exist.
+  static Future<FinanceTransaction?> deleteLastTransaction() async {
+    final transactions = await loadTransactions();
+    if (transactions.isEmpty) return null;
+
+    // Get the last transaction
+    final lastTxn = transactions.last;
+
+    // Remove it from the list
+    transactions.removeLast();
+    await saveTransactions(transactions);
+
+    // Revert the account balance
+    final accounts = await loadAccounts();
+    final index = accounts.indexWhere((a) => a.id == lastTxn.accountId);
+    if (index != -1) {
+      final account = accounts[index];
+      double newBalance;
+      if (lastTxn.type == 'INCOME') {
+        newBalance = account.balance - lastTxn.amount;
+      } else {
+        newBalance = account.balance + lastTxn.amount;
+      }
+      accounts[index] = account.copyWith(balance: newBalance);
+      await saveAccounts(accounts);
+    }
+
+    return lastTxn;
+  }
+
+  /// Check if an account type should not allow negative balances.
+  /// Cash, E-Wallet, and Bank accounts cannot go negative.
+  static bool _isNonNegativeAccount(String accountType) {
+    final normalizedType = accountType.toLowerCase().trim();
+    return normalizedType == 'cash' ||
+        normalizedType == 'e-wallet' ||
+        normalizedType == 'ewallet' ||
+        normalizedType == 'bank';
   }
 }

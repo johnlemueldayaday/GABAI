@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../pages/dashboard.dart';
+import '../pages/analytics.dart';
 import '../pages/cart.dart' show CartPage;
 import '../pages/recent.dart';
 import '../pages/settings.dart';
@@ -56,7 +57,7 @@ class AppDrawer extends StatelessWidget {
             ),
           ),
           _DrawerItem(
-            icon: Icons.insights_rounded,
+            icon: Icons.home_rounded,
             label: 'Dashboard',
             isSelected: currentPage == 'Dashboard',
             onTap: () {
@@ -65,6 +66,20 @@ class AppDrawer extends StatelessWidget {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(builder: (_) => const DashboardPage()),
+                );
+              }
+            },
+          ),
+          _DrawerItem(
+            icon: Icons.account_balance_wallet_outlined,
+            label: 'Account',
+            isSelected: currentPage == 'Account',
+            onTap: () {
+              Navigator.pop(context);
+              if (currentPage != 'Account') {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const WalletPage()),
                 );
               }
             },
@@ -112,15 +127,15 @@ class AppDrawer extends StatelessWidget {
             },
           ),
           _DrawerItem(
-            icon: Icons.account_balance_wallet_outlined,
-            label: 'Wallet',
-            isSelected: currentPage == 'Wallet',
+            icon: Icons.insights_rounded,
+            label: 'Analytics',
+            isSelected: currentPage == 'Analytics',
             onTap: () {
               Navigator.pop(context);
-              if (currentPage != 'Wallet') {
+              if (currentPage != 'Analytics') {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (_) => const WalletPage()),
+                  MaterialPageRoute(builder: (_) => const AnalyticsPage()),
                 );
               }
             },

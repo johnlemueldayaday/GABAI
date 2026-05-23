@@ -12,6 +12,8 @@ class SettingsService extends ChangeNotifier {
   static const _keySmartSuggestions = 'settings_smart_suggestions';
   static const _keyCompactView = 'settings_compact_view';
   static const _keyShowSavingsTips = 'settings_show_savings_tips';
+  static const _keyUserName = 'settings_user_name';
+  static const _keyOnboardingComplete = 'settings_onboarding_complete';
 
   String _currency = '₱';
   ThemeMode _themeMode = ThemeMode.light;
@@ -19,6 +21,8 @@ class SettingsService extends ChangeNotifier {
   bool _smartSuggestions = true;
   bool _compactView = false;
   bool _showSavingsTips = true;
+  String _userName = '';
+  bool _onboardingComplete = false;
 
   String get currency => _currency;
   ThemeMode get themeMode => _themeMode;
@@ -27,6 +31,8 @@ class SettingsService extends ChangeNotifier {
   bool get smartSuggestions => _smartSuggestions;
   bool get compactView => _compactView;
   bool get showSavingsTips => _showSavingsTips;
+  String get userName => _userName;
+  bool get onboardingComplete => _onboardingComplete;
 
   static const List<Map<String, String>> availableCurrencies = [
     {'symbol': '₱', 'name': 'Philippine Peso (PHP)'},
@@ -50,6 +56,8 @@ class SettingsService extends ChangeNotifier {
     _smartSuggestions = prefs.getBool(_keySmartSuggestions) ?? true;
     _compactView = prefs.getBool(_keyCompactView) ?? false;
     _showSavingsTips = prefs.getBool(_keyShowSavingsTips) ?? true;
+    _userName = prefs.getString(_keyUserName) ?? '';
+    _onboardingComplete = prefs.getBool(_keyOnboardingComplete) ?? false;
     notifyListeners();
   }
 
@@ -95,6 +103,20 @@ class SettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setUserName(String name) async {
+    _userName = name;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyUserName, name);
+    notifyListeners();
+  }
+
+  Future<void> setOnboardingComplete(bool value) async {
+    _onboardingComplete = value;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyOnboardingComplete, value);
+    notifyListeners();
+  }
+
   Future<void> resetAll() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_keyCurrency);
@@ -103,12 +125,15 @@ class SettingsService extends ChangeNotifier {
     await prefs.remove(_keySmartSuggestions);
     await prefs.remove(_keyCompactView);
     await prefs.remove(_keyShowSavingsTips);
+    await prefs.remove(_keyUserName);
+    await prefs.remove(_keyOnboardingComplete);
     _currency = '₱';
     _themeMode = ThemeMode.light;
     _budgetAlerts = true;
     _smartSuggestions = true;
     _compactView = false;
     _showSavingsTips = true;
+    _userName = '';
     notifyListeners();
   }
 }

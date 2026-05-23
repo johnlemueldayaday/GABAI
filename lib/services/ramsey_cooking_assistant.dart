@@ -686,13 +686,13 @@ class RamseyCookingAssistant {
       final d = dPool.isNotEmpty ? dPool[i % dPool.length] : fallbackPool[(i + 14) % fallbackPool.length];
 
       estimatedTotal += _calculateDishPrice(b) + _calculateDishPrice(l) + _calculateDishPrice(d);
-      lines.add("**${days[i]}**: ${b.name}, ${l.name}, ${d.name}");
+      lines.add("• ${days[i]}: ${b.name}, ${l.name}, ${d.name}");
     }
 
     return RamseyReply(
-      "I've designed a 7-day Filipino meal plan for your **₱${weeklyBudget.toStringAsFixed(0)}** budget! 🇵🇭\n\n"
+      "I've designed a 7-day Filipino meal plan for your ₱${weeklyBudget.toStringAsFixed(0)} budget! 🇵🇭\n\n"
       "${lines.join('\n')}\n\n"
-      "**Estimated Total Cost**: ₱${estimatedTotal.toStringAsFixed(2)}\n\n"
+      "Estimated Total Cost: ₱${estimatedTotal.toStringAsFixed(2)}\n\n"
       "Would you like me to generate a shopping list for these ingredients?",
     );
   }
@@ -1053,7 +1053,7 @@ class RamseyCookingAssistant {
       "I've checked your habits! 📊\n\n"
       "Total Recorded Spend: ₱${totalSpent.toStringAsFixed(2)}\n"
       "Top Category: $topCat\n\n"
-      "You can see the full charts in the **Insights** tab!",
+      "You can see the full charts in the Insights tab!",
       quickReplies: ['Check budget', 'What can I luto?'],
     );
   }

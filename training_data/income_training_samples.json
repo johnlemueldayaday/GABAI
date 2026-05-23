@@ -1,0 +1,307 @@
+[
+  {
+    "id": 1,
+    "input": "i received 25000 salary to my bank account",
+    "amount": 25000,
+    "source": "Salary",
+    "account": "Bank Account",
+    "category": "Salary",
+    "intent": "income",
+    "pattern": "received [amount] [source] to [account]"
+  },
+  {
+    "id": 2,
+    "input": "got paid 15000 sweldo from boss to gcash",
+    "amount": 15000,
+    "source": "Salary",
+    "account": "GCash",
+    "category": "Salary",
+    "intent": "income",
+    "pattern": "got paid [amount] [source] to [account]"
+  },
+  {
+    "id": 3,
+    "input": "received my paycheck of 30000 to cash",
+    "amount": 30000,
+    "source": "Salary",
+    "account": "Cash",
+    "category": "Salary",
+    "intent": "income",
+    "pattern": "received [source] of [amount] to [account]"
+  },
+  {
+    "id": 4,
+    "input": "mom gave me 500 pesos",
+    "amount": 500,
+    "source": "Gift - Family",
+    "account": null,
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[person] gave me [amount]",
+    "askForAccount": true
+  },
+  {
+    "id": 5,
+    "input": "dad sent me 2000 to my gcash",
+    "amount": 2000,
+    "source": "Gift - Family",
+    "account": "GCash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[person] sent me [amount] to [account]"
+  },
+  {
+    "id": 6,
+    "input": "kuya handed me 3500 cash",
+    "amount": 3500,
+    "source": "Gift - Family",
+    "account": "Cash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[person] handed me [amount] [account]"
+  },
+  {
+    "id": 7,
+    "input": "lola donated 1200 to my bank",
+    "amount": 1200,
+    "source": "Gift - Donation",
+    "account": "Bank",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[person] donated [amount] to [account]"
+  },
+  {
+    "id": 8,
+    "input": "sister paid me back 800 in cash",
+    "amount": 800,
+    "source": "Loan Return",
+    "account": "Cash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[person] paid me back [amount] in [account]"
+  },
+  {
+    "id": 9,
+    "input": "i received 5000 from freelance project to bank",
+    "amount": 5000,
+    "source": "Freelance Project",
+    "account": "Bank",
+    "category": "Freelance",
+    "intent": "income",
+    "pattern": "received [amount] from [source] to [account]"
+  },
+  {
+    "id": 10,
+    "input": "got 2500 from sideline work to gcash",
+    "amount": 2500,
+    "source": "Sideline Work",
+    "account": "GCash",
+    "category": "Freelance",
+    "intent": "income",
+    "pattern": "got [amount] from [source] to [account]"
+  },
+  {
+    "id": 11,
+    "input": "received payment 3200 for gig work in cash",
+    "amount": 3200,
+    "source": "Gig Work",
+    "account": "Cash",
+    "category": "Freelance",
+    "intent": "income",
+    "pattern": "received payment [amount] for [source] in [account]"
+  },
+  {
+    "id": 12,
+    "input": "freelance project paid me 7500 to my bank account",
+    "amount": 7500,
+    "source": "Freelance Project",
+    "account": "Bank Account",
+    "category": "Freelance",
+    "intent": "income",
+    "pattern": "[source] paid me [amount] to [account]"
+  },
+  {
+    "id": 13,
+    "input": "sold my preloved clothes for 1500 gcash",
+    "amount": 1500,
+    "source": "Sale - Preloved",
+    "account": "GCash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "sold [item] for [amount] [account]"
+  },
+  {
+    "id": 14,
+    "input": "i got 2800 from selling stuff on shopee to bank",
+    "amount": 2800,
+    "source": "Sale - Online",
+    "account": "Bank",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "got [amount] from selling [item] on [platform] to [account]"
+  },
+  {
+    "id": 15,
+    "input": "received 4200 from sale of old phone in cash",
+    "amount": 4200,
+    "source": "Sale - Item",
+    "account": "Cash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "received [amount] from sale of [item] in [account]"
+  },
+  {
+    "id": 16,
+    "input": "got refund 950 from online store to gcash",
+    "amount": 950,
+    "source": "Refund",
+    "account": "GCash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "got refund [amount] from [source] to [account]"
+  },
+  {
+    "id": 17,
+    "input": "i received tax refund of 8500 to my bank",
+    "amount": 8500,
+    "source": "Tax Refund",
+    "account": "Bank",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "received [source] of [amount] to [account]"
+  },
+  {
+    "id": 18,
+    "input": "deposit refund 1100 cash",
+    "amount": 1100,
+    "source": "Refund - Deposit",
+    "account": null,
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[source] [amount] [account]",
+    "askForAccount": true
+  },
+  {
+    "id": 19,
+    "input": "got bonus 12000 from company to bank account",
+    "amount": 12000,
+    "source": "Bonus",
+    "account": "Bank Account",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "got [source] [amount] from [organization] to [account]"
+  },
+  {
+    "id": 20,
+    "input": "received 5500 bonus in cash",
+    "amount": 5500,
+    "source": "Bonus",
+    "account": null,
+    "category": "Others",
+    "intent": "income",
+    "pattern": "received [amount] [source] in [account]",
+    "askForAccount": true
+  },
+  {
+    "id": 21,
+    "input": "received investment dividend 3000 to my bank",
+    "amount": 3000,
+    "source": "Investment Dividend",
+    "account": "Bank",
+    "category": "Investment",
+    "intent": "income",
+    "pattern": "received [source] [amount] to [account]"
+  },
+  {
+    "id": 22,
+    "input": "crypto gains 15000 to gcash",
+    "amount": 15000,
+    "source": "Crypto Gains",
+    "account": "GCash",
+    "category": "Investment",
+    "intent": "income",
+    "pattern": "[source] [amount] to [account]"
+  },
+  {
+    "id": 23,
+    "input": "200 from mom",
+    "amount": 200,
+    "source": "Gift - Family",
+    "account": null,
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[amount] from [person]",
+    "askForAccount": true
+  },
+  {
+    "id": 24,
+    "input": "john sent me 350 gcash",
+    "amount": 350,
+    "source": "Transfer - Gift",
+    "account": "GCash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[person] sent me [amount] [account]"
+  },
+  {
+    "id": 25,
+    "input": "mark paid me 600 in cash",
+    "amount": 600,
+    "source": "Payment",
+    "account": "Cash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[person] paid me [amount] in [account]"
+  },
+  {
+    "id": 26,
+    "input": "got my allowance 3000 to my cash wallet",
+    "amount": 3000,
+    "source": "Allowance",
+    "account": "Cash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "got [source] [amount] to [account]"
+  },
+  {
+    "id": 27,
+    "input": "received allowance from parents 5000 to bank",
+    "amount": 5000,
+    "source": "Allowance",
+    "account": "Bank",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "received [source] from [person] [amount] to [account]"
+  },
+  {
+    "id": 28,
+    "input": "i received 2500 pesos from side gig to gcash",
+    "amount": 2500,
+    "source": "Side Gig",
+    "account": "GCash",
+    "category": "Freelance",
+    "intent": "income",
+    "pattern": "received [amount] [currency] from [source] to [account]"
+  },
+  {
+    "id": 29,
+    "input": "nabigyan ako ng 1800 from cousin sa cash",
+    "amount": 1800,
+    "source": "Gift - Family",
+    "account": "Cash",
+    "category": "Others",
+    "intent": "income",
+    "pattern": "[tagalog_phrase] [amount] [person] sa [account]",
+    "language": "mixed-tagalog-english"
+  },
+  {
+    "id": 30,
+    "input": "inflow of 4500 to my bank from consulting",
+    "amount": 4500,
+    "source": "Consulting",
+    "account": "Bank",
+    "category": "Freelance",
+    "intent": "income",
+    "pattern": "[source] of [amount] to [account] from [activity]"
+  }
+]

@@ -11,6 +11,7 @@ import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:gabay/widgets/home/sections/add_item_sheet.dart';
 import 'package:gabay/widgets/home/sections/home_fab_stack.dart';
 import 'package:gabay/widgets/home/sections/numeric_keypad_sheet.dart';
+import 'package:gabay/pages/onboarding.dart';
 
 
 // Renders the grocery wallet app shell and theme.
@@ -38,7 +39,7 @@ class GroceryApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const HomePage(),
+      home: OnboardingGate(child: const HomePage()),
     );
   }
 }

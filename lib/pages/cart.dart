@@ -11,6 +11,8 @@ import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/services/finance_storage.dart';
+import 'package:gabay/models/finance_models.dart';
 import 'package:gabay/pages/price_comparison.dart';
 
 import 'package:gabay/pages/splash_screen.dart';
@@ -1187,7 +1189,7 @@ class _CartDetailPageState extends State<CartDetailPage>
     }
   }
 
-  void _finishList() {
+  Future<void> _finishList() async {
     final checkedItems = _items.where((i) => i.isDone).toList();
     if (checkedItems.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1198,6 +1200,27 @@ class _CartDetailPageState extends State<CartDetailPage>
         ),
       );
       return;
+    }
+
+    final totalSpent = checkedItems.fold(
+      0.0,
+      (sum, item) => sum + getItemTotal(item.price, item.qty, item.unit),
+    );
+
+    // Save transaction
+    final accounts = await FinanceStorage.loadAccounts();
+    if (accounts.isNotEmpty && totalSpent > 0) {
+      final account = accounts.first;
+      final txn = FinanceTransaction(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        amount: totalSpent,
+        accountId: account.id,
+        accountName: account.name,
+        type: 'EXPENSE',
+        category: 'Groceries',
+        description: 'Grocery Trip: $_listName',
+      );
+      await FinanceStorage.addTransaction(txn);
     }
 
     setState(() {
@@ -1240,6 +1263,7 @@ class _CartDetailPageState extends State<CartDetailPage>
       GroceryStorage.saveAll();
     });
 
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Trip finished and moved to Recent Groceries.'),

@@ -18,10 +18,10 @@ class TarsiAssistant {
     return const TarsiReply(
       "Hello! I am Tarsi, your private, local financial assistant. 🦉",
       extraTexts: [
-        "I can help you track expenses, income, and transfers completely offline.\n\nTry saying:\n• 'Spent 150 on coffee from Cash'\n• 'Received 25000 salary to Bank Account'\n• 'Transfer 500 from Bank Account to GCash'\n• 'What is my net worth?'"
+        "I can help you track expenses, income, and transfers completely offline.\n\nTry saying:\n• 'Spent 150 on coffee from Cash'\n• 'Received 25000 salary to Bank Account'\n• 'Transfer 500 from Bank Account to GCash'\n• 'What is my total balance?'"
       ],
       quickReplies: [
-        "What is my net worth?",
+        "What is my total balance?",
         "Check account balances",
         "Spent 150 on coffee from Cash"
       ],
@@ -118,7 +118,7 @@ class TarsiAssistant {
     if (accounts.isEmpty) {
       return const TarsiReply(
         "You don't have any accounts set up yet. Please visit the Wallet dashboard to create an account first!",
-        quickReplies: ["Show my net worth"],
+        quickReplies: ["Show my total balance"],
       );
     }
 
@@ -126,21 +126,21 @@ class TarsiAssistant {
     if (normalized == 'help' || normalized.contains('what can you do') || normalized.contains('commands')) {
       return TarsiReply(
         "Here are some examples of what you can ask me:\n\n"
-        "📈 **Logging Transactions**:\n"
+        "📈 Logging Transactions:\n"
         "• *'Spent 200 on milk tea from GCash'*\n"
         "• *'Received 15000 salary to Bank Account'*\n\n"
-        "💸 **Transferring Money**:\n"
+        "💸 Transferring Money:\n"
         "• *'Transfer 1000 from Bank Account to GCash'*\n\n"
-        "📊 **Checking Balances**:\n"
-        "• *'What is my net worth?'*\n"
+        "📊 Checking Balances:\n"
+        "• *'What is my total balance?'*\n"
         "• *'Check Cash balance'*",
-        quickReplies: const ["What is my net worth?", "Check account balances"],
+        quickReplies: const ["What is my total balance?", "Check account balances"],
       );
     }
 
     // 2. NET WORTH / BALANCE CHECKS
-    if (normalized == 'net worth' ||
-        normalized.contains('networth') ||
+    if (normalized == 'total balance' ||
+        normalized.contains('totalbalance') ||
         normalized.contains('how much money do i have') ||
         normalized.contains('total balance') ||
         normalized.contains('financial status') ||
@@ -149,11 +149,11 @@ class TarsiAssistant {
       final netWorth = await FinanceStorage.getNetWorth();
       final lines = <String>[];
       for (final a in accounts) {
-        lines.add("• ${a.icon} **${a.name}**: $_currency${a.balance.toStringAsFixed(2)}");
+        lines.add("• ${a.icon} ${a.name}: $_currency${a.balance.toStringAsFixed(2)}");
       }
       return TarsiReply(
-        "🦉 **Your Financial Summary**:\n\n"
-        "💰 **Total Net Worth**: **$_currency${netWorth.toStringAsFixed(2)}**\n\n"
+        "🦉 Your Financial Summary:\n\n"
+        "💰 Total Balance: $_currency${netWorth.toStringAsFixed(2)}\n\n"
         "${lines.join('\n')}",
         quickReplies: const ["Check GCash balance", "Check Cash balance"],
       );
@@ -168,8 +168,8 @@ class TarsiAssistant {
           normalized == 'check $nameLower balance' ||
           normalized.contains('how much') && normalized.contains(nameLower)) {
         return TarsiReply(
-          "🦉 Your current balance for ${a.icon} **${a.name}** is **$_currency${a.balance.toStringAsFixed(2)}**.",
-          quickReplies: const ["What is my net worth?"],
+          "🦉 Your current balance for ${a.icon} ${a.name} is $_currency${a.balance.toStringAsFixed(2)}.",
+          quickReplies: const ["What is my total balance?"],
         );
       }
     }
@@ -203,7 +203,7 @@ class TarsiAssistant {
         }
         if (fromAcc.balance < amount) {
           return TarsiReply(
-            "⚠️ Insufficient funds in ${fromAcc.icon} **${fromAcc.name}**.\n"
+            "⚠️ Insufficient funds in ${fromAcc.icon} ${fromAcc.name}.\n"
             "Balance: $_currency${fromAcc.balance.toStringAsFixed(2)}, requested: $_currency${amount.toStringAsFixed(2)}",
           );
         }
@@ -211,9 +211,9 @@ class TarsiAssistant {
         // Execute transfer
         await FinanceStorage.transferMoney(fromAccount: fromAcc, toAccount: toAcc, amount: amount);
         return TarsiReply(
-          "✅ **Transfer Successful!**\n\n"
-          "Moved **$_currency${amount.toStringAsFixed(2)}** from ${fromAcc.icon} **${fromAcc.name}** to ${toAcc.icon} **${toAcc.name}**.",
-          quickReplies: const ["What is my net worth?", "Check account balances"],
+          "✅ Transfer Successful!\n\n"
+          "Moved $_currency${amount.toStringAsFixed(2)} from ${fromAcc.icon} ${fromAcc.name} to ${toAcc.icon} ${toAcc.name}.",
+          quickReplies: const ["What is my total balance?", "Check account balances"],
         );
       }
     }
@@ -285,7 +285,7 @@ class TarsiAssistant {
       "• *'Spent 150 on coffee from Cash'*\n"
       "• *'salary 25000 to Bank Account'*\n"
       "• *'transfer 500 from Cash to GCash'*",
-      quickReplies: ["What is my net worth?", "Check account balances"],
+      quickReplies: ["What is my total balance?", "Check account balances"],
     );
   }
 
@@ -315,10 +315,10 @@ class TarsiAssistant {
 
     await FinanceStorage.addTransaction(txn);
     return TarsiReply(
-      "💸 **Expense Logged Successfully!**\n\n"
-      "Recorded an expense of **$_currency${amount.toStringAsFixed(2)}** from your ${acc.icon} **${acc.name}** under **$category**.\n"
+      "💸 Expense Logged Successfully!\n\n"
+      "Recorded an expense of $_currency${amount.toStringAsFixed(2)} from your ${acc.icon} ${acc.name} under $category.\n"
       "New Balance: $_currency${(acc.balance - amount).toStringAsFixed(2)}",
-      quickReplies: const ["What is my net worth?", "Check account balances"],
+      quickReplies: const ["What is my total balance?", "Check account balances"],
     );
   }
 
@@ -343,10 +343,10 @@ class TarsiAssistant {
 
     await FinanceStorage.addTransaction(txn);
     return TarsiReply(
-      "💵 **Income Logged Successfully!**\n\n"
-      "Recorded an income of **$_currency${amount.toStringAsFixed(2)}** to your ${acc.icon} **${acc.name}** under **$category**.\n"
+      "💵 Income Logged Successfully!\n\n"
+      "Recorded an income of $_currency${amount.toStringAsFixed(2)} to your ${acc.icon} ${acc.name} under $category.\n"
       "New Balance: $_currency${(acc.balance + amount).toStringAsFixed(2)}",
-      quickReplies: const ["What is my net worth?", "Check account balances"],
+      quickReplies: const ["What is my total balance?", "Check account balances"],
     );
   }
 

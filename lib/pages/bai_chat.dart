@@ -17,7 +17,12 @@ class BaiChatPage extends StatefulWidget {
 class _BaiChatMessage {
   final String text;
   final bool isUser;
-  const _BaiChatMessage({required this.text, required this.isUser});
+  final String? highlightColor;
+  const _BaiChatMessage({
+    required this.text,
+    required this.isUser,
+    this.highlightColor,
+  });
 }
 
 class _BaiChatPageState extends State<BaiChatPage> {
@@ -82,7 +87,13 @@ class _BaiChatPageState extends State<BaiChatPage> {
       if (!mounted) return;
       _stopTyping();
       setState(() {
-        _savedMessages.add(_BaiChatMessage(text: reply.text, isUser: false));
+        _savedMessages.add(
+          _BaiChatMessage(
+            text: reply.text,
+            isUser: false,
+            highlightColor: reply.highlightColor,
+          ),
+        );
         if (reply.extraTexts != null) {
           for (var t in reply.extraTexts!) {
             _savedMessages.add(_BaiChatMessage(text: t, isUser: false));
@@ -93,7 +104,10 @@ class _BaiChatPageState extends State<BaiChatPage> {
       _scrollToBottom();
 
       if (reply.navigateTo == 'cart_detail' && mounted) {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => const CartDetailPage()));
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CartDetailPage()),
+        );
       }
     });
   }
@@ -119,7 +133,10 @@ class _BaiChatPageState extends State<BaiChatPage> {
 
   void _startTyping() {
     _typingTimer?.cancel();
-    setState(() { _isTyping = true; _typingDots = 1; });
+    setState(() {
+      _isTyping = true;
+      _typingDots = 1;
+    });
     _scrollToBottom();
     _typingTimer = Timer.periodic(const Duration(milliseconds: 450), (_) {
       if (!mounted) return;
@@ -167,7 +184,14 @@ class _BaiChatPageState extends State<BaiChatPage> {
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: Text('BAI', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w900, color: Colors.white)),
+              child: Text(
+                'BAI',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -175,17 +199,35 @@ class _BaiChatPageState extends State<BaiChatPage> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('BAI', style: GoogleFonts.plusJakartaSans(color: kTextCharcoal, fontSize: 16, fontWeight: FontWeight.w800)),
+                  Text(
+                    'BAI',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: kTextCharcoal,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
                   const SizedBox(height: 2),
                   Row(
                     children: [
-                      Container(width: 8, height: 8, decoration: BoxDecoration(color: kPrimary, shape: BoxShape.circle)),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: kPrimary,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
                           'Brother AI • Your Smart Assistant',
                           overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.plusJakartaSans(color: kMuted, fontSize: 11, fontWeight: FontWeight.w600),
+                          style: GoogleFonts.plusJakartaSans(
+                            color: kMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                     ],
@@ -196,7 +238,11 @@ class _BaiChatPageState extends State<BaiChatPage> {
           ],
         ),
         actions: [
-          IconButton(onPressed: _clearChat, icon: Icon(Icons.delete_sweep_outlined, color: kTextCharcoal), tooltip: 'Clear Chat'),
+          IconButton(
+            onPressed: _clearChat,
+            icon: Icon(Icons.delete_sweep_outlined, color: kTextCharcoal),
+            tooltip: 'Clear Chat',
+          ),
           const SizedBox(width: 8),
         ],
         elevation: 0,
@@ -214,8 +260,12 @@ class _BaiChatPageState extends State<BaiChatPage> {
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               itemCount: _savedMessages.length + (_isTyping ? 1 : 0),
               itemBuilder: (context, index) {
-                if (index < _savedMessages.length) return _BubbleWidget(message: _savedMessages[index]);
-                if (_isTyping) return _TypingWidget(dots: _typingDots);
+                if (index < _savedMessages.length) {
+                  return _BubbleWidget(message: _savedMessages[index]);
+                }
+                if (_isTyping) {
+                  return _TypingWidget(dots: _typingDots);
+                }
                 return const SizedBox.shrink();
               },
             ),
@@ -223,7 +273,11 @@ class _BaiChatPageState extends State<BaiChatPage> {
           if (!_isTyping && _savedQuickReplies.isNotEmpty)
             _QuickRepliesWidget(replies: _savedQuickReplies, onTap: _send),
           const SizedBox(height: 8),
-          _ComposerWidget(controller: _controller, isEnabled: !_isTyping, onSend: _send),
+          _ComposerWidget(
+            controller: _controller,
+            isEnabled: !_isTyping,
+            onSend: _send,
+          ),
         ],
       ),
     );
@@ -243,8 +297,20 @@ class _TypingWidget extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        decoration: BoxDecoration(color: kCardBg, borderRadius: BorderRadius.circular(20), border: Border.all(color: kBorder), boxShadow: [kShadowSoft]),
-        child: Text('BAI is thinking${List.filled(dots, '.').join()}', style: GoogleFonts.plusJakartaSans(color: kMuted, fontSize: 13, fontWeight: FontWeight.w600)),
+        decoration: BoxDecoration(
+          color: kCardBg,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: kBorder),
+          boxShadow: [kShadowSoft],
+        ),
+        child: Text(
+          'BAI is thinking${List.filled(dots, '.').join()}',
+          style: GoogleFonts.plusJakartaSans(
+            color: kMuted,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
       ),
     );
   }
@@ -254,9 +320,110 @@ class _BubbleWidget extends StatelessWidget {
   final _BaiChatMessage message;
   const _BubbleWidget({required this.message});
 
+  Widget _buildRichText(String text, bool isUser) {
+    if (isUser) {
+      return Text(
+        text,
+        style: GoogleFonts.plusJakartaSans(
+          color: Colors.white,
+          fontSize: 14,
+          height: 1.45,
+          fontWeight: FontWeight.w500,
+        ),
+      );
+    }
+
+    final lines = text.split('\n');
+    final List<TextSpan> spans = [];
+
+    for (int i = 0; i < lines.length; i++) {
+      final line = lines[i];
+      if (line.contains('Expense logged!')) {
+        spans.add(
+          TextSpan(
+            text: line,
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.redAccent,
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
+          ),
+        );
+      } else if (line.contains('Income logged!')) {
+        spans.add(
+          TextSpan(
+            text: line,
+            style: GoogleFonts.plusJakartaSans(
+              color: const Color(0xFF10B981), // Premium emerald green
+              fontWeight: FontWeight.w800,
+              fontSize: 15,
+            ),
+          ),
+        );
+      } else if (line.trim().startsWith('-')) {
+        // Highlight logged negative amount line in red
+        spans.add(
+          TextSpan(
+            text: line,
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.redAccent,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      } else if (line.trim().startsWith('+')) {
+        // Highlight logged positive amount line in green
+        spans.add(
+          TextSpan(
+            text: line,
+            style: GoogleFonts.plusJakartaSans(
+              color: const Color(0xFF10B981),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+      } else {
+        spans.add(
+          TextSpan(
+            text: line,
+            style: GoogleFonts.plusJakartaSans(
+              color: kTextCharcoal,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        );
+      }
+
+      if (i < lines.length - 1) {
+        spans.add(const TextSpan(text: '\n'));
+      }
+    }
+
+    return RichText(
+      text: TextSpan(
+        children: spans,
+        style: GoogleFonts.plusJakartaSans(
+          fontSize: 14,
+          height: 1.45,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isUser = message.isUser;
+
+    // Determine border color based on highlightColor
+    Color? borderColor;
+    if (!isUser && message.highlightColor != null) {
+      if (message.highlightColor == 'red') {
+        borderColor = Colors.red;
+      } else if (message.highlightColor == 'green') {
+        borderColor = Colors.green;
+      }
+    }
+
     return Align(
       alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
       child: Row(
@@ -265,34 +432,50 @@ class _BubbleWidget extends StatelessWidget {
         children: [
           if (!isUser) ...[
             Container(
-              width: 32, height: 32,
+              width: 32,
+              height: 32,
               margin: const EdgeInsets.only(bottom: 12, right: 8),
               decoration: BoxDecoration(
                 gradient: LinearGradient(colors: [kPrimary, kPrimaryLight]),
                 shape: BoxShape.circle,
               ),
               alignment: Alignment.center,
-              child: Text('B', style: GoogleFonts.plusJakartaSans(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.white)),
+              child: Text(
+                'B',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ],
           Flexible(
             child: Container(
-              constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+              constraints: BoxConstraints(
+                maxWidth: MediaQuery.of(context).size.width * 0.72,
+              ),
               margin: const EdgeInsets.only(bottom: 12),
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
                 color: isUser ? kPrimary : kCardBg,
                 borderRadius: BorderRadius.circular(20).copyWith(
-                  bottomLeft: isUser ? const Radius.circular(20) : const Radius.circular(4),
-                  bottomRight: isUser ? const Radius.circular(4) : const Radius.circular(20),
+                  bottomLeft: isUser
+                      ? const Radius.circular(20)
+                      : const Radius.circular(4),
+                  bottomRight: isUser
+                      ? const Radius.circular(4)
+                      : const Radius.circular(20),
                 ),
-                border: isUser ? null : Border.all(color: kBorder),
+                border: isUser
+                    ? null
+                    : Border.all(
+                        color: borderColor ?? kBorder,
+                        width: borderColor != null ? 2.5 : 1,
+                      ),
                 boxShadow: isUser ? [] : [kShadowSoft],
               ),
-              child: Text(
-                message.text,
-                style: GoogleFonts.plusJakartaSans(color: isUser ? Colors.white : kTextCharcoal, fontSize: 14, height: 1.45, fontWeight: FontWeight.w500),
-              ),
+              child: _buildRichText(message.text, isUser),
             ),
           ),
         ],
@@ -313,22 +496,41 @@ class _QuickRepliesWidget extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.end,
-        children: replies.map((r) => Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Material(
-            color: kCardBg,
-            borderRadius: BorderRadius.circular(16),
-            child: InkWell(
-              onTap: () => onTap(r),
-              borderRadius: BorderRadius.circular(16),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), color: kCardBg, border: Border.all(color: kBorder), boxShadow: [kShadowSoft]),
-                child: Text(r, style: GoogleFonts.plusJakartaSans(color: kPrimary, fontSize: 13, fontWeight: FontWeight.bold)),
+        children: replies
+            .map(
+              (r) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Material(
+                  color: kCardBg,
+                  borderRadius: BorderRadius.circular(16),
+                  child: InkWell(
+                    onTap: () => onTap(r),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        color: kCardBg,
+                        border: Border.all(color: kBorder),
+                        boxShadow: [kShadowSoft],
+                      ),
+                      child: Text(
+                        r,
+                        style: GoogleFonts.plusJakartaSans(
+                          color: kPrimary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
-        )).toList(),
+            )
+            .toList(),
       ),
     );
   }
@@ -338,7 +540,11 @@ class _ComposerWidget extends StatelessWidget {
   final TextEditingController controller;
   final bool isEnabled;
   final VoidCallback onSend;
-  const _ComposerWidget({required this.controller, required this.isEnabled, required this.onSend});
+  const _ComposerWidget({
+    required this.controller,
+    required this.isEnabled,
+    required this.onSend,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -346,7 +552,10 @@ class _ComposerWidget extends StatelessWidget {
       top: false,
       child: Container(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        decoration: BoxDecoration(color: kBackground, border: Border(top: BorderSide(color: kBorder))),
+        decoration: BoxDecoration(
+          color: kBackground,
+          border: Border(top: BorderSide(color: kBorder)),
+        ),
         child: Row(
           children: [
             Expanded(
@@ -357,23 +566,45 @@ class _ComposerWidget extends StatelessWidget {
                 maxLines: 4,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => onSend(),
-                style: GoogleFonts.plusJakartaSans(color: kTextCharcoal, fontSize: 14, fontWeight: FontWeight.w500),
+                style: GoogleFonts.plusJakartaSans(
+                  color: kTextCharcoal,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
                 decoration: InputDecoration(
-                  hintText: isEnabled ? 'Ask BAI anything...' : 'BAI is thinking...',
+                  hintText: isEnabled
+                      ? 'Ask BAI anything...'
+                      : 'BAI is thinking...',
                   hintStyle: TextStyle(color: kMuted),
                   filled: true,
                   fillColor: kCardBg,
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: kBorder)),
-                  enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: kBorder)),
-                  disabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: kBorder)),
-                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: kPrimary, width: 1.5)),
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 12,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: kBorder),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: kBorder),
+                  ),
+                  disabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: kBorder),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(color: kPrimary, width: 1.5),
+                  ),
                 ),
               ),
             ),
             const SizedBox(width: 10),
             SizedBox(
-              width: 46, height: 46,
+              width: 46,
+              height: 46,
               child: IconButton.filled(
                 onPressed: isEnabled ? onSend : null,
                 icon: const Icon(Icons.send_rounded, size: 20),
@@ -382,7 +613,9 @@ class _ComposerWidget extends StatelessWidget {
                   disabledBackgroundColor: kMutedBg,
                   foregroundColor: Colors.white,
                   disabledForegroundColor: kMuted,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                 ),
                 tooltip: 'Send',
               ),
