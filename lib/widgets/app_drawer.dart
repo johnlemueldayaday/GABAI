@@ -6,7 +6,8 @@ import '../pages/cart.dart' show CartPage;
 import '../pages/recent.dart';
 import '../pages/settings.dart';
 import '../pages/bills.dart';
-import '../pages/ramsey_chat.dart';
+import '../pages/wallet.dart';
+import '../pages/bai_chat.dart';
 import '../config/app_theme.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -111,15 +112,29 @@ class AppDrawer extends StatelessWidget {
             },
           ),
           _DrawerItem(
-            icon: Icons.restaurant_menu_rounded,
-            label: 'Ramsey',
-            isSelected: currentPage == 'Ramsey',
+            icon: Icons.account_balance_wallet_outlined,
+            label: 'Wallet',
+            isSelected: currentPage == 'Wallet',
             onTap: () {
               Navigator.pop(context);
-              if (currentPage != 'Ramsey') {
+              if (currentPage != 'Wallet') {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (_) => const RamseyChatPage()),
+                  MaterialPageRoute(builder: (_) => const WalletPage()),
+                );
+              }
+            },
+          ),
+          _DrawerItem(
+            icon: Icons.psychology_rounded,
+            label: 'BAI',
+            isSelected: currentPage == 'BAI',
+            onTap: () {
+              Navigator.pop(context);
+              if (currentPage != 'BAI') {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const BaiChatPage()),
                 );
               }
             },

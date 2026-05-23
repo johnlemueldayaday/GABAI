@@ -5,6 +5,7 @@ import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/price_storage.dart';
+import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/pages/splash_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -145,6 +146,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         await GroceryStorage.clear();
                         await BillStorage.clear();
                         await PriceStorage.clear();
+                        await FinanceStorage.clear();
                         await _settings.resetAll();
                         
                         if (context.mounted) {

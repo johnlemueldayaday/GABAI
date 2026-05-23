@@ -98,6 +98,9 @@ class RamseyCookingAssistant {
     return '${monthNames[date.month - 1]} ${date.day}';
   }
 
+  /// Expose current step for BAI integration
+  RamseyStep get stepForBai => _step;
+
   bool get hasRecentFridgeItems => _recentIngredientKeywords().isNotEmpty;
 
   RamseyReply handle(String rawInput) {
@@ -477,17 +480,12 @@ class RamseyCookingAssistant {
 
     final total = _tripTotal(snapshot.trips);
     final biggest = _biggestPurchase(snapshot.trips);
-    final topCategory = _topCategory(snapshot.trips);
 
     return RamseyReply(
-      "Here's your spending summary.\n\n"
-      "Period: ${_formatRange(snapshot.start, snapshot.end)}\n"
-      "Total spent: ₱${total.toStringAsFixed(2)}\n"
-      "No. of trips: ${snapshot.trips.length}\n"
-      "Biggest purchase: ${biggest.$1} - ₱${biggest.$2.toStringAsFixed(2)}\n"
-      "Most bought category: $topCategory\n\n"
+      "${_formatRange(snapshot.start, snapshot.end)}\n"
+      "₱${total.toStringAsFixed(2)}\n"
+      "${biggest.$1} - ₱${biggest.$2.toStringAsFixed(2)}\n\n"
       "Want to see the full breakdown?",
-      quickReplies: const ['Yes', 'Show breakdown'],
     );
   }
 
