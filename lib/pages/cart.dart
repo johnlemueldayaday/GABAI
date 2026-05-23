@@ -9,7 +9,9 @@ import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
+import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/pages/price_comparison.dart';
 
 import 'package:gabay/pages/splash_screen.dart';
 import 'package:gabay/data/grocery_database.dart';
@@ -203,6 +205,7 @@ class _CartPageState extends State<CartPage> {
 
   void _renameCart(int index) async {
     final ctrl = TextEditingController(text: AppState.lists[index].name);
+    ctrl.selection = TextSelection(baseOffset: 0, extentOffset: ctrl.text.length);
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
@@ -506,7 +509,7 @@ class _CreateCartSheet extends StatefulWidget {
 }
 
 class _CreateCartSheetState extends State<_CreateCartSheet> {
-  final _nameCtrl = TextEditingController(text: 'New cart');
+  final _nameCtrl = TextEditingController();
   final _budgetCtrl = TextEditingController();
   final _storeCtrl = TextEditingController();
   final _nameFocus = FocusNode();
@@ -528,6 +531,7 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
       _storeCtrl.text = _storeOptions.first;
     }
     _budgetCtrl.addListener(() => setState(() {}));
+    _nameCtrl.addListener(() => setState(() {}));
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _nameFocus.requestFocus();
     });
@@ -633,7 +637,7 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
             // Grouped Fields (iOS Style)
             Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: kCardBg,
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: kBorder.withValues(alpha: 0.5)),
               ),
@@ -651,10 +655,11 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
                         fontWeight: FontWeight.w500,
                         color: kTextCharcoal,
                       ),
-                      decoration: const InputDecoration(
+                      decoration: InputDecoration(
                         border: InputBorder.none,
                         hintText: 'e.g. Weekly Groceries',
-                        contentPadding: EdgeInsets.symmetric(horizontal: 16),
+                        hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                       ),
                     ),
                   ),
@@ -735,7 +740,7 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
               width: double.infinity,
               height: 54,
               child: ElevatedButton(
-                onPressed: _hasBudget ? _saveCart : null,
+                onPressed: (_hasBudget && _nameCtrl.text.trim().isNotEmpty) ? _saveCart : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kPrimary,
                   disabledBackgroundColor: kMuted.withValues(alpha: 0.1),
@@ -850,6 +855,7 @@ class _CartDetailPageState extends State<CartDetailPage>
 
   void _editListName() async {
     final ctrl = TextEditingController(text: _listName);
+    ctrl.selection = TextSelection(baseOffset: 0, extentOffset: ctrl.text.length);
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
@@ -897,8 +903,58 @@ class _CartDetailPageState extends State<CartDetailPage>
     }
   }
 
+  List<String> _storeHistory() {
+    final lists = [...AppState.lists, ...AppState.recentLists];
+    final stores = <String>[];
+    for (final list in lists) {
+      final store = list.store.trim();
+      if (store.isNotEmpty && !stores.contains(store)) {
+        stores.add(store);
+      }
+    }
+    return stores;
+  }
+
+  void _editStore() async {
+    final stores = _storeHistory();
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => StorePickerSheet(
+        recentStores: stores,
+        onStoreSelected: (store) => Navigator.pop(context, store),
+      ),
+    );
+
+    if (result != null && result.trim().isNotEmpty) {
+      setState(() {
+        if (AppState.currentList != null) {
+          AppState.currentList!.store = result.trim();
+          // Auto-update prices based on new store history
+          for (final item in _items) {
+            final lastPrice = PriceStorage.getLastPrice(item.name, result.trim());
+            if (lastPrice != null && lastPrice > 0) {
+              item.price = lastPrice;
+            }
+          }
+        }
+      });
+      GroceryStorage.saveAll();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Store updated to ${result.trim()}. Item prices have been refreshed.'),
+          backgroundColor: kPrimary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   void _editItemName(GroceryItem item) async {
     final ctrl = TextEditingController(text: item.name);
+    ctrl.selection = TextSelection(baseOffset: 0, extentOffset: ctrl.text.length);
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
@@ -1020,7 +1076,12 @@ class _CartDetailPageState extends State<CartDetailPage>
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) =>
-          _NumericKeypadSheet(initialValue: item.price, itemName: item.name),
+          _NumericKeypadSheet(
+            initialValue: item.price, 
+            itemName: item.name,
+            unit: item.unit,
+            storeName: AppState.currentList?.store ?? 'Store',
+          ),
     );
     if (result != null) {
       setState(() => item.price = result);
@@ -1161,6 +1222,14 @@ class _CartDetailPageState extends State<CartDetailPage>
 
       AppState.recentLists.insert(0, recent);
 
+      // Record prices to history if store is provided
+      final store = recent.store.trim();
+      if (store.isNotEmpty) {
+        for (final item in recent.items) {
+          PriceStorage.recordPrice(item.name, store, item.price, item.unit);
+        }
+      }
+
       // Remove the entire list from "My Carts" since it's now in History
       if (AppState.activeIndex >= 0 &&
           AppState.activeIndex < AppState.lists.length) {
@@ -1286,12 +1355,12 @@ class _CartDetailPageState extends State<CartDetailPage>
           ),
         ),
         centerTitle: false,
-        title: GestureDetector(
-          onTap: _editListName,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            GestureDetector(
+              onTap: _editListName,
+              child: Text(
                 _listName,
                 style: GoogleFonts.plusJakartaSans(
                   fontSize: 18,
@@ -1301,19 +1370,42 @@ class _CartDetailPageState extends State<CartDetailPage>
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
-              if (AppState.currentList?.store.isNotEmpty ?? false)
-                Text(
-                  AppState.currentList!.store,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: kMuted,
+            ),
+            if (AppState.currentList?.store.isNotEmpty ?? false)
+              GestureDetector(
+                onTap: _editStore,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        AppState.currentList!.store,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: kMuted,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.edit_rounded, size: 10, color: kMuted),
+                    ],
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
         actions: [
+          IconButton(
+            icon: Icon(Icons.compare_arrows_rounded, color: kPrimary),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const PriceComparisonPage()),
+              );
+            },
+            tooltip: 'Compare Prices',
+          ),
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert_rounded, color: kMuted, size: 24),
             shape:
@@ -1891,17 +1983,35 @@ class _ItemTile extends StatelessWidget {
                   Expanded(
                     child: GestureDetector(
                       onTap: onNameEdit,
-                      child: Text(
-                        item.name,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 15,
-                          color: kTextCharcoal,
-                          decoration: item.isDone
-                              ? TextDecoration.lineThrough
-                              : null,
-                          decorationColor: kMuted,
-                        ),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              item.name,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                                color: kTextCharcoal,
+                                decoration: item.isDone
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                decorationColor: kMuted,
+                              ),
+                            ),
+                          ),
+                          if (item.isDone) ...[
+                            const SizedBox(width: 8),
+                            Text(
+                              '${_formatQty(item.qty)} ${item.unit}',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: kMuted,
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   ),
@@ -1916,13 +2026,13 @@ class _ItemTile extends StatelessWidget {
                 ],
               ),
               // ─── Bottom row: qty controls, unit price ───
-              if (!item.isDone)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Row(
-                    children: [
-                      const SizedBox(width: 38), // align with text above
-                      // Quantity controls
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Row(
+                  children: [
+                    const SizedBox(width: 38), // align with text above
+                    if (!item.isDone) ...[
+                      // Interactive Quantity controls
                       Container(
                         height: 32,
                         decoration: BoxDecoration(
@@ -1988,43 +2098,44 @@ class _ItemTile extends StatelessWidget {
                           ),
                         ),
                       ),
-                      const Spacer(),
-                      // Tappable unit price
-                      _TactileButton(
-                        onTap: onPriceEdit,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: kPrimary.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.edit_outlined,
-                                size: 12,
-                                color: kPrimary,
-                              ),
+                    ] else
+                      const SizedBox(width: 32),
+                    const Spacer(),
+                    // Unit price (read-only when done)
+                    GestureDetector(
+                      onTap: item.isDone ? null : onPriceEdit,
+                      behavior: HitTestBehavior.opaque,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: (item.isDone ? kMuted : kPrimary).withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (!item.isDone) ...[
+                              Icon(Icons.edit_outlined, size: 12, color: kPrimary),
                               const SizedBox(width: 4),
-                              Text(
-                                '₱${item.price.toStringAsFixed(2)}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: kPrimary,
-                                ),
-                              ),
                             ],
-                          ),
+                            Text(
+                              '₱${item.price.toStringAsFixed(2)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: item.isDone ? kMuted : kPrimary,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+              ),
             ],
           ),
         ),
@@ -2956,6 +3067,8 @@ class _AddItemSheetState extends State<_AddItemSheet>
                                         itemName: itemName.isEmpty
                                             ? 'New Item'
                                             : itemName,
+                                        unit: _unit,
+                                        storeName: AppState.currentList?.store ?? 'Store',
                                       ),
                                     );
                                 if (result != null) {
@@ -3112,9 +3225,13 @@ class _StaggeredPopState extends State<_StaggeredPop>
 class _NumericKeypadSheet extends StatefulWidget {
   final double initialValue;
   final String itemName;
+  final String unit;
+  final String storeName;
   const _NumericKeypadSheet({
     required this.initialValue,
     required this.itemName,
+    this.unit = '',
+    this.storeName = '',
   });
 
   @override
@@ -3174,6 +3291,19 @@ class _NumericKeypadSheetState extends State<_NumericKeypadSheet> {
     Navigator.pop(context, _currentValue);
   }
 
+  String _buildHeaderSubtitle() {
+    if (widget.unit.isEmpty && widget.storeName.isEmpty) {
+      return widget.itemName;
+    }
+    if (widget.unit.isEmpty) {
+      return '${widget.itemName} at ${widget.storeName}';
+    }
+    if (widget.storeName.isEmpty) {
+      return '${widget.itemName} per ${widget.unit}';
+    }
+    return '${widget.itemName} per ${widget.unit} at ${widget.storeName}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final bottomPadding = MediaQuery.of(context).padding.bottom;
@@ -3218,7 +3348,7 @@ class _NumericKeypadSheetState extends State<_NumericKeypadSheet> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        widget.itemName,
+                        _buildHeaderSubtitle(),
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w500,

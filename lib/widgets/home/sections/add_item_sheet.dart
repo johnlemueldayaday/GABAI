@@ -431,7 +431,7 @@ class _AddItemSheetState extends State<AddItemSheet>
                                 decoration: BoxDecoration(
                                   color: isSelected
                                       ? kPrimary.withValues(alpha: 0.12)
-                                      : Colors.white,
+                                      : kCardBg,
                                   borderRadius:
                                       BorderRadius.circular(22),
                                   border: Border.all(

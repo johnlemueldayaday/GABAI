@@ -4,7 +4,7 @@ import 'package:gabay/data/grocery_database.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/models/bill_models.dart';
 
-enum RamseyStep { mealPrompt, cravingPrompt, dishPrompt }
+enum RamseyStep { mealPrompt, cravingPrompt, dishPrompt, cartPrompt }
 
 class _SpendingSnapshot {
   final String label;
@@ -46,9 +46,11 @@ class RamseyDish {
 
 class RamseyReply {
   final String text;
+  final List<String>? extraTexts;
   final List<String> quickReplies;
+  final String? navigateTo;
 
-  const RamseyReply(this.text, {this.quickReplies = const []});
+  const RamseyReply(this.text, {this.extraTexts, this.quickReplies = const [], this.navigateTo});
 }
 
 class RamseyCookingAssistant {
@@ -60,6 +62,8 @@ class RamseyCookingAssistant {
   List<String> _lastDishNames = [];
   _SpendingSnapshot? _lastSpending;
   List<Bill> _allBills = [];
+  RamseyDish? _lastDish;
+  final Set<String> _suggestedDishNames = {};
 
   void updateBills(List<Bill> bills) {
     _allBills = bills;
@@ -82,43 +86,10 @@ class RamseyCookingAssistant {
   }
 
   RamseyReply get greeting {
-    final upcomingBills = _getUpcomingBillsWithin7Days();
-    
-    if (upcomingBills.isNotEmpty) {
-      String billMessage = '';
-      if (upcomingBills.length == 1) {
-        final bill = upcomingBills.first;
-        final dayOfWeek = _getDayOfWeekName(bill.dueDate);
-        final formatted = _formatDateNicely(bill.dueDate);
-        billMessage = "📌 Hey! You have an upcoming ${bill.type} bill due on $dayOfWeek, $formatted (₱${bill.amount.toStringAsFixed(2)})\n\n";
-      } else {
-        billMessage = "📌 Hey! You have ${upcomingBills.length} bills coming up:\n";
-        for (var i = 0; i < upcomingBills.length && i < 3; i++) {
-          final bill = upcomingBills[i];
-          final formatted = _formatDateNicely(bill.dueDate);
-          billMessage += "  • ${bill.type} - $formatted (₱${bill.amount.toStringAsFixed(2)})\n";
-        }
-        billMessage += "\n";
-      }
-      
-      return RamseyReply(
-        "${billMessage}I'm Ramsey, your smart assistant. I can help you track bills, manage your budget, "
-        "and suggest what to cook based on your budget or recent groceries. What can I help you with?",
-        quickReplies: ['Show all bills', 'What can I cook?'],
-      );
-    }
-    
     return const RamseyReply(
-      "Kumusta! I'm Ramsey, your all-in-one smart assistant. 🇵🇭\n\n"
-      "I can help you track bills, manage your budget, analyze your spending habits, "
-      "and suggest what to cook based on your budget or recent groceries. "
-      "How can I help you today?",
+      "Kumusta! I'm Ramsey, your all-in-one smart assistant. 🇵🇭",
+      extraTexts: ["How can I help you today?"],
     );
-  }
-
-  String _getDayOfWeekName(DateTime date) {
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    return days[date.weekday - 1];
   }
 
   String _formatDateNicely(DateTime date) {
@@ -161,6 +132,10 @@ class RamseyCookingAssistant {
       return _weeklyMealPlanReply();
     }
 
+    if (_isWeeklyBillAsk(normalized)) {
+      return _weeklyBillsSummaryReply();
+    }
+
     if (_isBillAsk(normalized)) {
       return _billsSummaryReply();
     }
@@ -173,37 +148,33 @@ class RamseyCookingAssistant {
       return _analyticsSummaryReply();
     }
 
+    // Direct recipe request: "i want to cook caldereta", "give me the recipe of adobo", etc.
+    final directDish = _findDirectRecipeRequest(normalized);
+    if (directDish != null) {
+      _lastDish = directDish;
+      _step = RamseyStep.cartPrompt;
+      return _recipeReply(directDish);
+    }
+
     if (normalized == 'start over') {
       _resetCooking();
+      _suggestedDishNames.clear();
       return greeting;
     }
 
     final explicitMeal = _explicitMeal(normalized);
     if (explicitMeal != null) {
-      _meal = explicitMeal;
-      _craving = 'Anything';
-      _currentOptions = _pickDishes(_meal!, 'Anything');
-      _step = RamseyStep.dishPrompt;
-      return _dishOptionsReply();
+      return _handleMealInquiry(explicitMeal, 'Anything');
     }
 
     if (_step == RamseyStep.mealPrompt) {
       final selectedCraving = _cravingFromInput(normalized);
       if (selectedCraving != null) {
-        _meal = RamseyCookingAssistant.detectMeal(DateTime.now());
-        _craving = selectedCraving;
-        _currentOptions = _pickDishes(_meal!, selectedCraving);
-        _step = RamseyStep.dishPrompt;
-        if (_currentOptions.isEmpty) return _noRecentFridgeReply();
-        return _dishOptionsReply();
+        return _handleMealInquiry(RamseyCookingAssistant.detectMeal(DateTime.now()), selectedCraving);
       }
 
       if (_looksLikeCookingAsk(normalized)) {
-        _meal = RamseyCookingAssistant.detectMeal(DateTime.now());
-        _craving = 'Anything';
-        _currentOptions = _pickDishes(_meal!, 'Anything');
-        _step = RamseyStep.dishPrompt;
-        return _dishOptionsReply();
+        return _handleMealInquiry(RamseyCookingAssistant.detectMeal(DateTime.now()), 'Anything');
       }
       return const RamseyReply(
         "I'd love to help! I can assist with cooking, grocery tracking, or managing your budget. What's on your mind?",
@@ -216,38 +187,49 @@ class RamseyCookingAssistant {
       if (selectedCraving == null) {
         return _cravingPrompt();
       }
-
-      _craving = selectedCraving;
-      _currentOptions = _pickDishes(_meal!, selectedCraving);
-      _step = RamseyStep.dishPrompt;
-      if (_currentOptions.isEmpty) return _noRecentFridgeReply();
-      return _dishOptionsReply();
+      return _handleMealInquiry(_meal!, selectedCraving);
     }
 
     if (_step == RamseyStep.dishPrompt) {
       if (normalized == 'yes' ||
           normalized == 'more' ||
-          normalized.contains('suggest more')) {
-        _currentOptions = _pickDishes(_meal ?? 'Meal', _craving ?? 'Anything');
-        return _dishOptionsReply();
+          normalized.contains('suggest more') ||
+          _isYes(normalized)) {
+        return _handleMealInquiry(_meal ?? 'Anything', _craving ?? 'Anything');
       }
 
       final number = int.tryParse(normalized);
       if (number != null && number >= 1 && number <= _currentOptions.length) {
-        return _recipeReply(_currentOptions[number - 1]);
+        _lastDish = _currentOptions[number - 1];
+        _step = RamseyStep.cartPrompt;
+        return _recipeReply(_lastDish!);
       }
 
       final selectedCraving = _cravingFromInput(normalized);
       if (selectedCraving != null) {
-        _craving = selectedCraving;
-        _currentOptions = _pickDishes(_meal!, selectedCraving);
-        if (_currentOptions.isEmpty) return _noRecentFridgeReply();
-        return _dishOptionsReply();
+        return _handleMealInquiry(_meal!, selectedCraving);
       }
 
       return const RamseyReply(
-        "Type the dish number you want to cook, or say 'start over'. Sarap nyan soon.",
-        quickReplies: ['Start over'],
+        "Type the dish number you want to cook. Sarap nyan soon.",
+      );
+    }
+
+    if (_step == RamseyStep.cartPrompt) {
+      if (normalized == 'yes' || _isYes(normalized)) {
+        if (_lastDish != null) {
+          _addIngredientsToCart(_lastDish!);
+          _step = RamseyStep.mealPrompt;
+          return RamseyReply(
+            "Done! I've created a new list for ${_lastDish!.name} and added all the ingredients. Opening it for you now... 🛒",
+            navigateTo: 'cart_detail',
+          );
+        }
+      }
+      _step = RamseyStep.mealPrompt;
+      return const RamseyReply(
+        "No problem! I'm here if you need more suggestions or help with your budget.",
+        quickReplies: ['What can I cook?', 'Show my budget'],
       );
     }
 
@@ -260,8 +242,7 @@ class RamseyCookingAssistant {
 
     if (normalized.contains('show all bills')) {
       return const RamseyReply(
-        "You can see all your recorded bills in the **Bills Tracker** section. It has a full calendar view and payment status for each one!",
-        quickReplies: ['Check my budget', 'Start over'],
+        "You can see all your recorded bills in the Bills Tracker section. It has a full calendar view and payment status for each one!",
       );
     }
 
@@ -344,11 +325,19 @@ class RamseyCookingAssistant {
         input.contains('what can i');
   }
 
+  bool _isWeeklyBillAsk(String input) {
+    return (input.contains('how much') && input.contains('bill')) ||
+           input.contains('total bills this week') ||
+           input.contains('bills this week') ||
+           input.contains('bills for this week');
+  }
+
   bool _isBillAsk(String input) {
-    return input.contains('bill') ||
+    return input.contains('upcoming bills') ||
+        input.contains('do i have bills') ||
+        input.contains('any bills') ||
         input.contains('bayad') ||
-        input.contains('overdue') ||
-        input.contains('upcoming');
+        input.contains('overdue');
   }
 
   bool _isAnalyticsAsk(String input) {
@@ -385,13 +374,6 @@ class RamseyCookingAssistant {
       "3. Spicy\n"
       "4. Anything\n"
       "5. Depends on what's in my fridge",
-    );
-  }
-
-  RamseyReply _noRecentFridgeReply() {
-    _step = RamseyStep.cravingPrompt;
-    return const RamseyReply(
-      "Wala akong nakitang recent groceries from the last 5 days.\nOnly groceries bought within 5 days count for fridge mode.",
     );
   }
 
@@ -714,7 +696,6 @@ class RamseyCookingAssistant {
       "${lines.join('\n')}\n\n"
       "**Estimated Total Cost**: ₱${estimatedTotal.toStringAsFixed(2)}\n\n"
       "Would you like me to generate a shopping list for these ingredients?",
-      quickReplies: ['Generate shopping list', 'Start over'],
     );
   }
 
@@ -789,6 +770,79 @@ class RamseyCookingAssistant {
     return keywords;
   }
 
+  RamseyReply _handleMealInquiry(String meal, String craving) {
+    _meal = meal;
+    _craving = craving;
+    
+    final pool = _pickDishes(meal, craving).where((d) => 
+      !_suggestedDishNames.contains(d.name)
+    ).toList();
+
+    if (pool.isEmpty) {
+      _step = RamseyStep.mealPrompt;
+      return const RamseyReply(
+        "That's all I can find for now, sorry. 👨‍🍳 Is there anything else I can help you with?",
+        quickReplies: ['Show my budget', 'Do I have upcoming bills?'],
+      );
+    }
+
+    // Pick 3 new ones
+    final count = min(3, pool.length);
+    _currentOptions = pool.take(count).toList();
+    for (final dish in _currentOptions) {
+      _suggestedDishNames.add(dish.name);
+    }
+
+    _step = RamseyStep.dishPrompt;
+    return _dishOptionsReply();
+  }
+
+  RamseyDish? _findDirectRecipeRequest(String input) {
+    // Check if the input looks like a direct recipe request
+    final hasRecipeKeyword = input.contains('recipe') ||
+        input.contains('cook') ||
+        input.contains('give') ||
+        input.contains('want') ||
+        input.contains('how to') ||
+        input.contains('make') ||
+        input.contains('prepare') ||
+        input.contains('luto') ||
+        input.contains('paano') ||
+        input.contains('teach me') ||
+        input.contains('lets') ||
+        input.contains("let's") ||
+        input.contains('cite') ||
+        input.contains('ingredients') ||
+        input.contains('whats the') ||
+        input.contains("what's the");
+
+    if (!hasRecipeKeyword) return null;
+
+    // Try to match a dish name from our database
+    RamseyDish? bestMatch;
+    int bestMatchLength = 0;
+
+    for (final dish in _dishes) {
+      final dishName = dish.name.toLowerCase();
+      if (input.contains(dishName) && dishName.length > bestMatchLength) {
+        bestMatch = dish;
+        bestMatchLength = dishName.length;
+      }
+
+      // Also try partial/common name matching
+      // e.g. "adobo" matches "Chicken Adobo", "caldereta" matches "Chicken Afritada" won't
+      final words = dishName.split(' ');
+      for (final word in words) {
+        if (word.length >= 4 && input.contains(word) && dishName.length > bestMatchLength) {
+          bestMatch = dish;
+          bestMatchLength = dishName.length;
+        }
+      }
+    }
+
+    return bestMatch;
+  }
+
   RamseyReply _dishOptionsReply() {
     final meal = _meal ?? 'meal';
     final list = _currentOptions
@@ -805,7 +859,7 @@ class RamseyCookingAssistant {
       "$list\n\n"
       "None of these suit your liking? Would you like me to suggest more? "
       "Or just type the number to see the recipe!",
-      quickReplies: const ['Yes', 'Start over'],
+      quickReplies: const ['Yes'],
     );
   }
 
@@ -827,9 +881,45 @@ class RamseyCookingAssistant {
       "$steps\n\n"
       "Cooking time: ${dish.minutes} mins\n"
       "Good for: ${dish.servings} servings\n\n"
-      "Want something else? Say 'start over'.",
-      quickReplies: const ['Start over'],
+      "Would you like me to add these ingredients to your cart?",
     );
+  }
+
+  void _addIngredientsToCart(RamseyDish dish) {
+    final newList = GroceryList(
+      dish.name,
+      date: DateTime.now(),
+      budget: 1000,
+      items: [],
+      store: 'Puregold',
+    );
+
+    for (final ingredient in dish.ingredients) {
+      final dbMatch = _findGroceryPrice(ingredient);
+      final price = (dbMatch?['price'] as num?)?.toDouble() ?? 25.0;
+      final category = (dbMatch?['category'] as String?) ?? 'Other';
+      final unit = (dbMatch?['unit'] as String?) ?? 'pc';
+
+      newList.items.add(GroceryItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString() + ingredient.hashCode.toString(),
+        name: ingredient.replaceAll(RegExp(r'\s*\[[^\]]*\]'), '').trim(),
+        qty: 1,
+        unit: unit,
+        price: price,
+        category: category,
+      ));
+    }
+
+    AppState.lists.add(newList);
+    AppState.activeIndex = AppState.lists.length - 1;
+  }
+
+  bool _isYes(String input) {
+    final yesWords = [
+      'yes', 'yea', 'yup', 'yess', 'yesss', 'yessss', 'yeas', 'yeah', 'yah', 'y',
+      'opo', 'oo', 'sige', 'g', 'game', 'ok', 'okay', 'sure', 'add it', 'put it'
+    ];
+    return yesWords.any((w) => input.contains(w));
   }
 
   String _ingredientPriceLabel(String ingredient) {
@@ -874,12 +964,34 @@ class RamseyCookingAssistant {
     return 'Easy Filipino favorite for any craving';
   }
 
+  RamseyReply _weeklyBillsSummaryReply() {
+    final upcoming = _getUpcomingBillsWithin7Days();
+    if (upcoming.isEmpty) {
+      return const RamseyReply(
+        "You don't have any bills due for the next 7 days. You're all clear for now! \ud83d\ude4c",
+      );
+    }
+
+    final total = upcoming.fold(0.0, (sum, bill) => sum + bill.amount);
+    String list = '';
+    for (final bill in upcoming) {
+      final formatted = _formatDateNicely(bill.dueDate);
+      list += "\u2022 ${bill.type}: \u20b1${bill.amount.toStringAsFixed(2)} ($formatted)\n";
+    }
+
+    return RamseyReply(
+      "Your total bills for this week (next 7 days) is \u20b1${total.toStringAsFixed(2)}.\n\n"
+      "Here's the breakdown:\n"
+      "$list\n"
+      "Make sure to settle them on time! \ud83d\udcb3",
+    );
+  }
+
   RamseyReply _billsSummaryReply() {
     if (_allBills.isEmpty) {
       return const RamseyReply(
-        "I can help you keep track of your payments! 📅\n\n"
-        "Currently, you don't have any bills recorded. Head over to the **Bills Tracker** to add your first bill, and I'll help you monitor it!",
-        quickReplies: ['Show my budget', 'What can I cook?'],
+        "I can help you keep track of your payments! \ud83d\udcc5\n\n"
+        "Currently, you don't have any bills recorded. Head over to the Bills Tracker to add your first bill, and I'll help you monitor it!",
       );
     }
 
@@ -891,9 +1003,8 @@ class RamseyCookingAssistant {
 
     if (upcoming.isEmpty) {
       return const RamseyReply(
-        "Good news! You have no upcoming bills for now. 📅\n\n"
+        "Good news! You have no upcoming bills for now. \ud83d\udcc5\n\n"
         "You're all caught up! Is there anything else I can help you with?",
-        quickReplies: ['Show my budget', 'What can I cook?'],
       );
     }
 
@@ -901,9 +1012,9 @@ class RamseyCookingAssistant {
     final dateStr = "${_monthName(nextBill.dueDate.month)} ${nextBill.dueDate.day}";
 
     return RamseyReply(
-      "Your upcoming bill is from **${nextBill.type}** amounting to **₱${nextBill.amount.toStringAsFixed(2)}** on **$dateStr**.\n\n"
+      "Your upcoming bill is ${nextBill.type} amounting to \u20b1${nextBill.amount.toStringAsFixed(2)} on $dateStr.\n\n"
       "Do you want me to notify you 3 days before the due date?",
-      quickReplies: ['Yes, notify me', 'No, thanks', 'Show all bills'],
+      quickReplies: ['Yes, notify me', 'No, thanks'],
     );
   }
 
@@ -1815,5 +1926,122 @@ const List<RamseyDish> _dishes = [
     tags: {'Healthy', 'Soupy'},
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'fish', 'vegetable', 'tomato'},
+  ),
+  RamseyDish(
+    name: 'Filipino Spaghetti',
+    shortInfo: 'Sweet-style birthday party classic',
+    ingredients: ['Spaghetti noodles', 'Ground pork', 'Hotdogs', 'Filipino sweet spaghetti sauce', 'Banana ketchup', 'Cheddar cheese', 'Garlic', 'Onion', 'Cooking oil'],
+    instructions: ['Boil noodles until al dente, drain.', 'Saute garlic and onion, add ground pork.', 'Add sliced hotdogs and cook briefly.', 'Pour in spaghetti sauce and banana ketchup.', 'Simmer for 10 minutes.', 'Toss with noodles and top with cheese.'],
+    minutes: 30, servings: 6,
+    tags: {'Anything'}, meals: {'Lunch', 'Dinner', 'Snack'},
+    ingredientKeywords: {'noodle', 'pork'},
+  ),
+  RamseyDish(
+    name: 'Lumpiang Shanghai',
+    shortInfo: 'Crispy spring rolls, fiesta must-have',
+    ingredients: ['Ground pork', 'Carrots', 'Onion', 'Garlic', 'Egg', 'Soy sauce', 'Salt and pepper', 'Lumpia wrapper', 'Cooking oil'],
+    instructions: ['Mix ground pork, minced carrots, onion, garlic, egg, and soy sauce.', 'Season with salt and pepper.', 'Wrap in lumpia wrappers, roll tightly.', 'Deep fry in hot oil until golden brown.', 'Drain on paper towels and serve with sweet chili sauce.'],
+    minutes: 45, servings: 8,
+    tags: {'Anything'}, meals: {'Lunch', 'Dinner', 'Snack'},
+    ingredientKeywords: {'pork', 'egg'},
+  ),
+  RamseyDish(
+    name: 'Beef Caldereta',
+    shortInfo: 'Rich tomato beef stew, fiesta favorite',
+    ingredients: ['Beef chunks', 'Potatoes', 'Carrots', 'Bell pepper', 'Tomato sauce', 'Liver spread', 'Garlic', 'Onion', 'Bay leaves', 'Soy sauce', 'Cooking oil'],
+    instructions: ['Saute garlic and onion.', 'Brown beef on all sides.', 'Add soy sauce and tomato sauce, simmer until tender.', 'Add potatoes, carrots, and bell pepper.', 'Stir in liver spread to thicken.', 'Simmer until vegetables are cooked.'],
+    minutes: 90, servings: 6,
+    tags: {'Spicy', 'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'beef', 'tomato'},
+  ),
+  RamseyDish(
+    name: 'Kare-Kare',
+    shortInfo: 'Peanut-based oxtail stew, special occasion dish',
+    ingredients: ['Oxtail', 'Peanut butter', 'Eggplant', 'String beans', 'Pechay', 'Banana heart', 'Annatto powder', 'Toasted rice flour', 'Garlic', 'Onion', 'Bagoong alamang'],
+    instructions: ['Boil oxtail until tender, reserve broth.', 'Saute garlic and onion, add annatto powder.', 'Add broth and peanut butter, stir well.', 'Add toasted rice flour to thicken.', 'Add vegetables and cook until tender.', 'Serve with bagoong alamang.'],
+    minutes: 120, servings: 6,
+    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'beef', 'vegetable'},
+  ),
+  RamseyDish(
+    name: 'Menudo',
+    shortInfo: 'Hearty pork and liver tomato stew',
+    ingredients: ['Diced pork', 'Pork liver', 'Potatoes', 'Carrots', 'Tomato sauce', 'Soy sauce', 'Garlic', 'Onion', 'Bay leaves', 'Green peas', 'Hotdogs', 'Cooking oil'],
+    instructions: ['Saute garlic and onion.', 'Add diced pork and cook until browned.', 'Add pork liver and cook briefly.', 'Pour in tomato sauce and soy sauce.', 'Add potatoes, carrots, and bay leaves, simmer.', 'Add hotdogs and green peas, cook until done.'],
+    minutes: 50, servings: 5,
+    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'pork'},
+  ),
+  RamseyDish(
+    name: 'Bistek Tagalog',
+    shortInfo: 'Filipino beef steak with onion rings',
+    ingredients: ['Beef sirloin slices', 'Onion rings', 'Soy sauce', 'Calamansi juice', 'Garlic', 'Black pepper', 'Cooking oil'],
+    instructions: ['Marinate beef in soy sauce, calamansi, and pepper for 30 mins.', 'Pan-fry beef slices until browned, set aside.', 'Saute onion rings until soft.', 'Return beef to pan with marinade.', 'Simmer until sauce thickens.', 'Top with onion rings and serve.'],
+    minutes: 45, servings: 4,
+    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'beef'},
+  ),
+  RamseyDish(
+    name: 'Lechon Kawali',
+    shortInfo: 'Crispy deep-fried pork belly',
+    ingredients: ['Pork belly', 'Garlic', 'Bay leaves', 'Whole peppercorns', 'Salt', 'Cooking oil', 'Soy sauce', 'Vinegar'],
+    instructions: ['Boil pork belly with garlic, bay leaves, peppercorns, and salt until tender.', 'Drain and let dry completely.', 'Deep fry in hot oil until golden and crispy.', 'Chop into pieces.', 'Serve with lechon sauce or spiced vinegar.'],
+    minutes: 75, servings: 5,
+    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'pork'},
+  ),
+  RamseyDish(
+    name: 'Pancit Canton',
+    shortInfo: 'Stir-fried egg noodles, party staple',
+    ingredients: ['Pancit canton noodles', 'Pork slices', 'Shrimp', 'Cabbage', 'Carrots', 'Snow peas', 'Soy sauce', 'Oyster sauce', 'Garlic', 'Onion', 'Chicken broth'],
+    instructions: ['Saute garlic and onion.', 'Cook pork slices until done, add shrimp.', 'Add vegetables and stir-fry briefly.', 'Add broth, soy sauce, and oyster sauce.', 'Add noodles and toss until cooked.', 'Serve hot with calamansi.'],
+    minutes: 30, servings: 5,
+    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'noodle', 'pork', 'shrimp'},
+  ),
+  RamseyDish(
+    name: 'Sisig',
+    shortInfo: 'Sizzling chopped pork, pulutan favorite',
+    ingredients: ['Pork belly', 'Pork ears', 'Onion', 'Chili peppers', 'Calamansi', 'Soy sauce', 'Mayonnaise', 'Egg', 'Garlic', 'Cooking oil'],
+    instructions: ['Boil pork belly and ears until tender.', 'Grill or broil until slightly charred.', 'Chop finely and set aside.', 'Saute onion and chili peppers.', 'Add chopped pork, soy sauce, and calamansi.', 'Top with egg and mayonnaise, serve sizzling.'],
+    minutes: 60, servings: 4,
+    tags: {'Spicy', 'Anything'}, meals: {'Lunch', 'Dinner', 'Midnight Snack'},
+    ingredientKeywords: {'pork', 'egg'},
+  ),
+  RamseyDish(
+    name: 'Bulalo',
+    shortInfo: 'Beef shank bone marrow soup',
+    ingredients: ['Beef shank with bone marrow', 'Corn on the cob', 'Napa cabbage', 'Green beans', 'Onion', 'Whole peppercorns', 'Fish sauce', 'Green onions'],
+    instructions: ['Boil beef shank in water, skim off scum.', 'Add onion and peppercorns, simmer 2-3 hours.', 'Add corn and cook 10 minutes.', 'Add green beans and napa cabbage.', 'Season with fish sauce.', 'Garnish with green onions.'],
+    minutes: 180, servings: 6,
+    tags: {'Soupy', 'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'beef'},
+  ),
+  RamseyDish(
+    name: 'Pancit Palabok',
+    shortInfo: 'Rice noodles in orange shrimp sauce',
+    ingredients: ['Rice noodles', 'Shrimp', 'Ground pork', 'Annatto powder', 'Fish sauce', 'Garlic', 'Boiled eggs', 'Chicharon', 'Green onions', 'Calamansi', 'Cornstarch'],
+    instructions: ['Boil noodles until tender, drain.', 'Make sauce: saute garlic, add broth with annatto and cornstarch.', 'Cook ground pork and shrimp separately.', 'Pour sauce over noodles.', 'Top with pork, shrimp, sliced eggs, and chicharon.', 'Garnish with green onions and calamansi.'],
+    minutes: 40, servings: 5,
+    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredientKeywords: {'noodle', 'shrimp', 'pork', 'egg'},
+  ),
+  RamseyDish(
+    name: 'Leche Flan',
+    shortInfo: 'Creamy caramel custard dessert',
+    ingredients: ['Egg yolks', 'Condensed milk', 'Evaporated milk', 'Sugar', 'Vanilla extract', 'Calamansi rind'],
+    instructions: ['Caramelize sugar in llanera until golden.', 'Mix egg yolks, condensed milk, evaporated milk, and vanilla.', 'Strain mixture and pour into llanera.', 'Cover with foil.', 'Steam for 30-40 minutes until set.', 'Let cool, then flip onto a plate.'],
+    minutes: 50, servings: 8,
+    tags: {'Anything'}, meals: {'Snack', 'Dinner'},
+    ingredientKeywords: {'egg'},
+  ),
+  RamseyDish(
+    name: 'Buko Salad',
+    shortInfo: 'Sweet coconut fruit salad, fiesta dessert',
+    ingredients: ['Young coconut strips', 'Fruit cocktail', 'Nata de coco', 'Kaong', 'All-purpose cream', 'Condensed milk'],
+    instructions: ['Drain fruit cocktail, nata de coco, and kaong.', 'Combine all fruits and coconut strips in a bowl.', 'Add all-purpose cream and condensed milk.', 'Mix gently until well combined.', 'Chill in refrigerator for at least 2 hours.', 'Serve cold.'],
+    minutes: 15, servings: 10,
+    tags: {'Anything'}, meals: {'Snack', 'Dinner', 'Lunch'},
+    ingredientKeywords: {'coconut'},
   ),
 ];

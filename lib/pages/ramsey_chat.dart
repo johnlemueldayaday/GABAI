@@ -8,6 +8,7 @@ import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/services/ramsey_cooking_assistant.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/widgets/app_drawer.dart';
+import 'package:gabay/pages/cart.dart';
 
 class RamseyChatPage extends StatefulWidget {
   const RamseyChatPage({super.key});
@@ -52,20 +53,8 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
         label: 'What can I cook for $meal?',
       ),
       const _QuickQuestionItem(
-        icon: Icons.auto_awesome_rounded,
-        label: 'Suggest a dish based on my budget.',
-      ),
-      const _QuickQuestionItem(
         icon: Icons.receipt_long_rounded,
-        label: 'Do I have any upcoming bills?',
-      ),
-      const _QuickQuestionItem(
-        icon: Icons.insights_rounded,
-        label: 'Show my spending analytics.',
-      ),
-      const _QuickQuestionItem(
-        icon: Icons.calendar_month_rounded,
-        label: 'Generate a weekly meal plan.',
+        label: 'How much is my bills this week?',
       ),
     ];
   }
@@ -82,6 +71,11 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
       final greeting = _assistant.greeting;
       setState(() {
         _savedMessages.add(_ChatMessage(text: greeting.text, isUser: false));
+        if (greeting.extraTexts != null) {
+          for (var t in greeting.extraTexts!) {
+            _savedMessages.add(_ChatMessage(text: t, isUser: false));
+          }
+        }
         _savedQuickReplies = greeting.quickReplies;
       });
       _scrollToBottom();
@@ -104,7 +98,7 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
     }
   }
 
-  void _send([String? value]) {
+  Future<void> _send([String? value]) async {
     if (_isTyping) return;
 
     final text = (value ?? _controller.text).trim();
@@ -116,6 +110,11 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
       _savedQuickReplies = [];
     });
     _scrollToBottom();
+
+    // Always reload bills live before processing
+    final bills = await BillStorage.loadBills();
+    if (mounted) _assistant.updateBills(bills);
+
     _showReplyAfterDelay(_assistant.handle(text));
   }
 
@@ -128,9 +127,21 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
       _stopTyping();
       setState(() {
         _savedMessages.add(_ChatMessage(text: reply.text, isUser: false));
+        if (reply.extraTexts != null) {
+          for (var t in reply.extraTexts!) {
+            _savedMessages.add(_ChatMessage(text: t, isUser: false));
+          }
+        }
         _savedQuickReplies = reply.quickReplies;
       });
       _scrollToBottom();
+
+      if (reply.navigateTo == 'cart_detail' && mounted) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const CartDetailPage()),
+        );
+      }
     });
   }
 
@@ -142,9 +153,13 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
     setState(() {
       _isTyping = false;
       _typingDots = 1;
-      _savedMessages
-        ..clear()
-        ..add(_ChatMessage(text: greeting.text, isUser: false));
+      _savedMessages.clear();
+      _savedMessages.add(_ChatMessage(text: greeting.text, isUser: false));
+      if (greeting.extraTexts != null) {
+        for (var t in greeting.extraTexts!) {
+          _savedMessages.add(_ChatMessage(text: t, isUser: false));
+        }
+      }
       _savedQuickReplies = greeting.quickReplies;
     });
     _scrollToBottom();
@@ -214,40 +229,26 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
             child: ListView.builder(
               controller: _scrollController,
               physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
-              itemCount: _savedMessages.length + 
-                         (_isTyping ? 1 : 0) + 
-                         ((!_isTyping && _savedMessages.length <= 1) ? 1 : 0) +
-                         ((!_isTyping && _savedQuickReplies.isNotEmpty) ? 1 : 0),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              itemCount: _savedMessages.length + (_isTyping ? 1 : 0),
               itemBuilder: (context, index) {
-                // 1. Regular messages
                 if (index < _savedMessages.length) {
                   return RepaintBoundary(child: _MessageBubble(message: _savedMessages[index]));
                 }
-                
-                int remaining = index - _savedMessages.length;
-
-                // 2. Typing Indicator
                 if (_isTyping) {
-                  if (remaining == 0) return RepaintBoundary(child: _TypingBubble(dots: _typingDots));
-                  remaining--;
+                  return RepaintBoundary(child: _TypingBubble(dots: _typingDots));
                 }
-
-                // 3. Starter Questions (only if 1 or fewer messages)
-                if (!_isTyping && _savedMessages.length <= 1) {
-                  if (remaining == 0) return _QuickQuestions(questions: _starterQuestions, onTap: _send);
-                  remaining--;
-                }
-
-                // 4. Quick Replies
-                if (!_isTyping && _savedQuickReplies.isNotEmpty) {
-                  if (remaining == 0) return _QuickReplies(replies: _savedQuickReplies, onTap: _send);
-                }
-
                 return const SizedBox.shrink();
               },
             ),
           ),
+          if (!_isTyping) ...[
+            if (_savedMessages.length <= 2)
+              _QuickQuestions(questions: _starterQuestions, onTap: _send),
+            if (_savedQuickReplies.isNotEmpty)
+              _QuickReplies(replies: _savedQuickReplies, onTap: _send),
+          ],
+          const SizedBox(height: 4),
           _Composer(
             controller: _controller,
             isEnabled: !_isTyping,
@@ -524,8 +525,8 @@ class _QuestionPill extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(22),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 42, maxWidth: 310),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          constraints: const BoxConstraints(maxWidth: 280),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
             color: kCardBg,
@@ -540,15 +541,15 @@ class _QuestionPill extends StatelessWidget {
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               if (icon != null) ...[
                 Icon(icon, size: 16, color: kPrimary),
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
               ],
               Flexible(
                 child: Text(
                   label,
-                  textAlign: TextAlign.right,
                   style: GoogleFonts.inter(
                     color: kPrimary,
                     fontSize: 14,

@@ -40,9 +40,14 @@ class PriceStorage {
     }
   }
 
-  /// Save to disk (debounced via the caller or immediate).
   static Future<void> _save() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_key, jsonEncode(_history.toJson()));
+  }
+
+  static Future<void> clear() async {
+    _history = PriceHistory();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key);
   }
 }

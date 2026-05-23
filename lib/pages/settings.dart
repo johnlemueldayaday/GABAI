@@ -3,6 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/grocery_storage.dart';
+import 'package:gabay/services/bill_storage.dart';
+import 'package:gabay/services/price_storage.dart';
+import 'package:gabay/pages/splash_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -136,9 +140,19 @@ class _SettingsPageState extends State<SettingsPage> {
                       confirmLabel: 'Reset All',
                       confirmColor: Colors.red.shade600,
                       onConfirm: () async {
+                        final prefs = await SharedPreferences.getInstance();
+                        await prefs.clear();
                         await GroceryStorage.clear();
+                        await BillStorage.clear();
+                        await PriceStorage.clear();
+                        await _settings.resetAll();
+                        
                         if (context.mounted) {
-                          _showSnack(context, '🗑️ All data has been reset');
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(builder: (_) => const SplashScreen()),
+                            (route) => false,
+                          );
                         }
                       },
                     ),

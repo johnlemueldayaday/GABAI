@@ -639,9 +639,8 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                 Text('Add New Bill', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: kTextCharcoal)),
                 const SizedBox(height: 16),
                 // Bill Type Dropdown
-                // ignore: deprecated_member_use
                 DropdownButtonFormField<String>(
-                  value: _selectedBillType,
+                  initialValue: _selectedBillType,
                   dropdownColor: kCardBg,
                   style: TextStyle(color: kTextCharcoal, fontSize: 14),
                   decoration: InputDecoration(
@@ -696,8 +695,7 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                   ),
                 ),
                 DropdownButtonFormField<String>(
-                  // ignore: deprecated_member_use
-                  value: _selectedFrequency,
+                  initialValue: _selectedFrequency,
                   dropdownColor: kCardBg,
                   style: TextStyle(color: kTextCharcoal, fontSize: 14),
                   decoration: InputDecoration(
