@@ -39,6 +39,8 @@ class _BaiChatPageState extends State<BaiChatPage> {
   Timer? _replyTimer;
   Timer? _typingTimer;
 
+  bool get _hasStartedChat => _savedMessages.any((message) => message.isUser);
+
   @override
   void initState() {
     super.initState();
@@ -270,7 +272,7 @@ class _BaiChatPageState extends State<BaiChatPage> {
               },
             ),
           ),
-          if (!_isTyping && _savedQuickReplies.isNotEmpty)
+          if (!_isTyping && !_hasStartedChat && _savedQuickReplies.isNotEmpty)
             _QuickRepliesWidget(replies: _savedQuickReplies, onTap: _send),
           const SizedBox(height: 8),
           _ComposerWidget(

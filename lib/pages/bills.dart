@@ -22,6 +22,11 @@ class _BillsPageState extends State<BillsPage> {
   List<Bill> _allBills = [];
   bool _isLoading = true;
 
+  String _formatSignedBillAmount(Bill bill) {
+    final sign = bill.isIncome ? '+' : '-';
+    return '$sign₱${bill.amount.toStringAsFixed(2)}';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -291,10 +296,10 @@ class _BillsPageState extends State<BillsPage> {
                     Row(
                       children: [
                         Text(
-                          '₱${b.amount.toStringAsFixed(2)}',
+                          _formatSignedBillAmount(b),
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
-                            color: kMuted,
+                            color: isIncome ? kPrimary : Colors.red,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -357,6 +362,11 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
   String? _selectedBillType;
   bool _showCustomInput = false;
   bool _isIncomeType = false;
+
+  String _formatSignedBillAmount(Bill bill) {
+    final sign = bill.isIncome ? '+' : '-';
+    return '$sign₱${bill.amount.toStringAsFixed(2)}';
+  }
 
   final List<String> _frequencies = [
     'Once',
@@ -436,7 +446,7 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                     Row(
                       children: [
                         Text(
-                          '₱${b.amount.toStringAsFixed(2)}',
+                          _formatSignedBillAmount(b),
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 12,
                             color: b.isIncome ? kPrimary : Colors.red,

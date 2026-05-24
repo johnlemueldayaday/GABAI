@@ -7,7 +7,9 @@ import 'package:speech_to_text/speech_to_text.dart';
 
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/widgets/account_icon.dart';
 import 'package:gabay/widgets/app_drawer.dart';
+import 'package:gabay/widgets/bai_floating_bubble.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/settings_service.dart';
@@ -50,6 +52,13 @@ class GroceryApp extends StatelessWidget {
             ),
             useMaterial3: true,
           ),
+          navigatorKey: baiBubbleNavigatorKey,
+          navigatorObservers: [baiBubbleRouteObserver],
+          builder: (context, child) {
+            return BaiFloatingBubbleHost(
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
           home: const SplashScreen(),
         );
       },
@@ -161,10 +170,22 @@ class _CartPageState extends State<CartPage> {
       builder: (_) => AlertDialog(
         backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Delete Cart?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700, color: Colors.red)),
-        content: Text('This will permanently delete this cart and all its items.', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500)),
+        title: Text(
+          'Delete Cart?',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w700,
+            color: Colors.red,
+          ),
+        ),
+        content: Text(
+          'This will permanently delete this cart and all its items.',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: kMuted))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: TextStyle(color: kMuted)),
+          ),
           TextButton(
             onPressed: () {
               setState(() {
@@ -186,10 +207,19 @@ class _CartPageState extends State<CartPage> {
       builder: (_) => AlertDialog(
         backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Clear Items?', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
-        content: Text('This will remove all items from this cart.', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500)),
+        title: Text(
+          'Clear Items?',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          'This will remove all items from this cart.',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w500),
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: kMuted))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: TextStyle(color: kMuted)),
+          ),
           TextButton(
             onPressed: () {
               setState(() {
@@ -207,21 +237,38 @@ class _CartPageState extends State<CartPage> {
 
   void _renameCart(int index) async {
     final ctrl = TextEditingController(text: AppState.lists[index].name);
-    ctrl.selection = TextSelection(baseOffset: 0, extentOffset: ctrl.text.length);
+    ctrl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: ctrl.text.length,
+    );
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: kCardBg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Rename Cart', style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700)),
+        title: Text(
+          'Rename Cart',
+          style: GoogleFonts.plusJakartaSans(fontWeight: FontWeight.w700),
+        ),
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: InputDecoration(hintText: 'New name', focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: kPrimary))),
+          decoration: InputDecoration(
+            hintText: 'New name',
+            focusedBorder: UnderlineInputBorder(
+              borderSide: BorderSide(color: kPrimary),
+            ),
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Cancel', style: TextStyle(color: kMuted))),
-          TextButton(onPressed: () => Navigator.pop(context, ctrl.text.trim()), child: Text('Save', style: TextStyle(color: kPrimary))),
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text('Cancel', style: TextStyle(color: kMuted)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: Text('Save', style: TextStyle(color: kPrimary)),
+          ),
         ],
       ),
     );
@@ -286,7 +333,9 @@ class _CartPageState extends State<CartPage> {
                 backgroundColor: kPrimary,
                 elevation: 4,
                 highlightElevation: 2,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(28),
+                ),
                 icon: const Icon(Icons.add_rounded, color: Colors.white),
                 label: Text(
                   'Add New Cart',
@@ -417,7 +466,11 @@ class _CartTile extends StatelessWidget {
                     color: kPrimary.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(12),
                   ),
-                  child: Icon(Icons.shopping_bag_rounded, color: kPrimary, size: 22),
+                  child: Icon(
+                    Icons.shopping_bag_rounded,
+                    color: kPrimary,
+                    size: 22,
+                  ),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -463,12 +516,18 @@ class _CartTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 2),
-                    Icon(Icons.chevron_right_rounded, color: kMuted.withValues(alpha: 0.4), size: 20),
+                    Icon(
+                      Icons.chevron_right_rounded,
+                      color: kMuted.withValues(alpha: 0.4),
+                      size: 20,
+                    ),
                   ],
                 ),
                 PopupMenuButton<String>(
                   icon: Icon(Icons.more_vert_rounded, color: kMuted, size: 20),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
                   padding: EdgeInsets.zero,
                   onSelected: (value) {
                     if (value == 'delete') {
@@ -482,15 +541,34 @@ class _CartTile extends StatelessWidget {
                   itemBuilder: (context) => [
                     PopupMenuItem(
                       value: 'rename',
-                      child: Text('Rename', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600)),
+                      child: Text(
+                        'Rename',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                     PopupMenuItem(
                       value: 'clear',
-                      child: Text('Clear Items', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600)),
+                      child: Text(
+                        'Clear Items',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                     PopupMenuItem(
                       value: 'delete',
-                      child: Text('Delete', style: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.red)),
+                      child: Text(
+                        'Delete',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.red,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -605,7 +683,7 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
               ),
             ),
             const SizedBox(height: 24),
-            
+
             // Header
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -660,18 +738,29 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
                       decoration: InputDecoration(
                         border: InputBorder.none,
                         hintText: 'e.g. Weekly Groceries',
-                        hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                        hintStyle: TextStyle(
+                          color: kMuted.withValues(alpha: 0.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                        ),
                       ),
                     ),
                   ),
-                  Divider(height: 1, indent: 16, endIndent: 16, color: kBorder.withValues(alpha: 0.5)),
+                  Divider(
+                    height: 1,
+                    indent: 16,
+                    endIndent: 16,
+                    color: kBorder.withValues(alpha: 0.5),
+                  ),
                   _CreateCartField(
                     label: 'Budget',
                     child: TextField(
                       controller: _budgetCtrl,
                       focusNode: _budgetFocus,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
                       textAlign: TextAlign.end,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 16,
@@ -681,12 +770,21 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
                       decoration: InputDecoration(
                         border: InputBorder.none,
                         hintText: '₱ 0.00',
-                        hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                        hintStyle: TextStyle(
+                          color: kMuted.withValues(alpha: 0.5),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                        ),
                       ),
                     ),
                   ),
-                  Divider(height: 1, indent: 16, endIndent: 16, color: kBorder.withValues(alpha: 0.5)),
+                  Divider(
+                    height: 1,
+                    indent: 16,
+                    endIndent: 16,
+                    color: kBorder.withValues(alpha: 0.5),
+                  ),
                   _CreateCartField(
                     label: 'Store',
                     child: GestureDetector(
@@ -711,13 +809,15 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
                         children: [
                           Expanded(
                             child: Text(
-                              _storeCtrl.text.isEmpty ? 'Select store' : _storeCtrl.text,
+                              _storeCtrl.text.isEmpty
+                                  ? 'Select store'
+                                  : _storeCtrl.text,
                               textAlign: TextAlign.end,
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w500,
-                                color: _storeCtrl.text.isEmpty 
-                                    ? kMuted.withValues(alpha: 0.5) 
+                                color: _storeCtrl.text.isEmpty
+                                    ? kMuted.withValues(alpha: 0.5)
                                     : kTextCharcoal,
                               ),
                             ),
@@ -742,7 +842,9 @@ class _CreateCartSheetState extends State<_CreateCartSheet> {
               width: double.infinity,
               height: 54,
               child: ElevatedButton(
-                onPressed: (_hasBudget && _nameCtrl.text.trim().isNotEmpty) ? _saveCart : null,
+                onPressed: (_hasBudget && _nameCtrl.text.trim().isNotEmpty)
+                    ? _saveCart
+                    : null,
                 style: ElevatedButton.styleFrom(
                   backgroundColor: kPrimary,
                   disabledBackgroundColor: kMuted.withValues(alpha: 0.1),
@@ -857,7 +959,10 @@ class _CartDetailPageState extends State<CartDetailPage>
 
   void _editListName() async {
     final ctrl = TextEditingController(text: _listName);
-    ctrl.selection = TextSelection(baseOffset: 0, extentOffset: ctrl.text.length);
+    ctrl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: ctrl.text.length,
+    );
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
@@ -935,7 +1040,10 @@ class _CartDetailPageState extends State<CartDetailPage>
           AppState.currentList!.store = result.trim();
           // Auto-update prices based on new store history
           for (final item in _items) {
-            final lastPrice = PriceStorage.getLastPrice(item.name, result.trim());
+            final lastPrice = PriceStorage.getLastPrice(
+              item.name,
+              result.trim(),
+            );
             if (lastPrice != null && lastPrice > 0) {
               item.price = lastPrice;
             }
@@ -946,7 +1054,9 @@ class _CartDetailPageState extends State<CartDetailPage>
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Store updated to ${result.trim()}. Item prices have been refreshed.'),
+          content: Text(
+            'Store updated to ${result.trim()}. Item prices have been refreshed.',
+          ),
           backgroundColor: kPrimary,
           behavior: SnackBarBehavior.floating,
         ),
@@ -956,7 +1066,10 @@ class _CartDetailPageState extends State<CartDetailPage>
 
   void _editItemName(GroceryItem item) async {
     final ctrl = TextEditingController(text: item.name);
-    ctrl.selection = TextSelection(baseOffset: 0, extentOffset: ctrl.text.length);
+    ctrl.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: ctrl.text.length,
+    );
     final result = await showDialog<String>(
       context: context,
       builder: (_) => AlertDialog(
@@ -1077,13 +1190,12 @@ class _CartDetailPageState extends State<CartDetailPage>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _NumericKeypadSheet(
-            initialValue: item.price, 
-            itemName: item.name,
-            unit: item.unit,
-            storeName: AppState.currentList?.store ?? 'Store',
-          ),
+      builder: (_) => _NumericKeypadSheet(
+        initialValue: item.price,
+        itemName: item.name,
+        unit: item.unit,
+        storeName: AppState.currentList?.store ?? 'Store',
+      ),
     );
     if (result != null) {
       setState(() => item.price = result);
@@ -1209,18 +1321,99 @@ class _CartDetailPageState extends State<CartDetailPage>
 
     // Save transaction
     final accounts = await FinanceStorage.loadAccounts();
-    if (accounts.isNotEmpty && totalSpent > 0) {
-      final account = accounts.first;
-      final txn = FinanceTransaction(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        amount: totalSpent,
-        accountId: account.id,
-        accountName: account.name,
-        type: 'EXPENSE',
-        category: 'Groceries',
-        description: 'Grocery Trip: $_listName',
+    if (!mounted) return;
+
+    if (accounts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Please create an account first to track expenses.',
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+        ),
       );
-      await FinanceStorage.addTransaction(txn);
+      return;
+    }
+
+    Account? selectedAccount;
+    if (accounts.length == 1) {
+      selectedAccount = accounts.first;
+    } else {
+      // Ask user which account to use
+      if (!mounted) return;
+      selectedAccount = await showDialog<Account>(
+        context: context,
+        builder: (context) => AlertDialog(
+          backgroundColor: kCardBg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Select Account',
+            style: GoogleFonts.plusJakartaSans(
+              fontWeight: FontWeight.w700,
+              color: kTextCharcoal,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: accounts.map((account) {
+              return ListTile(
+                leading: AccountIconImage(
+                  name: account.name,
+                  icon: account.icon,
+                  size: 28,
+                ),
+                title: Text(
+                  account.name,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w600,
+                    color: kTextCharcoal,
+                  ),
+                ),
+                subtitle: Text(
+                  '₱${account.balance.toStringAsFixed(2)}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w500,
+                    color: kMuted,
+                  ),
+                ),
+                onTap: () => Navigator.pop(context, account),
+              );
+            }).toList(),
+          ),
+        ),
+      );
+    }
+
+    if (selectedAccount == null) {
+      return; // User cancelled
+    }
+
+    if (totalSpent > 0) {
+      try {
+        final txn = FinanceTransaction(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          amount: totalSpent,
+          accountId: selectedAccount.id,
+          accountName: selectedAccount.name,
+          type: 'EXPENSE',
+          category: 'Groceries',
+          description: 'Grocery Trip: $_listName',
+        );
+        await FinanceStorage.addTransaction(txn);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save transaction: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
     }
 
     setState(() {
@@ -1266,7 +1459,11 @@ class _CartDetailPageState extends State<CartDetailPage>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: const Text('Trip finished and moved to Recent Groceries.'),
+        content: Text(
+          totalSpent > 0
+              ? 'Trip finished! Expense of ₱${totalSpent.toStringAsFixed(2)} logged as Groceries.'
+              : 'Trip finished and moved to Recent Groceries.',
+        ),
         backgroundColor: kPrimary,
         behavior: SnackBarBehavior.floating,
       ),
@@ -1304,7 +1501,8 @@ class _CartDetailPageState extends State<CartDetailPage>
           TextButton(
             onPressed: () {
               setState(() {
-                if (AppState.activeIndex >= 0 && AppState.activeIndex < AppState.lists.length) {
+                if (AppState.activeIndex >= 0 &&
+                    AppState.activeIndex < AppState.lists.length) {
                   AppState.lists.removeAt(AppState.activeIndex);
                   AppState.activeIndex = AppState.lists.isNotEmpty ? 0 : -1;
                 }
@@ -1432,8 +1630,9 @@ class _CartDetailPageState extends State<CartDetailPage>
           ),
           PopupMenuButton<String>(
             icon: Icon(Icons.more_vert_rounded, color: kMuted, size: 24),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             color: kBackground,
             surfaceTintColor: Colors.transparent,
             onSelected: (value) {
@@ -1452,8 +1651,11 @@ class _CartDetailPageState extends State<CartDetailPage>
                 value: 'finish',
                 child: Row(
                   children: [
-                    Icon(Icons.check_circle_outline_rounded,
-                        size: 18, color: kPrimary),
+                    Icon(
+                      Icons.check_circle_outline_rounded,
+                      size: 18,
+                      color: kPrimary,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Finish Trip',
@@ -1488,8 +1690,11 @@ class _CartDetailPageState extends State<CartDetailPage>
                 value: 'clear',
                 child: Row(
                   children: [
-                    Icon(Icons.remove_shopping_cart_outlined,
-                        size: 18, color: kTextCharcoal),
+                    Icon(
+                      Icons.remove_shopping_cart_outlined,
+                      size: 18,
+                      color: kTextCharcoal,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Clear Items',
@@ -1506,8 +1711,11 @@ class _CartDetailPageState extends State<CartDetailPage>
                 value: 'delete',
                 child: Row(
                   children: [
-                    Icon(Icons.delete_outline_rounded,
-                        size: 18, color: Colors.red),
+                    Icon(
+                      Icons.delete_outline_rounded,
+                      size: 18,
+                      color: Colors.red,
+                    ),
                     const SizedBox(width: 8),
                     Text(
                       'Delete Cart',
@@ -1680,10 +1888,7 @@ class _BudgetCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           gradient: RadialGradient(
-            colors: [
-              kPrimarySoft.withValues(alpha: 0.6),
-              kCardBg,
-            ],
+            colors: [kPrimarySoft.withValues(alpha: 0.6), kCardBg],
             center: Alignment.center,
             radius: 1.5,
           ),
@@ -1695,10 +1900,7 @@ class _BudgetCard extends StatelessWidget {
               offset: const Offset(0, 12),
             ),
           ],
-          border: Border.all(
-            color: kBorder.withValues(alpha: 0.6),
-            width: 1,
-          ),
+          border: Border.all(color: kBorder.withValues(alpha: 0.6), width: 1),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -2135,14 +2337,20 @@ class _ItemTile extends StatelessWidget {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: (item.isDone ? kMuted : kPrimary).withValues(alpha: 0.08),
+                          color: (item.isDone ? kMuted : kPrimary).withValues(
+                            alpha: 0.08,
+                          ),
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             if (!item.isDone) ...[
-                              Icon(Icons.edit_outlined, size: 12, color: kPrimary),
+                              Icon(
+                                Icons.edit_outlined,
+                                size: 12,
+                                color: kPrimary,
+                              ),
                               const SizedBox(width: 4),
                             ],
                             Text(
@@ -3092,7 +3300,9 @@ class _AddItemSheetState extends State<_AddItemSheet>
                                             ? 'New Item'
                                             : itemName,
                                         unit: _unit,
-                                        storeName: AppState.currentList?.store ?? 'Store',
+                                        storeName:
+                                            AppState.currentList?.store ??
+                                            'Store',
                                       ),
                                     );
                                 if (result != null) {

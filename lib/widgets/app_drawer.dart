@@ -10,6 +10,7 @@ import '../pages/bills.dart';
 import '../pages/wallet.dart';
 import '../pages/bai_chat.dart';
 import '../config/app_theme.dart';
+import 'bai_floating_bubble.dart';
 
 class AppDrawer extends StatelessWidget {
   final String currentPage;
@@ -149,7 +150,10 @@ class AppDrawer extends StatelessWidget {
               if (currentPage != 'BAI') {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (_) => const BaiChatPage()),
+                  MaterialPageRoute(
+                    settings: const RouteSettings(name: kBaiChatRouteName),
+                    builder: (_) => const BaiChatPage(),
+                  ),
                 );
               }
             },

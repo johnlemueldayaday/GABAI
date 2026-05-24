@@ -8,6 +8,7 @@ import '../config/app_theme.dart';
 import '../models/finance_models.dart';
 import '../services/finance_storage.dart';
 import '../services/settings_service.dart';
+import '../widgets/account_icon.dart';
 
 // ─────────────────────────────────────────────────────────────
 // Data model for wallet options
@@ -15,24 +16,54 @@ import '../services/settings_service.dart';
 class _WalletOption {
   final String name;
   final String category;
-  final String icon;
+  final String assetPath;
   final int colorValue;
 
   const _WalletOption({
     required this.name,
     required this.category,
-    required this.icon,
+    required this.assetPath,
     required this.colorValue,
   });
 }
 
 const _allWallets = [
-  _WalletOption(name: 'GCash', category: 'E-Wallet', icon: '📱', colorValue: 0xFF007AFF),
-  _WalletOption(name: 'Maya', category: 'E-Wallet', icon: '💜', colorValue: 0xFF6C22A6),
-  _WalletOption(name: 'Cash', category: 'Cash', icon: '💵', colorValue: 0xFF10B981),
-  _WalletOption(name: 'BDO', category: 'Bank', icon: '🏦', colorValue: 0xFF1D4ED8),
-  _WalletOption(name: 'Landbank', category: 'Bank', icon: '🌿', colorValue: 0xFF15803D),
-  _WalletOption(name: 'PSBank', category: 'Bank', icon: '🏛️', colorValue: 0xFFB91C1C),
+  _WalletOption(
+    name: 'GCash',
+    category: 'E-Wallet',
+    assetPath: 'assets/images/gcash.png',
+    colorValue: 0xFF007AFF,
+  ),
+  _WalletOption(
+    name: 'Maya',
+    category: 'E-Wallet',
+    assetPath: 'assets/images/paymaya.png',
+    colorValue: 0xFF6C22A6,
+  ),
+  _WalletOption(
+    name: 'Cash',
+    category: 'Cash',
+    assetPath: 'assets/images/cash.png',
+    colorValue: 0xFF10B981,
+  ),
+  _WalletOption(
+    name: 'BDO',
+    category: 'Bank',
+    assetPath: 'assets/images/bdo.png',
+    colorValue: 0xFF1D4ED8,
+  ),
+  _WalletOption(
+    name: 'Landbank',
+    category: 'Bank',
+    assetPath: 'assets/images/landbank.png',
+    colorValue: 0xFF15803D,
+  ),
+  _WalletOption(
+    name: 'PSBank',
+    category: 'Bank',
+    assetPath: 'assets/images/psbank.png',
+    colorValue: 0xFFB91C1C,
+  ),
 ];
 
 // ─────────────────────────────────────────────────────────────
@@ -76,9 +107,7 @@ class _OnboardingGateState extends State<OnboardingGate> {
         Container(color: Colors.black.withValues(alpha: 0.45)),
         // Onboarding modal
         SafeArea(
-          child: Center(
-            child: OnboardingModal(onComplete: _handleComplete),
-          ),
+          child: Center(child: OnboardingModal(onComplete: _handleComplete)),
         ),
       ],
     );
@@ -113,9 +142,10 @@ class _OnboardingModalState extends State<OnboardingModal>
       _nameCtrl.text.trim().isNotEmpty && _selectedWallets.isNotEmpty;
 
   // Animation
-  late final AnimationController _bounceCtrl =
-      AnimationController(vsync: this, duration: const Duration(milliseconds: 600))
-        ..forward();
+  late final AnimationController _bounceCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 600),
+  )..forward();
   late final Animation<double> _bounceAnim = CurvedAnimation(
     parent: _bounceCtrl,
     curve: Curves.easeOutBack,
@@ -164,7 +194,7 @@ class _OnboardingModalState extends State<OnboardingModal>
         name: w.name,
         type: w.category,
         balance: 0.0,
-        icon: w.icon,
+        icon: w.assetPath,
         colorValue: w.colorValue,
       );
       await FinanceStorage.addAccount(account);
@@ -202,107 +232,109 @@ class _OnboardingModalState extends State<OnboardingModal>
             color: kCardBg,
             borderRadius: BorderRadius.circular(28),
             boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.25),
-              blurRadius: 40,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Progress dots
-            Padding(
-              padding: const EdgeInsets.only(top: 24, bottom: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: List.generate(3, (i) {
-                  final active = i == _page;
-                  return AnimatedContainer(
-                    duration: const Duration(milliseconds: 300),
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    width: active ? 24 : 8,
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: active ? kPrimary : kBorder,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  );
-                }),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.25),
+                blurRadius: 40,
+                offset: const Offset(0, 12),
               ),
-            ),
-            // Pages
-            SizedBox(
-              height: _pageHeight,
-              child: PageView(
-                controller: _pageCtrl,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  _Screen1(
-                    nameCtrl: _nameCtrl,
-                    selectedWallets: _selectedWallets,
-                    onToggle: (name) => setState(() {
-                      if (_selectedWallets.contains(name)) {
-                        _selectedWallets.remove(name);
-                      } else {
-                        _selectedWallets.add(name);
-                      }
-                      // Reset target if removed
-                      if (!_selectedWallets.contains(_balanceTargetWallet)) {
-                        _balanceTargetWallet =
-                            _selectedWallets.isNotEmpty ? _selectedWallets.first : null;
-                      }
-                    }),
-                    onNameChanged: () => setState(() {}),
-                  ),
-                  _Screen2(
-                    balanceCtrl: _balanceCtrl,
-                    selectedWallets: _selectedWallets.toList(),
-                    targetWallet: _balanceTargetWallet,
-                    onTargetChanged: (v) => setState(() => _balanceTargetWallet = v),
-                  ),
-                  const _Screen3(),
-                ],
-              ),
-            ),
-            // Next / Get Started button
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
-              child: AnimatedOpacity(
-                duration: const Duration(milliseconds: 200),
-                opacity: (_page == 0 && !_screen1Valid) ? 0.4 : 1.0,
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton(
-                    onPressed: (_page == 0 && !_screen1Valid) ? null : _next,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: kPrimary,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor: kPrimary,
-                      disabledForegroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Progress dots
+              Padding(
+                padding: const EdgeInsets.only(top: 24, bottom: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(3, (i) {
+                    final active = i == _page;
+                    return AnimatedContainer(
+                      duration: const Duration(milliseconds: 300),
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      width: active ? 24 : 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: active ? kPrimary : kBorder,
+                        borderRadius: BorderRadius.circular(4),
                       ),
+                    );
+                  }),
+                ),
+              ),
+              // Pages
+              SizedBox(
+                height: _pageHeight,
+                child: PageView(
+                  controller: _pageCtrl,
+                  physics: const NeverScrollableScrollPhysics(),
+                  children: [
+                    _Screen1(
+                      nameCtrl: _nameCtrl,
+                      selectedWallets: _selectedWallets,
+                      onToggle: (name) => setState(() {
+                        if (_selectedWallets.contains(name)) {
+                          _selectedWallets.remove(name);
+                        } else {
+                          _selectedWallets.add(name);
+                        }
+                        // Reset target if removed
+                        if (!_selectedWallets.contains(_balanceTargetWallet)) {
+                          _balanceTargetWallet = _selectedWallets.isNotEmpty
+                              ? _selectedWallets.first
+                              : null;
+                        }
+                      }),
+                      onNameChanged: () => setState(() {}),
                     ),
-                    child: Text(
-                      _page == 2 ? 'Get Started 🎉' : 'Next →',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 16,
+                    _Screen2(
+                      balanceCtrl: _balanceCtrl,
+                      selectedWallets: _selectedWallets.toList(),
+                      targetWallet: _balanceTargetWallet,
+                      onTargetChanged: (v) =>
+                          setState(() => _balanceTargetWallet = v),
+                    ),
+                    const _Screen3(),
+                  ],
+                ),
+              ),
+              // Next / Get Started button
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: (_page == 0 && !_screen1Valid) ? 0.4 : 1.0,
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: (_page == 0 && !_screen1Valid) ? null : _next,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kPrimary,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: kPrimary,
+                        disabledForegroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                      ),
+                      child: Text(
+                        _page == 2 ? 'Get Started 🎉' : 'Next →',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   double get _pageHeight {
@@ -322,6 +354,22 @@ class _OnboardingModalState extends State<OnboardingModal>
 // ─────────────────────────────────────────────────────────────
 // Screen 1: Name + Wallet multi-select
 // ─────────────────────────────────────────────────────────────
+class _WalletOptionIcon extends StatelessWidget {
+  final _WalletOption wallet;
+  final double size;
+
+  const _WalletOptionIcon({required this.wallet, this.size = 18});
+
+  @override
+  Widget build(BuildContext context) {
+    return AccountIconImage(
+      name: wallet.name,
+      icon: wallet.assetPath,
+      size: size,
+    );
+  }
+}
+
 class _Screen1 extends StatelessWidget {
   final TextEditingController nameCtrl;
   final Set<String> selectedWallets;
@@ -338,9 +386,18 @@ class _Screen1 extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const groups = [
-      {'label': 'E-Wallet', 'options': ['GCash', 'Maya']},
-      {'label': 'Cash', 'options': ['Cash']},
-      {'label': 'Bank', 'options': ['BDO', 'Landbank', 'PSBank']},
+      {
+        'label': 'E-Wallet',
+        'options': ['GCash', 'Maya'],
+      },
+      {
+        'label': 'Cash',
+        'options': ['Cash'],
+      },
+      {
+        'label': 'Bank',
+        'options': ['BDO', 'Landbank', 'PSBank'],
+      },
     ];
 
     return SingleChildScrollView(
@@ -348,13 +405,25 @@ class _Screen1 extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Welcome! 👋',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: kTextCharcoal,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Welcome!',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: kTextCharcoal,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Image.asset(
+                'assets/images/handwave.png',
+                width: 24,
+                height: 24,
+                fit: BoxFit.contain,
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -451,7 +520,7 @@ class _Screen1 extends StatelessWidget {
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Text(w.icon, style: const TextStyle(fontSize: 16)),
+                              _WalletOptionIcon(wallet: w, size: 18),
                               const SizedBox(width: 6),
                               Text(
                                 name,
@@ -537,7 +606,9 @@ class _Screen2 extends StatelessWidget {
           TextField(
             controller: balanceCtrl,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[\d.,]'))],
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+            ],
             style: GoogleFonts.plusJakartaSans(
               fontWeight: FontWeight.w800,
               fontSize: 18,
@@ -607,7 +678,7 @@ class _Screen2 extends StatelessWidget {
                   value: name,
                   child: Row(
                     children: [
-                      Text(w.icon),
+                      _WalletOptionIcon(wallet: w, size: 20),
                       const SizedBox(width: 8),
                       Text(name),
                     ],

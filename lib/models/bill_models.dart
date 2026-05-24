@@ -1,5 +1,6 @@
 // Predefined expense types
 const List<String> predefinedExpenseTypes = [
+  'Car Loan',
   'Electricity',
   'Water',
   'Internet',

@@ -14,6 +14,24 @@ class TarsiReply {
 class TarsiAssistant {
   final String _currency = SettingsService().currency;
 
+  String _accountLabel(Account account) {
+    final normalizedName = account.name.trim().toLowerCase();
+    final hasAssetIcon = account.icon.startsWith('assets/images/') ||
+        {
+          'gcash',
+          'maya',
+          'paymaya',
+          'cash',
+          'bdo',
+          'landbank',
+          'psbank',
+        }.contains(normalizedName);
+
+    return hasAssetIcon
+        ? account.name
+        : '${account.icon} ${account.name}';
+  }
+
   TarsiReply get greeting {
     return const TarsiReply(
       "Hello! I am Tarsi, your private, local financial assistant. 🦉",
@@ -149,7 +167,7 @@ class TarsiAssistant {
       final netWorth = await FinanceStorage.getNetWorth();
       final lines = <String>[];
       for (final a in accounts) {
-        lines.add("• ${a.icon} ${a.name}: $_currency${a.balance.toStringAsFixed(2)}");
+        lines.add("• ${_accountLabel(a)}: $_currency${a.balance.toStringAsFixed(2)}");
       }
       return TarsiReply(
         "🦉 Your Financial Summary:\n\n"
@@ -168,7 +186,7 @@ class TarsiAssistant {
           normalized == 'check $nameLower balance' ||
           normalized.contains('how much') && normalized.contains(nameLower)) {
         return TarsiReply(
-          "🦉 Your current balance for ${a.icon} ${a.name} is $_currency${a.balance.toStringAsFixed(2)}.",
+          "🦉 Your current balance for ${_accountLabel(a)} is $_currency${a.balance.toStringAsFixed(2)}.",
           quickReplies: const ["What is my total balance?"],
         );
       }
@@ -203,7 +221,7 @@ class TarsiAssistant {
         }
         if (fromAcc.balance < amount) {
           return TarsiReply(
-            "⚠️ Insufficient funds in ${fromAcc.icon} ${fromAcc.name}.\n"
+            "⚠️ Insufficient funds in ${_accountLabel(fromAcc)}.\n"
             "Balance: $_currency${fromAcc.balance.toStringAsFixed(2)}, requested: $_currency${amount.toStringAsFixed(2)}",
           );
         }
@@ -212,7 +230,7 @@ class TarsiAssistant {
         await FinanceStorage.transferMoney(fromAccount: fromAcc, toAccount: toAcc, amount: amount);
         return TarsiReply(
           "✅ Transfer Successful!\n\n"
-          "Moved $_currency${amount.toStringAsFixed(2)} from ${fromAcc.icon} ${fromAcc.name} to ${toAcc.icon} ${toAcc.name}.",
+          "Moved $_currency${amount.toStringAsFixed(2)} from ${_accountLabel(fromAcc)} to ${_accountLabel(toAcc)}.",
           quickReplies: const ["What is my total balance?", "Check account balances"],
         );
       }
@@ -316,7 +334,7 @@ class TarsiAssistant {
     await FinanceStorage.addTransaction(txn);
     return TarsiReply(
       "💸 Expense Logged Successfully!\n\n"
-      "Recorded an expense of $_currency${amount.toStringAsFixed(2)} from your ${acc.icon} ${acc.name} under $category.\n"
+      "Recorded an expense of $_currency${amount.toStringAsFixed(2)} from your ${_accountLabel(acc)} under $category.\n"
       "New Balance: $_currency${(acc.balance - amount).toStringAsFixed(2)}",
       quickReplies: const ["What is my total balance?", "Check account balances"],
     );
@@ -344,7 +362,7 @@ class TarsiAssistant {
     await FinanceStorage.addTransaction(txn);
     return TarsiReply(
       "💵 Income Logged Successfully!\n\n"
-      "Recorded an income of $_currency${amount.toStringAsFixed(2)} to your ${acc.icon} ${acc.name} under $category.\n"
+      "Recorded an income of $_currency${amount.toStringAsFixed(2)} to your ${_accountLabel(acc)} under $category.\n"
       "New Balance: $_currency${(acc.balance + amount).toStringAsFixed(2)}",
       quickReplies: const ["What is my total balance?", "Check account balances"],
     );

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/account_icon.dart';
 import '../models/finance_models.dart';
 import '../services/finance_storage.dart';
 import '../services/settings_service.dart';
@@ -366,9 +367,10 @@ class _WalletPageState extends State<WalletPage> {
                                     ).withValues(alpha: 0.1),
                                     shape: BoxShape.circle,
                                   ),
-                                  child: Text(
-                                    acc.icon,
-                                    style: const TextStyle(fontSize: 18),
+                                  child: AccountIconImage(
+                                    name: acc.name,
+                                    icon: acc.icon,
+                                    size: 22,
                                   ),
                                 ),
                                 Container(

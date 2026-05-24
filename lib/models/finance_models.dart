@@ -33,6 +33,16 @@ const List<String> incomeCategories = [
   'Other',
 ];
 
+const List<String> futureEventCategories = [
+  'Salary',
+  'Freelance',
+  'Business',
+  'Allowance',
+  'Scholarship',
+  'Investment',
+  'Remittance',
+];
+
 /// Represents a financial account (e.g., Cash, BPI Bank, GCash)
 class Account {
   final String id;
@@ -160,4 +170,81 @@ class FinanceTransaction {
 
   /// Returns true if this is an expense transaction
   bool get isExpense => type == 'EXPENSE';
+}
+
+/// Represents a future scheduled financial event (not yet executed)
+class FutureEvent {
+  final String id;
+  final double amount;
+  final String
+  category; // Salary, Freelance, Business, Allowance, Scholarship, Investment, Remittance
+  final String description;
+  final DateTime scheduledDate;
+  final String frequency; // 'Once', 'Monthly', 'Weekly'
+  final String?
+  entity; // Optional: who is sending/receiving (e.g., "Lance", "Client")
+  final bool isCompleted;
+
+  FutureEvent({
+    required this.id,
+    required this.amount,
+    required this.category,
+    required this.description,
+    required this.scheduledDate,
+    this.frequency = 'Once',
+    this.entity,
+    this.isCompleted = false,
+  });
+
+  FutureEvent copyWith({
+    String? id,
+    double? amount,
+    String? category,
+    String? description,
+    DateTime? scheduledDate,
+    String? frequency,
+    String? entity,
+    bool? isCompleted,
+  }) {
+    return FutureEvent(
+      id: id ?? this.id,
+      amount: amount ?? this.amount,
+      category: category ?? this.category,
+      description: description ?? this.description,
+      scheduledDate: scheduledDate ?? this.scheduledDate,
+      frequency: frequency ?? this.frequency,
+      entity: entity ?? this.entity,
+      isCompleted: isCompleted ?? this.isCompleted,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'amount': amount,
+    'category': category,
+    'description': description,
+    'scheduledDate': scheduledDate.toIso8601String(),
+    'frequency': frequency,
+    'entity': entity,
+    'isCompleted': isCompleted,
+  };
+
+  factory FutureEvent.fromJson(Map<String, dynamic> json) => FutureEvent(
+    id: json['id'],
+    amount: (json['amount'] as num).toDouble(),
+    category: json['category'],
+    description: json['description'],
+    scheduledDate: DateTime.parse(json['scheduledDate']),
+    frequency: json['frequency'] ?? 'Once',
+    entity: json['entity'],
+    isCompleted: json['isCompleted'] ?? false,
+  );
+
+  /// Returns true if the event is due today or in the past
+  bool get isDue =>
+      DateTime.now().isAfter(scheduledDate) ||
+      DateTime.now().isAtSameMomentAs(scheduledDate);
+
+  /// Returns true if the event is in the future
+  bool get isUpcoming => scheduledDate.isAfter(DateTime.now());
 }

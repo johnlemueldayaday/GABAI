@@ -3,6 +3,8 @@ import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/ramsey_cooking_assistant.dart';
 import 'package:gabay/services/bill_storage.dart';
+import 'package:gabay/services/future_event_storage.dart';
+import 'package:gabay/models/bill_models.dart';
 
 /// Unified reply object for BAI
 class BaiReply {
@@ -52,21 +54,30 @@ class BaiAssistant {
   String? _pendingIncomeDescription;
   String? _pendingIncomeCategory;
 
+  String _accountLabel(Account account) {
+    final normalizedName = account.name.trim().toLowerCase();
+    final hasAssetIcon =
+        account.icon.startsWith('assets/images/') ||
+        {
+          'gcash',
+          'maya',
+          'paymaya',
+          'cash',
+          'bdo',
+          'landbank',
+          'psbank',
+        }.contains(normalizedName);
+
+    return hasAssetIcon ? account.name : '${account.icon} ${account.name}';
+  }
+
   BaiReply get greeting {
     final meal = RamseyCookingAssistant.detectMeal(
       DateTime.now(),
     ).toLowerCase();
     return BaiReply(
-      "Kumusta! I'm BAI, your Brother AI. 🤖🇵🇭",
-      extraTexts: const [
-        "I'm your all-in-one smart assistant — I can help with cooking, grocery tracking, bills, and your personal finances.\n\n"
-            "Try asking me:\n"
-            "'What can I cook for dinner?'\n"
-            "'How much did I spend this week?'\n"
-            "'Spent 150 on coffee from Cash'\n"
-            "'Transfer 500 from Bank to GCash'\n"
-            "'What is my total balance?'",
-      ],
+      "What can I do for you?",
+
       quickReplies: [
         'What can I cook for $meal?',
         'What is my total balance?',
@@ -94,23 +105,27 @@ class BaiAssistant {
       return await _handleStateMachine(n);
     }
 
-    // ─── 2. FINANCE: transfers (highest specificity regex) ───
+    // ─── 2. FUTURE INCOMING EVENTS ───
+    final futureEventResult = await _tryFutureEvent(n);
+    if (futureEventResult != null) return futureEventResult;
+
+    // ─── 3. FINANCE: transfers (highest specificity regex) ───
     final transferResult = await _tryTransfer(n);
     if (transferResult != null) return transferResult;
 
-    // ─── 3. FINANCE: expense logging ───
+    // ─── 4. FINANCE: expense logging ───
     final expenseResult = await _tryLogExpense(n);
     if (expenseResult != null) return expenseResult;
 
-    // ─── 4. FINANCE: income logging ───
+    // ─── 5. FINANCE: income logging ───
     final incomeResult = await _tryLogIncome(n);
     if (incomeResult != null) return incomeResult;
 
-    // ─── 5. FINANCE: total balance / balance checks ───
+    // ─── 6. FINANCE: total balance / balance checks ───
     final balanceResult = await _tryBalanceCheck(n);
     if (balanceResult != null) return balanceResult;
 
-    // ─── 6. BILLS ───
+    // ─── 7. BILLS ───
     if (_isWeeklyBillAsk(n)) return await _weeklyBillsReply();
     if (_isBillAsk(n)) return await _billsSummaryReply();
 
@@ -190,6 +205,16 @@ class BaiAssistant {
       _resetState();
       return transferResult;
     }
+    final futureEventResult = await _tryFutureEvent(n);
+    if (futureEventResult != null) {
+      _resetState();
+      return futureEventResult;
+    }
+    final multiResult = await _tryMultiTransaction(n);
+    if (multiResult != null) {
+      _resetState();
+      return multiResult;
+    }
     final expenseResult = await _tryLogExpense(n);
     if (expenseResult != null) {
       _resetState();
@@ -199,6 +224,11 @@ class BaiAssistant {
     if (incomeResult != null) {
       _resetState();
       return incomeResult;
+    }
+    final correctionResult = await _tryCorrection(n);
+    if (correctionResult != null) {
+      _resetState();
+      return correctionResult;
     }
     final undoResult = await _tryUndo(n);
     if (undoResult != null) {
@@ -269,6 +299,7 @@ class BaiAssistant {
     final amount = _pendingExpenseAmount!;
     final desc = _pendingExpenseDescription!;
     final category = _pendingExpenseCategory!;
+    final cleanTitle = _cleanTransactionTitle(desc, amount: amount);
 
     try {
       final txn = FinanceTransaction(
@@ -278,13 +309,13 @@ class BaiAssistant {
         accountName: acc.name,
         type: 'EXPENSE',
         category: category,
-        description: desc,
+        description: cleanTitle,
       );
       await FinanceStorage.addTransaction(txn);
 
       _resetState();
       return BaiReply(
-        "💸 Expense logged!\n\n- $_currency${amount.toStringAsFixed(2)} on $desc from ${acc.icon} ${acc.name} ($category)\n• New Balance: $_currency${(acc.balance - amount).toStringAsFixed(2)}",
+        "💸 Expense logged!\n\n- $_currency${amount.toStringAsFixed(2)} on $desc from ${_accountLabel(acc)} ($category)\n• New Balance: $_currency${(acc.balance - amount).toStringAsFixed(2)}",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -317,6 +348,7 @@ class BaiAssistant {
     final amount = _pendingIncomeAmount!;
     final desc = _pendingIncomeDescription!;
     final category = _pendingIncomeCategory!;
+    final cleanTitle = _cleanTransactionTitle(desc, amount: amount);
 
     try {
       final txn = FinanceTransaction(
@@ -326,13 +358,13 @@ class BaiAssistant {
         accountName: acc.name,
         type: 'INCOME',
         category: category,
-        description: desc,
+        description: cleanTitle,
       );
       await FinanceStorage.addTransaction(txn);
 
       _resetState();
       return BaiReply(
-        "💵 Income logged!\n\n+ $_currency${amount.toStringAsFixed(2)} to ${acc.icon} ${acc.name} ($category)\n• New Balance: $_currency${(acc.balance + amount).toStringAsFixed(2)}",
+        "💵 Income logged!\n\n+ $_currency${amount.toStringAsFixed(2)} to ${_accountLabel(acc)} ($category)\n• New Balance: $_currency${(acc.balance + amount).toStringAsFixed(2)}",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -384,7 +416,7 @@ class BaiAssistant {
     }
     if (from.balance < amount) {
       return BaiReply(
-        "⚠️ Insufficient funds in ${from.icon} ${from.name}. Balance: $_currency${from.balance.toStringAsFixed(2)}",
+        "⚠️ Insufficient funds in ${_accountLabel(from)}. Balance: $_currency${from.balance.toStringAsFixed(2)}",
       );
     }
 
@@ -395,7 +427,7 @@ class BaiAssistant {
         amount: amount,
       );
       return BaiReply(
-        "✅ Transfer Successful!\n\n• Moved $_currency${amount.toStringAsFixed(2)} from ${from.icon} ${from.name} to ${to.icon} ${to.name}.",
+        "✅ Transfer Successful!\n\n• Moved $_currency${amount.toStringAsFixed(2)} from ${_accountLabel(from)} to ${_accountLabel(to)}.",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -515,6 +547,10 @@ class BaiAssistant {
     }
 
     final category = _categorizeExpense(cleanedDesc);
+
+    // Clean the transaction title
+    final cleanTitle = _cleanTransactionTitle(cleanedDesc, amount: amount);
+
     final txn = FinanceTransaction(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       amount: amount,
@@ -522,13 +558,13 @@ class BaiAssistant {
       accountName: acc.name,
       type: 'EXPENSE',
       category: category,
-      description: cleanedDesc,
+      description: cleanTitle,
     );
 
     try {
       await FinanceStorage.addTransaction(txn);
       return BaiReply(
-        "💸 Expense logged!\n\n- $_currency${amount.toStringAsFixed(2)} on $cleanedDesc from ${acc.icon} ${acc.name} ($category)\n• New Balance: $_currency${(acc.balance - amount).toStringAsFixed(2)}",
+        "💸 Expense logged!\n\n- $_currency${amount.toStringAsFixed(2)} on $cleanedDesc from ${_accountLabel(acc)} ($category)\n• New Balance: $_currency${(acc.balance - amount).toStringAsFixed(2)}",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -543,18 +579,125 @@ class BaiAssistant {
     }
   }
 
+  Future<BaiReply?> _tryMultiTransaction(String n) async {
+    // Check if input contains "and" which might indicate multiple transactions
+    final l = n.toLowerCase();
+
+    // Look for patterns like "received X and spent Y" or "got X and paid Y"
+    final multiPattern = RegExp(
+      r'(?:received|got|earned|income)\s+(\d+(?:\.\d+)?)\s*(?:k)?\s*(?:pesos|php|₱)?\s*(?:and|&)\s*(?:spent|paid|expense|bought)\s+(\d+(?:\.\d+)?)\s*(?:k)?',
+      caseSensitive: false,
+    );
+
+    final match = multiPattern.firstMatch(l);
+    if (match == null) return null;
+
+    // Extract amounts with slang support
+    final incomeAmountStr = match.group(1)!;
+    final expenseAmountStr = match.group(2)!;
+
+    double? incomeAmount = _parseAmountWithSlang(incomeAmountStr, l);
+    double? expenseAmount = _parseAmountWithSlang(expenseAmountStr, l);
+
+    if (incomeAmount == null || expenseAmount == null) return null;
+
+    final accounts = await FinanceStorage.loadAccounts();
+    if (accounts.isEmpty) return _noAccountsReply();
+
+    // Use first account for both transactions (could enhance to ask for accounts)
+    final account = accounts.first;
+
+    final results = <String>[];
+
+    // Extract expense category from input
+    String expenseCategory = 'Others';
+    if (l.contains('internet') || l.contains('wifi')) {
+      expenseCategory = 'Utilities';
+    } else if (l.contains('electric') || l.contains('power')) {
+      expenseCategory = 'Utilities';
+    } else if (l.contains('water')) {
+      expenseCategory = 'Utilities';
+    } else if (l.contains('rent')) {
+      expenseCategory = 'Housing';
+    } else if (l.contains('food') || l.contains('grocery')) {
+      expenseCategory = 'Food & Drinks';
+    }
+
+    // Log income
+    try {
+      final incomeCleanTitle = _cleanTransactionTitle(
+        'Salary',
+        amount: incomeAmount,
+      );
+      final incomeTxn = FinanceTransaction(
+        id: '${DateTime.now().millisecondsSinceEpoch}_income',
+        amount: incomeAmount,
+        accountId: account.id,
+        accountName: account.name,
+        type: 'INCOME',
+        category: 'Salary',
+        description: incomeCleanTitle,
+      );
+      await FinanceStorage.addTransaction(incomeTxn);
+      results.add("Salary +$_currency${incomeAmount.toStringAsFixed(2)}");
+    } catch (e) {
+      results.add("Failed to log income: $e");
+    }
+
+    // Log expense
+    try {
+      final expenseCleanTitle = _cleanTransactionTitle(
+        expenseCategory,
+        amount: expenseAmount,
+      );
+      final expenseTxn = FinanceTransaction(
+        id: '${DateTime.now().millisecondsSinceEpoch}_expense',
+        amount: expenseAmount,
+        accountId: account.id,
+        accountName: account.name,
+        type: 'EXPENSE',
+        category: expenseCategory,
+        description: expenseCleanTitle,
+      );
+      await FinanceStorage.addTransaction(expenseTxn);
+      results.add(
+        "$expenseCategory -$_currency${expenseAmount.toStringAsFixed(2)}",
+      );
+    } catch (e) {
+      results.add("Failed to log expense: $e");
+    }
+
+    return BaiReply(
+      results.join('\n\n'),
+      quickReplies: const [
+        "What is my total balance?",
+        "Check account balances",
+      ],
+    );
+  }
+
+  double? _parseAmountWithSlang(String amountStr, String fullText) {
+    // Check if the amount has "k" suffix in the full text
+    final idx = fullText.toLowerCase().indexOf(amountStr.toLowerCase());
+    if (idx != -1) {
+      final afterAmount = fullText
+          .substring(idx + amountStr.length)
+          .toLowerCase()
+          .trim();
+      if (afterAmount.startsWith('k')) {
+        final value = double.tryParse(amountStr);
+        if (value != null) return value * 1000;
+      }
+    }
+    return double.tryParse(amountStr);
+  }
+
   Future<BaiReply?> _tryLogIncome(String n) async {
     // 1. Differentiate intent
     if (!_isIncomeIntent(n)) return null;
 
-    // 2. Extract amount
-    final amountReg = RegExp(r'(\d+(?:\.\d+)?)');
-    final amountMatch = amountReg.firstMatch(n);
-    if (amountMatch == null) return null;
-
-    final amountStr = amountMatch.group(1);
-    if (amountStr == null) return null;
-    final amount = double.tryParse(amountStr);
+    // 2. Extract amount with slang support (k for thousands)
+    final amount = _extractAmountWithSlang(n);
     if (amount == null || amount <= 0) return null;
 
     final accounts = await FinanceStorage.loadAccounts();
@@ -580,7 +723,7 @@ class BaiAssistant {
       }
     }
 
-    String descStr = _cleanDescription(n, amountStr, matchedAccSuffix);
+    String descStr = _cleanDescription(n, amount.toString(), matchedAccSuffix);
 
     // Clean up income keywords from description to keep it clean
     final List<String> stripKeywords = [
@@ -666,6 +809,27 @@ class BaiAssistant {
     }
 
     final category = _categorizeIncome(cleanedDesc);
+    final entity = _extractEntity(n);
+
+    // Format description with entity if detected
+    String formattedDesc = cleanedDesc;
+    if (entity.isNotEmpty) {
+      if (_isReimbursement(n)) {
+        formattedDesc = '$entity ($category)';
+      } else if (_isAllowance(n)) {
+        formattedDesc = '$entity ($category)';
+      } else if (_isPassiveIncome(n)) {
+        formattedDesc = '$entity $category';
+      } else {
+        formattedDesc = entity.isNotEmpty
+            ? '$entity ($cleanedDesc)'
+            : cleanedDesc;
+      }
+    }
+
+    // Clean the transaction title
+    final cleanTitle = _cleanTransactionTitle(formattedDesc, amount: amount);
+
     final txn = FinanceTransaction(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       amount: amount,
@@ -673,13 +837,34 @@ class BaiAssistant {
       accountName: acc.name,
       type: 'INCOME',
       category: category,
-      description: cleanedDesc,
+      description: cleanTitle,
     );
 
     try {
       await FinanceStorage.addTransaction(txn);
+
+      // Format response based on variation type
+      String responseText;
+      if (entity.isNotEmpty) {
+        if (_isReimbursement(n)) {
+          responseText =
+              "$entity ($category) +$_currency${amount.toStringAsFixed(2)}";
+        } else if (_isAllowance(n)) {
+          responseText =
+              "$entity ($category) +$_currency${amount.toStringAsFixed(2)}";
+        } else if (_isPassiveIncome(n)) {
+          responseText =
+              "$entity $category +$_currency${amount.toStringAsFixed(2)}";
+        } else {
+          responseText = "$entity +$_currency${amount.toStringAsFixed(2)}";
+        }
+      } else {
+        responseText =
+            "💵 Income logged!\n\n+ $_currency${amount.toStringAsFixed(2)} to ${_accountLabel(acc)} ($category)\n• New Balance: $_currency${(acc.balance + amount).toStringAsFixed(2)}";
+      }
+
       return BaiReply(
-        "💵 Income logged!\n\n+ $_currency${amount.toStringAsFixed(2)} to ${acc.icon} ${acc.name} ($category)\n• New Balance: $_currency${(acc.balance + amount).toStringAsFixed(2)}",
+        responseText,
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -710,7 +895,7 @@ class BaiAssistant {
       final lines = accounts
           .map(
             (a) =>
-                "• ${a.icon} ${a.name}: $_currency${a.balance.toStringAsFixed(2)}",
+                "• ${_accountLabel(a)}: $_currency${a.balance.toStringAsFixed(2)}",
           )
           .toList();
       return BaiReply(
@@ -729,7 +914,7 @@ class BaiAssistant {
           n == 'check $name balance' ||
           (n.contains('how much') && n.contains(name))) {
         return BaiReply(
-          "• ${a.icon} ${a.name} balance: $_currency${a.balance.toStringAsFixed(2)}",
+          "• ${_accountLabel(a)} balance: $_currency${a.balance.toStringAsFixed(2)}",
           quickReplies: const ["What is my total balance?"],
         );
       }
@@ -772,6 +957,92 @@ class BaiAssistant {
         "Check account balances",
       ],
     );
+  }
+
+  Future<BaiReply?> _tryCorrection(String n) async {
+    final l = n.toLowerCase();
+
+    // Check for correction keywords
+    final correctionKeywords = [
+      'change that',
+      'actually',
+      'correct that',
+      'wait',
+      'no wait',
+      'not really',
+      'mistake',
+      'wrong',
+    ];
+
+    if (!correctionKeywords.any((k) => l.contains(k))) {
+      return null;
+    }
+
+    // Try to extract the new amount
+    final newAmount = _extractAmountWithSlang(n);
+    if (newAmount == null) {
+      return BaiReply(
+        "⚠️ I couldn't find the new amount. Please specify the correct amount.",
+        quickReplies: const ["What is my total balance?"],
+      );
+    }
+
+    // Get the last transaction
+    final transactions = await FinanceStorage.loadTransactions();
+    if (transactions.isEmpty) {
+      return BaiReply(
+        "⚠️ No transactions to correct.",
+        quickReplies: const ["What is my total balance?"],
+      );
+    }
+
+    final lastTxn = transactions.last;
+
+    // Calculate the difference
+    final oldAmount = lastTxn.amount;
+    final difference = newAmount - oldAmount;
+
+    // Delete the old transaction
+    await FinanceStorage.deleteLastTransaction();
+
+    // Create a new transaction with the corrected amount
+    final accounts = await FinanceStorage.loadAccounts();
+    final account = accounts.firstWhere(
+      (a) => a.id == lastTxn.accountId,
+      orElse: () => accounts.first,
+    );
+
+    final correctedTxn = FinanceTransaction(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      amount: newAmount,
+      accountId: account.id,
+      accountName: account.name,
+      type: lastTxn.type,
+      category: lastTxn.category,
+      description: lastTxn.description,
+    );
+
+    try {
+      await FinanceStorage.addTransaction(correctedTxn);
+
+      final type = lastTxn.type == 'INCOME' ? 'income' : 'expense';
+      final diffText = difference > 0
+          ? '+$_currency${difference.toStringAsFixed(2)}'
+          : '-$_currency${difference.abs().toStringAsFixed(2)}';
+
+      return BaiReply(
+        "✅ Corrected!\n\n• Updated $type from $_currency${oldAmount.toStringAsFixed(2)} to $_currency${newAmount.toStringAsFixed(2)}\n• Adjustment: $diffText\n• Account: ${account.name}",
+        quickReplies: const [
+          "What is my total balance?",
+          "Check account balances",
+        ],
+      );
+    } catch (e) {
+      return BaiReply(
+        "⚠️ Failed to correct transaction: $e",
+        quickReplies: const ["What is my total balance?"],
+      );
+    }
   }
 
   // ═══════════════════════════════════════════════
@@ -963,6 +1234,15 @@ class BaiAssistant {
     ])) {
       return 'Investment';
     }
+    if (_matchAny(l, ['allowance', 'baon', 'padala'])) {
+      return 'Allowance';
+    }
+    if (_matchAny(l, ['reimburse', 'refund', 'paid back'])) {
+      return 'Reimbursement';
+    }
+    if (_matchAny(l, ['interest', 'dividend', 'payout'])) {
+      return 'Passive Income';
+    }
     return 'Others';
   }
 
@@ -1020,6 +1300,104 @@ class BaiAssistant {
       }
     }
     return null;
+  }
+
+  // ═══════════════════════════════════════════════
+  //  SLANG & AMOUNT EXTRACTION
+  // ═══════════════════════════════════════════════
+
+  double? _extractAmountWithSlang(String text) {
+    final l = text.toLowerCase();
+
+    // Handle "k" for thousands (e.g., "2k", "5k", "10k")
+    final kMatch = RegExp(r'(\d+(?:\.\d+)?)\s*k\b').firstMatch(l);
+    if (kMatch != null) {
+      final value = double.tryParse(kMatch.group(1)!);
+      if (value != null) return value * 1000;
+    }
+
+    // Handle regular amounts
+    final amountMatch = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(l);
+    if (amountMatch != null) {
+      return double.tryParse(amountMatch.group(1)!);
+    }
+
+    return null;
+  }
+
+  String _extractEntity(String text) {
+    final l = text.toLowerCase();
+
+    // Common Filipino entities/relationships
+    final entities = [
+      'papi',
+      'daddy',
+      'dad',
+      'father',
+      'tatay',
+      'ama',
+      'mom',
+      'mommy',
+      'mother',
+      'momma',
+      'nanay',
+      'ina',
+      'brother',
+      'bro',
+      'kuya',
+      'bunso',
+      'sister',
+      'sis',
+      'ate',
+      'friend',
+      'bestfriend',
+      'bestie',
+      'boss',
+      'manager',
+      'supervisor',
+    ];
+
+    for (final entity in entities) {
+      if (l.contains(entity)) {
+        return entity[0].toUpperCase() + entity.substring(1);
+      }
+    }
+
+    // Try to extract proper names (capitalized words)
+    final nameMatch = RegExp(r'\b[A-Z][a-z]+\b').firstMatch(text);
+    if (nameMatch != null) {
+      return nameMatch.group(0)!;
+    }
+
+    return '';
+  }
+
+  bool _isReimbursement(String text) {
+    final l = text.toLowerCase();
+    return l.contains('paid back') ||
+        l.contains('reimburse') ||
+        l.contains('reimbursement') ||
+        l.contains('refund') ||
+        l.contains('share') ||
+        l.contains('split');
+  }
+
+  bool _isAllowance(String text) {
+    final l = text.toLowerCase();
+    return l.contains('baon') ||
+        l.contains('allowance') ||
+        l.contains('padala') ||
+        l.contains('sent') && (l.contains('money') || l.contains('cash'));
+  }
+
+  bool _isPassiveIncome(String text) {
+    final l = text.toLowerCase();
+    return l.contains('dividend') ||
+        l.contains('interest') ||
+        l.contains('payout') ||
+        l.contains('auto') ||
+        l.contains('automatic') ||
+        l.contains('credit');
   }
 
   String _cleanDescription(
@@ -1136,6 +1514,792 @@ class BaiAssistant {
   }
 
   // ═══════════════════════════════════════════════
+  //  FUTURE EVENT DETECTION & PARSING
+  // ═══════════════════════════════════════════════
+
+  bool _isFutureTense(String text) {
+    final l = text.toLowerCase();
+    final futureKeywords = [
+      'is going to',
+      'going to pay',
+      'going to send',
+      'going to transfer',
+      'need to pay',
+      'needs to pay',
+      'have a loan',
+      'has a loan',
+      'due on',
+      'due this',
+      'bill drops',
+      'will pay',
+      'will transfer',
+      'will send',
+      'drops on',
+      'expect on',
+      'expecting',
+      'scheduled for',
+      'this coming',
+      'next month',
+      'next week',
+      'upcoming',
+      'future',
+    ];
+    if (futureKeywords.any((k) => l.contains(k))) return true;
+
+    final hasFutureDateMarker = RegExp(
+      r'\b(?:on|this|next|by|due)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b',
+    ).hasMatch(l);
+    final hasIncomingAction = RegExp(
+      r'\b(?:pay(?:\s+me)?(?:\s+back)?|send|transfer|clear|drop|receive|expect|incoming|salary|allowance|remittance|freelance)\b',
+    ).hasMatch(l);
+    final hasOutgoingObligation = _isFutureOutgoingObligation(l);
+
+    return hasFutureDateMarker && (hasIncomingAction || hasOutgoingObligation);
+  }
+
+  DateTime? _parseDateFromText(String text) {
+    final l = text.toLowerCase();
+    final now = DateTime.now();
+
+    // Parse "this 30th", "on the 15th", "on 30th", etc.
+    final dayMatch = RegExp(
+      r'(?:this|on|by|due)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b',
+    ).firstMatch(l);
+    if (dayMatch != null) {
+      final day = int.tryParse(dayMatch.group(1)!);
+      if (day != null && day >= 1 && day <= 31) {
+        DateTime date = DateTime(now.year, now.month, day);
+        if (date.isBefore(now)) {
+          date = DateTime(now.year, now.month + 1, day);
+        }
+        return date;
+      }
+    }
+
+    // Parse "Friday", "Sunday", etc.
+    final days = [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
+    ];
+    for (int i = 0; i < days.length; i++) {
+      if (l.contains(days[i])) {
+        int targetDay = i + 1; // DateTime weekday is 1-7 (Monday=1)
+        int currentDay = now.weekday;
+        int daysUntil = (targetDay - currentDay + 7) % 7;
+        if (daysUntil == 0) daysUntil = 7; // If today, go to next week
+        return now.add(Duration(days: daysUntil));
+      }
+    }
+
+    // Parse "5th of the month"
+    final nthMatch = RegExp(
+      r'(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?(?:the\s+)?month',
+    ).firstMatch(l);
+    if (nthMatch != null) {
+      final day = int.tryParse(nthMatch.group(1)!);
+      if (day != null && day >= 1 && day <= 31) {
+        DateTime date = DateTime(now.year, now.month, day);
+        if (date.isBefore(now)) {
+          date = DateTime(now.year, now.month + 1, day);
+        }
+        return date;
+      }
+    }
+
+    // Parse "next month"
+    if (l.contains('next month')) {
+      return DateTime(now.year, now.month + 1, 1);
+    }
+
+    return null;
+  }
+
+  String _parseFrequency(String text) {
+    final l = text.toLowerCase();
+    if (l.contains('one time') ||
+        l.contains('one-time') ||
+        l.contains('once')) {
+      return 'Once';
+    }
+    if (l.contains('every') ||
+        l.contains('monthly') ||
+        l.contains('each month')) {
+      return 'Monthly';
+    }
+    if (l.contains('weekly') || l.contains('every week')) {
+      return 'Weekly';
+    }
+    return 'Once';
+  }
+
+  String _defaultFutureFrequency(String text, {required bool isOutgoing}) {
+    final explicit = _parseFrequency(text);
+    if (explicit != 'Once' ||
+        RegExp(r'\b(?:once|one-time|one time)\b').hasMatch(text)) {
+      return explicit;
+    }
+
+    if (isOutgoing &&
+        _matchAny(text, [
+          'loan',
+          'bill',
+          'insurance',
+          'rent',
+          'subscription',
+          'meralco',
+          'electric',
+          'electricity',
+          'water',
+          'internet',
+          'wifi',
+          'credit card',
+          'home credit',
+        ])) {
+      return 'Monthly';
+    }
+
+    return explicit;
+  }
+
+  bool _isFutureOutgoingObligation(String text) {
+    final l = text.toLowerCase();
+    final hasDueLanguage = RegExp(
+      r'\b(?:due|deadline|drops|coming up|on|this|by)\b',
+    ).hasMatch(l);
+    final hasObligation = RegExp(
+      r'\b(?:need(?:s)?\s+to\s+pay|have\s+(?:a\s+)?(?:loan|bill|debt)|has\s+(?:a\s+)?(?:loan|bill|debt)|loan|bill|debt|insurance|rent|meralco|electricity|water|internet|wifi|subscription|credit card|home credit|payment)\b',
+    ).hasMatch(l);
+    final payOut =
+        RegExp(r'\b(?:pay|paying|paid)\b').hasMatch(l) &&
+        !RegExp(r'\bpay(?:s|ing|ed)?\s+me\s+back\b').hasMatch(l);
+
+    return (hasObligation || payOut) && hasDueLanguage;
+  }
+
+  double? _extractFutureAmount(String text) {
+    var scrubbed = text.toLowerCase();
+
+    final datePatterns = [
+      RegExp(r'\b(?:this|on|by|due)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b'),
+      RegExp(r'\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:the\s+)?month\b'),
+      RegExp(
+        r'\b(?:next|this)\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month)\b',
+      ),
+      RegExp(
+        r'\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b',
+      ),
+    ];
+
+    for (final pattern in datePatterns) {
+      scrubbed = scrubbed.replaceAll(pattern, ' ');
+    }
+
+    final currencyMatch = RegExp(
+      r'(?:₱|php|peso|pesos)\s*(\d+(?:,\d{3})*(?:\.\d+)?)(\s*k)?\b|(\d+(?:,\d{3})*(?:\.\d+)?)(\s*k)?\s*(?:₱|php|peso|pesos)\b',
+      caseSensitive: false,
+    ).firstMatch(scrubbed);
+    if (currencyMatch != null) {
+      final raw = currencyMatch.group(1) ?? currencyMatch.group(3);
+      final hasK = (currencyMatch.group(2) ?? currencyMatch.group(4)) != null;
+      final parsed = double.tryParse(raw!.replaceAll(',', ''));
+      if (parsed != null) return hasK ? parsed * 1000 : parsed;
+    }
+
+    final actionAmountMatch = RegExp(
+      r'\b(?:pay(?:\s+me)?(?:\s+back)?|send|transfer|clear|receive|expect|expecting|salary|allowance|remittance|freelance|incoming|income|payout)\D{0,30}?(\d+(?:,\d{3})*(?:\.\d+)?)(\s*k)?\b',
+      caseSensitive: false,
+    ).firstMatch(scrubbed);
+    if (actionAmountMatch != null) {
+      final parsed = double.tryParse(
+        actionAmountMatch.group(1)!.replaceAll(',', ''),
+      );
+      if (parsed != null) {
+        return actionAmountMatch.group(2) != null ? parsed * 1000 : parsed;
+      }
+    }
+
+    final amountMatch = RegExp(
+      r'\b(\d+(?:,\d{3})*(?:\.\d+)?)(\s*k)?\b',
+      caseSensitive: false,
+    ).firstMatch(scrubbed);
+    if (amountMatch == null) return null;
+
+    final parsed = double.tryParse(amountMatch.group(1)!.replaceAll(',', ''));
+    if (parsed == null) return null;
+    return amountMatch.group(2) != null ? parsed * 1000 : parsed;
+  }
+
+  String _categorizeFutureEvent(String text) {
+    final l = text.toLowerCase();
+
+    // Map to allowed categories
+    if (_matchAny(l, ['salary', 'sweldo', 'paycheck', 'payday'])) {
+      return 'Salary';
+    }
+    if (_matchAny(l, [
+      'freelance',
+      'sideline',
+      'gig',
+      'project',
+      'client',
+      'milestone',
+    ])) {
+      return 'Freelance';
+    }
+    if (_matchAny(l, [
+      'business',
+      'customer',
+      'order',
+      'invoice',
+      'delivery',
+    ])) {
+      return 'Business';
+    }
+    if (_matchAny(l, ['allowance', 'baon', 'padala'])) {
+      return 'Allowance';
+    }
+    if (_matchAny(l, ['scholarship', 'grant'])) {
+      return 'Scholarship';
+    }
+    if (_matchAny(l, [
+      'invest',
+      'investment',
+      'stocks',
+      'crypto',
+      'debt',
+      'pay back',
+      'reimburse',
+    ])) {
+      return 'Investment';
+    }
+    if (_matchAny(l, ['remittance', 'send money', 'transfer'])) {
+      return 'Remittance';
+    }
+
+    return 'Salary'; // Default
+  }
+
+  String _categorizeFutureOutgoingEvent(String text) {
+    final l = text.toLowerCase();
+
+    if (_matchAny(l, ['car loan', 'auto loan', 'vehicle loan'])) {
+      return 'Car Loan';
+    }
+    if (_matchAny(l, ['loan', 'debt'])) {
+      return 'Loan';
+    }
+    if (_matchAny(l, ['insurance'])) {
+      return 'Insurance';
+    }
+    if (_matchAny(l, ['meralco'])) {
+      return 'Meralco Bill';
+    }
+    if (_matchAny(l, ['electric', 'electricity', 'power'])) {
+      return 'Electricity';
+    }
+    if (_matchAny(l, ['water'])) {
+      return 'Water';
+    }
+    if (_matchAny(l, ['internet', 'wifi'])) {
+      return 'Internet';
+    }
+    if (_matchAny(l, ['rent'])) {
+      return 'Rent';
+    }
+    if (_matchAny(l, ['subscription', 'netflix', 'spotify'])) {
+      return 'Subscription';
+    }
+    if (_matchAny(l, ['credit card'])) {
+      return 'Credit Card';
+    }
+    if (_matchAny(l, ['home credit'])) {
+      return 'Home Credit';
+    }
+
+    return _cleanFutureOutgoingTitle(text);
+  }
+
+  String _cleanFutureOutgoingTitle(String text) {
+    var title = text.toLowerCase();
+    final amount = _extractFutureAmount(text);
+    title = _removeMappedAmountFromTitle(title, amount);
+    title = title.replaceAll(
+      RegExp(r'\b(?:this|on|by|due)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b'),
+      ' ',
+    );
+    title = title.replaceAll(
+      RegExp(
+        r'\b(?:i|my|have|has|a|an|the|need|needs|to|pay|worth|around|about|bill|payment|due|drops|coming|up|for|on|by)\b',
+        caseSensitive: false,
+      ),
+      ' ',
+    );
+    title = title.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (title.isEmpty) return 'Bill';
+
+    return title
+        .split(' ')
+        .where((word) => word.isNotEmpty)
+        .map((word) => word[0].toUpperCase() + word.substring(1))
+        .join(' ');
+  }
+
+  String _futureOutgoingConfirmationText({
+    required String input,
+    required String category,
+    required double amount,
+    required DateTime scheduledDate,
+    required String frequency,
+  }) {
+    final dueText = _formatDate(scheduledDate);
+    final signedAmount = _formatSignedCurrency(amount);
+    final frequencyLine = frequency == 'Monthly'
+        ? 'Frequency: Monthly'
+        : 'Frequency: $frequency';
+    final isBill = _matchAny(input, [
+      'bill',
+      'meralco',
+      'electricity',
+      'water',
+      'internet',
+      'wifi',
+    ]);
+    final isPayment = _matchAny(input, [
+      'need to pay',
+      'pay',
+      'paying',
+      'payment',
+      'insurance',
+      'loan',
+      'debt',
+    ]);
+
+    final templates = isBill
+        ? [
+            'Bill Reminder Logged!\n\n$signedAmount for $category\nDue: $dueText\n$frequencyLine\n\nThis will not affect your current balance until the scheduled date.',
+            'Upcoming Bill Scheduled!\n\n$signedAmount $category\nDue on: $dueText\n$frequencyLine\n\nThis stays in your calendar until it is due.',
+            'Outgoing Bill Added!\n\n$signedAmount for your $category\nSchedule: $dueText\n$frequencyLine\n\nNo wallet balance has changed yet.',
+            'Bill Payment Queued!\n\n$signedAmount for $category\nScheduled: $dueText\n$frequencyLine\n\nI marked this as an outgoing payment.',
+          ]
+        : isPayment
+        ? [
+            'Upcoming Payment Tracked!\n\n$signedAmount for $category\nDue: $dueText\n$frequencyLine\n\nThis will not affect your current balance until the scheduled date.',
+            'Outgoing Payment Added!\n\n$signedAmount for your $category\nComing up: $dueText\n$frequencyLine\n\nYour balance stays unchanged for now.',
+            'Payment Reminder Set!\n\n$signedAmount for your $category\nDue on: $dueText\n$frequencyLine\n\nI marked this as an outgoing calendar entry.',
+            'Loan Payment Scheduled!\n\n$signedAmount for $category\nDue: $dueText\n$frequencyLine\n\nThis is tracked as an outgoing payment.',
+            'Upcoming Outgoing Saved!\n\n$signedAmount for $category\nScheduled for: $dueText\n$frequencyLine\n\nNo current balance was deducted yet.',
+          ]
+        : [
+            'Upcoming Bill Scheduled!\n\n$signedAmount for $category\nDue: $dueText\n$frequencyLine\n\nThis will not affect your current balance until the scheduled date.',
+            'Outgoing Entry Added!\n\n$signedAmount for $category\nScheduled for: $dueText\n$frequencyLine\n\nYour current wallet balance is unchanged.',
+            'Payment Schedule Saved!\n\n$signedAmount for your $category\nDue on: $dueText\n$frequencyLine\n\nI marked this as an outgoing payment.',
+            'Outgoing Reminder Saved!\n\n$signedAmount for $category\nComing up: $dueText\n$frequencyLine\n\nThis stays pending until the scheduled date.',
+          ];
+
+    return _pickVariation(templates);
+  }
+
+  String _formatSignedCurrency(double amount) {
+    return '-$_currency${_formatNumberWithCommas(amount.toStringAsFixed(2))}';
+  }
+
+  String _pickVariation(List<String> values) {
+    if (values.isEmpty) return '';
+    final index = DateTime.now().microsecondsSinceEpoch % values.length;
+    return values[index];
+  }
+
+  Future<BaiReply?> _tryFutureEvent(String n) async {
+    if (!_isFutureTense(n)) return null;
+
+    // Extract the money amount after date markers have been removed, so
+    // ordinals like "30th" never become the amount.
+    final amount = _extractFutureAmount(n);
+    if (amount == null || amount <= 0) return null;
+
+    // Parse date
+    final scheduledDate = _parseDateFromText(n);
+    if (scheduledDate == null) {
+      return BaiReply(
+        "⚠️ I couldn't determine the date. Please specify when this event will occur (e.g., 'this 30th', 'on Friday', 'on the 15th').",
+        quickReplies: const ["What is my total balance?"],
+      );
+    }
+
+    final isOutgoing = _isFutureOutgoingObligation(n);
+
+    // Parse frequency
+    final frequency = _defaultFutureFrequency(n, isOutgoing: isOutgoing);
+
+    // Parse category
+    final category = isOutgoing
+        ? _categorizeFutureOutgoingEvent(n)
+        : _categorizeFutureEvent(n);
+
+    // Extract entity
+    final entity = _extractEntity(n);
+
+    // Create description
+    String description = category;
+    if (entity.isNotEmpty) {
+      description = '$entity ($category)';
+    }
+
+    // Clean the transaction title
+    final cleanTitle = _cleanTransactionTitle(description, amount: amount);
+
+    // Create future event
+    final event = FutureEvent(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      amount: amount,
+      category: category,
+      description: cleanTitle,
+      scheduledDate: scheduledDate,
+      frequency: frequency,
+      entity: entity.isNotEmpty ? entity : null,
+    );
+
+    try {
+      await FutureEventStorage.addEvent(event);
+
+      final bills = await BillStorage.loadBills();
+      bills.add(
+        Bill(
+          id: 'future_${event.id}',
+          type: category,
+          amount: amount,
+          dueDate: scheduledDate,
+          isIncome: !isOutgoing,
+          frequency: frequency,
+        ),
+      );
+      await BillStorage.saveBills(bills);
+
+      // Format confirmation message
+      String confirmationTitle;
+      String confirmationMessage;
+
+      if (isOutgoing) {
+        return BaiReply(
+          _futureOutgoingConfirmationText(
+            input: n,
+            category: category,
+            amount: amount,
+            scheduledDate: scheduledDate,
+            frequency: frequency,
+          ),
+          quickReplies: const [
+            "Show upcoming events",
+            "What is my total balance?",
+          ],
+          highlightColor: 'red',
+        );
+      } else if (frequency == 'Monthly') {
+        confirmationTitle = '📅 Recurring Incoming Event Set!';
+        confirmationMessage =
+            'Registered a Monthly incoming $category of $_currency${amount.toStringAsFixed(2)} starting on ${_formatDate(scheduledDate)}.';
+      } else if (category == 'Investment' && entity.isNotEmpty) {
+        confirmationTitle = '📅 Upcoming Incoming Entry Added!';
+        confirmationMessage =
+            "I've scheduled $_currency${amount.toStringAsFixed(2)} from $entity as a one-time Investment return for ${_formatDate(scheduledDate)}.";
+      } else if (category == 'Freelance') {
+        confirmationTitle = '📅 Expected Payout Tracked!';
+        confirmationMessage =
+            'Added an incoming Freelance payment of $_currency${amount.toStringAsFixed(2)} scheduled for ${_formatDate(scheduledDate)}.';
+      } else if (category == 'Business') {
+        confirmationTitle = '📅 Pending Business Order Logged!';
+        confirmationMessage =
+            'Anticipating $_currency${amount.toStringAsFixed(2)} in Business income ${_formatDate(scheduledDate)}.';
+      } else if (category == 'Salary') {
+        confirmationTitle = '📅 Payday Reminder Set!';
+        confirmationMessage =
+            'Added a future Salary entry of $_currency${amount.toStringAsFixed(2)} expected on ${_formatDate(scheduledDate)}.';
+      } else {
+        confirmationTitle = '📅 Future Event Scheduled!';
+        confirmationMessage =
+            'Added a future $category entry of $_currency${amount.toStringAsFixed(2)} for ${_formatDate(scheduledDate)}.';
+      }
+
+      return BaiReply(
+        '$confirmationTitle\n\n$confirmationMessage\n\n💡 This will not affect your current balance until the scheduled date.',
+        quickReplies: const [
+          "What is my total balance?",
+          "Show upcoming events",
+        ],
+        highlightColor: 'green',
+      );
+    } catch (e) {
+      return BaiReply(
+        "⚠️ Failed to schedule future event: $e",
+        quickReplies: const ["What is my total balance?"],
+      );
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDate = DateTime(date.year, date.month, date.day);
+
+    final daysDiff = targetDate.difference(today).inDays;
+
+    if (daysDiff == 0) return 'today';
+    if (daysDiff == 1) return 'tomorrow';
+    if (daysDiff < 7) return 'this ${_getDayName(date.weekday)}';
+    if (daysDiff < 14) return 'next ${_getDayName(date.weekday)}';
+
+    return '${date.day}${_getOrdinalSuffix(date.day)} of ${_getMonthName(date.month)}';
+  }
+
+  String _getDayName(int weekday) {
+    const days = [
+      '',
+      'Monday',
+      'Tuesday',
+      'Wednesday',
+      'Thursday',
+      'Friday',
+      'Saturday',
+      'Sunday',
+    ];
+    return days[weekday];
+  }
+
+  String _getMonthName(int month) {
+    const months = [
+      '',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return months[month];
+  }
+
+  String _getOrdinalSuffix(int day) {
+    if (day >= 11 && day <= 13) return 'th';
+    switch (day % 10) {
+      case 1:
+        return 'st';
+      case 2:
+        return 'nd';
+      case 3:
+        return 'rd';
+      default:
+        return 'th';
+    }
+  }
+
+  // ═══════════════════════════════════════════════
+  //  TRANSACTION TITLE CLEANING
+  // ═══════════════════════════════════════════════
+
+  String _cleanTransactionTitle(String rawText, {double? amount}) {
+    String title = rawText.trim();
+
+    // clean_ui_title rule: once a number is mapped to Amount, it must be
+    // deleted from the title. Keep only the entity, category, or source noun.
+    //
+    // Few-shot mappings:
+    // "my wife gave me 300" -> amount 300 -> "Wife"
+    // "i paid 2000 from rent" -> amount 2000 -> "Rent"
+    // "John paid me back 500" -> amount 500 -> "John"
+    // "got my 15k sa sweldo" -> amount 15000 -> "Salary"
+    title = _removeMappedAmountFromTitle(title, amount);
+
+    // Remove pronouns
+    final pronouns = [
+      'i',
+      'my',
+      'me',
+      'mine',
+      'he',
+      'him',
+      'his',
+      'she',
+      'her',
+      'hers',
+      'they',
+      'them',
+      'their',
+      'we',
+      'us',
+      'our',
+    ];
+    for (final pronoun in pronouns) {
+      title = title.replaceAll(
+        RegExp(r'\b' + pronoun + r'\b', caseSensitive: false),
+        '',
+      );
+    }
+
+    // Remove transaction action verbs
+    final actionVerbs = [
+      'paid',
+      'pay',
+      'sent',
+      'send',
+      'received',
+      'receive',
+      'got',
+      'get',
+      'transferred',
+      'transfer',
+      'spent',
+      'spend',
+      'bought',
+      'buy',
+      'purchased',
+      'purchase',
+      'gave',
+      'give',
+      'handed',
+      'hand',
+      'donated',
+      'donate',
+    ];
+    for (final verb in actionVerbs) {
+      title = title.replaceAll(
+        RegExp(r'\b' + verb + r'\b', caseSensitive: false),
+        '',
+      );
+    }
+
+    // Remove structural prepositions (English and Filipino)
+    final prepositions = [
+      'from',
+      'for',
+      'to',
+      'with',
+      'by',
+      'at',
+      'on',
+      'in',
+      'of',
+      'sa',
+      'galing',
+      'para',
+      'kay',
+      'mula',
+      'upang',
+    ];
+    for (final prep in prepositions) {
+      title = title.replaceAll(
+        RegExp(r'\b' + prep + r'\b', caseSensitive: false),
+        '',
+      );
+    }
+
+    // Remove currency symbols and amounts
+    title = title.replaceAll(RegExp(r'[₱$€£¥]'), '');
+    title = title.replaceAll(
+      RegExp(r'\b\d+(?:,\d+)*(?:\.\d+)?\s*k?\b', caseSensitive: false),
+      '',
+    );
+
+    // Clean up extra spaces and punctuation
+    title = title.replaceAll(RegExp(r'\s+'), ' ').trim();
+    title = title.replaceAll(RegExp(r'^[^\w]+|[^\w]+$'), '');
+
+    // Capitalize first letter of each word
+    final words = title.split(' ');
+    final capitalizedWords = words.map((word) {
+      if (word.isEmpty) return word;
+      return word[0].toUpperCase() + word.substring(1).toLowerCase();
+    }).toList();
+    title = capitalizedWords.join(' ');
+
+    // Truncate to max 25 characters
+    if (title.length > 25) {
+      title = title.substring(0, 25).trim();
+      // Don't cut in the middle of a word
+      final lastSpace = title.lastIndexOf(' ');
+      if (lastSpace > 10) {
+        title = title.substring(0, lastSpace);
+      }
+    }
+
+    // Fallback if title is empty after cleaning
+    if (title.isEmpty) {
+      title = 'Transaction';
+    }
+
+    return title;
+  }
+
+  String _removeMappedAmountFromTitle(String rawText, double? amount) {
+    var title = rawText;
+    if (amount == null || amount <= 0) return title;
+
+    final wholeAmount = amount == amount.roundToDouble();
+    final normalized = wholeAmount
+        ? amount.toInt().toString()
+        : amount.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
+    final candidates = <String>{
+      normalized,
+      amount.toStringAsFixed(2),
+      amount.toStringAsFixed(1),
+      _formatNumberWithCommas(normalized),
+    };
+
+    if (amount >= 1000 && amount % 1000 == 0) {
+      candidates.add('${(amount / 1000).toStringAsFixed(0)}k');
+    } else if (amount >= 1000) {
+      candidates.add(
+        '${(amount / 1000).toStringAsFixed(1).replaceFirst(RegExp(r'\.0$'), '')}k',
+      );
+    }
+
+    for (final candidate in candidates.where((c) => c.isNotEmpty)) {
+      title = title.replaceAll(
+        RegExp(
+          r'(?<!\w)(?:â‚±|php|peso|pesos)?\s*' +
+              RegExp.escape(candidate) +
+              r'\s*(?:â‚±|php|peso|pesos)?(?!\w)',
+          caseSensitive: false,
+        ),
+        ' ',
+      );
+    }
+
+    return title;
+  }
+
+  String _formatNumberWithCommas(String value) {
+    final parts = value.split('.');
+    final whole = parts.first;
+    final buffer = StringBuffer();
+
+    for (int i = 0; i < whole.length; i++) {
+      final remaining = whole.length - i;
+      buffer.write(whole[i]);
+      if (remaining > 1 && remaining % 3 == 1) {
+        buffer.write(',');
+      }
+    }
+
+    if (parts.length > 1) {
+      buffer.write('.');
+      buffer.write(parts.last);
+    }
+
+    return buffer.toString();
+  }
+
+  // ═══════════════════════════════════════════════
   //  REPLY HELPERS
   // ═══════════════════════════════════════════════
 
@@ -1168,7 +2332,11 @@ class BaiAssistant {
     "• 'What is my total balance?'\n"
     "• 'Spent 150 on coffee from Cash'\n"
     "• 'Received 25000 salary to Bank Account'\n"
-    "• 'Transfer 500 from Bank to GCash'",
+    "• 'Transfer 500 from Bank to GCash'\n\n"
+    "📅 Future Events\n"
+    "• 'Lance is going to pay me back 500 this 30th'\n"
+    "• 'Expect my 25k salary to clear on the 15th'\n"
+    "• 'Client will transfer 15k freelance milestone on Friday'",
     quickReplies: [
       "What can I cook?",
       "What is my total balance?",

@@ -7,7 +7,6 @@ import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/pages/splash_screen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -131,28 +130,32 @@ class _SettingsPageState extends State<SettingsPage> {
                   _ActionTile(
                     icon: Icons.delete_sweep_outlined,
                     label: 'Reset All Data',
-                    subtitle: 'Clear all shopping lists and history',
+                    subtitle:
+                        'Clear all data including accounts, transactions, bills, and settings',
                     iconColor: kTextCharcoal,
                     onTap: () => _confirmAction(
                       context,
                       title: 'Reset All Data?',
                       message:
-                          'All your shopping lists, history, and saved data will be permanently deleted.',
+                          'This will permanently delete all your accounts, transactions, bills, shopping lists, and settings. You will need to set up your wallet again.',
                       confirmLabel: 'Reset All',
                       confirmColor: Colors.red.shade600,
                       onConfirm: () async {
-                        final prefs = await SharedPreferences.getInstance();
-                        await prefs.clear();
+                        // Clear all data from storage services
                         await GroceryStorage.clear();
                         await BillStorage.clear();
                         await PriceStorage.clear();
                         await FinanceStorage.clear();
+
+                        // Reset settings (this also clears onboarding flag)
                         await _settings.resetAll();
-                        
+
                         if (context.mounted) {
                           Navigator.pushAndRemoveUntil(
                             context,
-                            MaterialPageRoute(builder: (_) => const SplashScreen()),
+                            MaterialPageRoute(
+                              builder: (_) => const SplashScreen(),
+                            ),
                             (route) => false,
                           );
                         }
@@ -238,7 +241,9 @@ class _SettingsPageState extends State<SettingsPage> {
             opacity: anim1.value,
             child: AlertDialog(
               backgroundColor: kCardBg,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+              ),
               contentPadding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -335,7 +340,6 @@ class _SettingsPageState extends State<SettingsPage> {
       },
     );
   }
-
 
   void _showSnack(BuildContext context, String message) {
     ScaffoldMessenger.of(context).showSnackBar(

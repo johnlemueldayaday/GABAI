@@ -8,6 +8,7 @@ import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/widgets/account_icon.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -215,7 +216,18 @@ class _DashboardPageState extends State<DashboardPage> {
                       .map(
                         (a) => DropdownMenuItem(
                           value: a.id,
-                          child: Text('${a.icon} ${a.name}'),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              AccountIconImage(
+                                name: a.name,
+                                icon: a.icon,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              Text(a.name),
+                            ],
+                          ),
                         ),
                       )
                       .toList(),
@@ -400,7 +412,18 @@ class _DashboardPageState extends State<DashboardPage> {
                     .map(
                       (a) => DropdownMenuItem(
                         value: a.id,
-                        child: Text('${a.icon} ${a.name}'),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AccountIconImage(
+                              name: a.name,
+                              icon: a.icon,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(a.name),
+                          ],
+                        ),
                       ),
                     )
                     .toList(),
@@ -435,7 +458,18 @@ class _DashboardPageState extends State<DashboardPage> {
                     .map(
                       (a) => DropdownMenuItem(
                         value: a.id,
-                        child: Text('${a.icon} ${a.name}'),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            AccountIconImage(
+                              name: a.name,
+                              icon: a.icon,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(a.name),
+                          ],
+                        ),
                       ),
                     )
                     .toList(),
