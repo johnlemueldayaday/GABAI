@@ -754,6 +754,17 @@ class BaiAssistant {
       'donated to me',
       'sent me',
       'paid me',
+      'paid his',
+      'paid her',
+      'paid their',
+      'paid back',
+      'pay back',
+      'na-receive',
+      'pumasok',
+      'dumating',
+      'pax me',
+      'debt',
+      'utang',
       'got',
       'i',
     ];
@@ -788,6 +799,8 @@ class BaiAssistant {
         cleanedDesc = 'Freelance Income';
       } else if (n.contains('allowance')) {
         cleanedDesc = 'Allowance';
+      } else if (n.contains('debt') || n.contains('utang') || n.contains('paid back') || n.contains('pay back')) {
+        cleanedDesc = 'Debt Payment';
       } else {
         cleanedDesc = 'General Income';
       }
@@ -843,28 +856,12 @@ class BaiAssistant {
     try {
       await FinanceStorage.addTransaction(txn);
 
-      // Format response based on variation type
-      String responseText;
-      if (entity.isNotEmpty) {
-        if (_isReimbursement(n)) {
-          responseText =
-              "$entity ($category) +$_currency${amount.toStringAsFixed(2)}";
-        } else if (_isAllowance(n)) {
-          responseText =
-              "$entity ($category) +$_currency${amount.toStringAsFixed(2)}";
-        } else if (_isPassiveIncome(n)) {
-          responseText =
-              "$entity $category +$_currency${amount.toStringAsFixed(2)}";
-        } else {
-          responseText = "$entity +$_currency${amount.toStringAsFixed(2)}";
-        }
-      } else {
-        responseText =
-            "💵 Income logged!\n\n+ $_currency${amount.toStringAsFixed(2)} to ${_accountLabel(acc)} ($category)\n• New Balance: $_currency${(acc.balance + amount).toStringAsFixed(2)}";
-      }
+      // Always use the unified green card format
+      final sourceLabel = entity.isNotEmpty ? '$entity ($category)' : category;
+      final newBalance = (acc.balance + amount).toStringAsFixed(2);
 
       return BaiReply(
-        responseText,
+        "💵 Income logged!\n\n+ $_currency${amount.toStringAsFixed(2)} to ${_accountLabel(acc)}\n• Source: $sourceLabel\n• New Balance: $_currency$newBalance",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -1237,7 +1234,7 @@ class BaiAssistant {
     if (_matchAny(l, ['allowance', 'baon', 'padala'])) {
       return 'Allowance';
     }
-    if (_matchAny(l, ['reimburse', 'refund', 'paid back'])) {
+    if (_matchAny(l, ['reimburse', 'refund', 'paid back', 'pay back', 'debt', 'utang'])) {
       return 'Reimbursement';
     }
     if (_matchAny(l, ['interest', 'dividend', 'payout'])) {
@@ -1287,6 +1284,11 @@ class BaiAssistant {
     if (l.contains('cash')) {
       for (final a in accounts) {
         if (a.name.toLowerCase().contains('cash')) return a;
+      }
+    }
+    if (l.contains('psbank') || l.contains('ps bank')) {
+      for (final a in accounts) {
+        if (a.name.toLowerCase().contains('psbank')) return a;
       }
     }
     if (l.contains('bank') || l.contains('bdo') || l.contains('landbank')) {
@@ -1472,7 +1474,19 @@ class BaiAssistant {
         l.contains('sent me') ||
         l.contains('paid me') ||
         l.contains('paid his') ||
+        l.contains('paid her') ||
+        l.contains('paid their') ||
         l.contains('sent his') ||
+        l.contains('sent her') ||
+        l.contains('debt') ||
+        l.contains('utang') ||
+        l.contains('bayad') && l.contains('utang') ||
+        l.contains('pay back') ||
+        l.contains('paid back') ||
+        l.contains('na-receive') ||
+        l.contains('pumasok') ||
+        l.contains('dumating') ||
+        l.contains('pax me') ||
         l.contains('added') && l.contains('to my') ||
         l.contains('got') && !l.contains('spent') && !l.contains('paid')) {
       return true;

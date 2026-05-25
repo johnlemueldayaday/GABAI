@@ -340,7 +340,7 @@ class _OnboardingModalState extends State<OnboardingModal>
   double get _pageHeight {
     switch (_page) {
       case 0:
-        return 440;
+        return 510;
       case 1:
         return 310;
       case 2:
@@ -419,8 +419,8 @@ class _Screen1 extends StatelessWidget {
               const SizedBox(width: 6),
               Image.asset(
                 'assets/images/handwave.png',
-                width: 24,
-                height: 24,
+                width: 31.2,
+                height: 31.2,
                 fit: BoxFit.contain,
               ),
             ],
@@ -450,22 +450,22 @@ class _Screen1 extends StatelessWidget {
               color: kTextCharcoal,
             ),
             decoration: InputDecoration(
-              hintText: 'e.g. Juan',
+              hintText: 'John Lemuel',
               hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
               filled: true,
               fillColor: kBackground,
               prefixIcon: Icon(Icons.person_outline_rounded, color: kMuted),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide.none,
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(8),
                 borderSide: BorderSide(color: kPrimary, width: 2),
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
           Text(
             'Select your wallets',
             style: GoogleFonts.plusJakartaSans(
@@ -499,48 +499,44 @@ class _Screen1 extends StatelessWidget {
                     children: opts.map((name) {
                       final w = _allWallets.firstWhere((w) => w.name == name);
                       final selected = selectedWallets.contains(name);
+                      final isCash = name == 'Cash';
                       return GestureDetector(
                         onTap: () => onToggle(name),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 9,
-                          ),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? Color(w.colorValue).withValues(alpha: 0.12)
-                                : kBackground,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: selected ? Color(w.colorValue) : kBorder,
-                              width: selected ? 2 : 1,
+                        child: AnimatedScale(
+                          scale: selected ? 0.95 : 1.0,
+                          duration: const Duration(milliseconds: 300),
+                          curve: Curves.easeOutBack,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 250),
+                            curve: Curves.easeOut,
+                            decoration: BoxDecoration(
+                              borderRadius: isCash ? BorderRadius.circular(12) : BorderRadius.zero,
+                              border: !isCash
+                                  ? Border.all(
+                                      color: selected
+                                          ? kPrimary
+                                          : Colors.grey.withValues(alpha: 0.25),
+                                      width: 2.0,
+                                    )
+                                  : null,
+                              boxShadow: selected
+                                  ? [
+                                      BoxShadow(
+                                        color: kPrimary.withValues(alpha: 0.4),
+                                        blurRadius: 14,
+                                        spreadRadius: 2,
+                                        offset: const Offset(0, 4),
+                                      )
+                                    ]
+                                  : [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.05),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
+                                      )
+                                    ],
                             ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _WalletOptionIcon(wallet: w, size: 18),
-                              const SizedBox(width: 6),
-                              Text(
-                                name,
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                  color: selected
-                                      ? Color(w.colorValue)
-                                      : kTextCharcoal,
-                                ),
-                              ),
-                              if (selected) ...[
-                                const SizedBox(width: 4),
-                                Icon(
-                                  Icons.check_circle_rounded,
-                                  color: Color(w.colorValue),
-                                  size: 14,
-                                ),
-                              ],
-                            ],
+                            child: _WalletOptionIcon(wallet: w, size: 45),
                           ),
                         ),
                       );

@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../config/app_theme.dart';
 import '../pages/bai_chat.dart';
+import '../services/settings_service.dart';
 
 const String kBaiChatRouteName = '/bai-chat';
 
@@ -12,9 +13,11 @@ final GlobalKey<NavigatorState> baiBubbleNavigatorKey =
 
 class BaiBubbleRouteObserver extends NavigatorObserver {
   final ValueNotifier<bool> isBaiRouteActive = ValueNotifier(false);
+  final ValueNotifier<String?> currentRouteName = ValueNotifier(null);
 
   void _sync(Route<dynamic>? route) {
     isBaiRouteActive.value = route?.settings.name == kBaiChatRouteName;
+    currentRouteName.value = route?.settings.name;
   }
 
   @override
@@ -53,11 +56,15 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
   void initState() {
     super.initState();
     baiBubbleRouteObserver.isBaiRouteActive.addListener(_handleRouteChange);
+    baiBubbleRouteObserver.currentRouteName.addListener(_handleRouteChange);
+    SettingsService().addListener(_handleRouteChange);
   }
 
   @override
   void dispose() {
     baiBubbleRouteObserver.isBaiRouteActive.removeListener(_handleRouteChange);
+    baiBubbleRouteObserver.currentRouteName.removeListener(_handleRouteChange);
+    SettingsService().removeListener(_handleRouteChange);
     super.dispose();
   }
 
@@ -93,10 +100,16 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
 
   @override
   Widget build(BuildContext context) {
+    final currentRoute = baiBubbleRouteObserver.currentRouteName.value;
+    final hideBubble = _isHidden ||
+        baiBubbleRouteObserver.isBaiRouteActive.value ||
+        currentRoute == '/' ||
+        !SettingsService().onboardingComplete;
+
     return Stack(
       children: [
         widget.child,
-        if (!_isHidden && !baiBubbleRouteObserver.isBaiRouteActive.value)
+        if (!hideBubble)
           Positioned(
             right: 18,
             bottom: 24,
