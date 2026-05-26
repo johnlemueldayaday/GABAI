@@ -6,6 +6,7 @@ import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
+import 'package:gabay/services/future_event_storage.dart';
 import 'package:gabay/pages/splash_screen.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -146,6 +147,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         await BillStorage.clear();
                         await PriceStorage.clear();
                         await FinanceStorage.clear();
+                        await FutureEventStorage.clear();
 
                         // Reset settings (this also clears onboarding flag)
                         await _settings.resetAll();

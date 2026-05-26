@@ -5,6 +5,7 @@ import 'package:gabay/services/ramsey_cooking_assistant.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/future_event_storage.dart';
 import 'package:gabay/models/bill_models.dart';
+import 'package:gabay/services/price_storage.dart';
 
 /// Unified reply object for BAI
 class BaiReply {
@@ -119,6 +120,14 @@ class BaiAssistant {
     }
 
     // ─── 1. STATE MACHINE (mid-conversation flows take priority) ───
+    final undoResult = await _tryUndo(n);
+    if (undoResult != null &&
+        _step != BaiStep.awaitingDuePaymentAction &&
+        _step != BaiStep.awaitingDuePaymentAccount) {
+      _resetState();
+      return undoResult;
+    }
+
     if (_step != BaiStep.idle) {
       return await _handleStateMachine(n);
     }
@@ -207,6 +216,15 @@ class BaiAssistant {
   // ═══════════════════════════════════════════════
 
   Future<BaiReply> _handleStateMachine(String n) async {
+    if (_step != BaiStep.awaitingDuePaymentAction &&
+        _step != BaiStep.awaitingDuePaymentAccount) {
+      final undoResult = await _tryUndo(n);
+      if (undoResult != null) {
+        _resetState();
+        return undoResult;
+      }
+    }
+
     // Handle awaiting expense account state
     if (_step == BaiStep.awaitingExpenseAccount) {
       return await _handleExpenseAccountResponse(n);
@@ -255,11 +273,6 @@ class BaiAssistant {
     if (correctionResult != null) {
       _resetState();
       return correctionResult;
-    }
-    final undoResult = await _tryUndo(n);
-    if (undoResult != null) {
-      _resetState();
-      return undoResult;
     }
     final balanceResult = await _tryBalanceCheck(n);
     if (balanceResult != null) {
@@ -312,16 +325,22 @@ class BaiAssistant {
 
   Future<BaiReply> _handleExpenseAccountResponse(String n) async {
     // Allow user to cancel the pending transaction
-    if (n == 'cancel' || n == 'cancel transaction' || n == 'nevermind' || n == 'never mind') {
+    if (n == 'cancel' ||
+        n == 'cancel transaction' ||
+        n == 'nevermind' ||
+        n == 'never mind') {
       _resetState();
-      return const BaiReply("Transaction cancelled. What else can I help you with?");
+      return const BaiReply(
+        "Transaction cancelled. What else can I help you with?",
+      );
     }
 
     final accounts = await FinanceStorage.loadAccounts();
     if (accounts.isEmpty) return _noAccountsReply();
 
     // Find the account from user input — try exact first, then fuzzy
-    Account? acc = _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
+    Account? acc =
+        _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
     if (acc == null) {
       final accountNames = accounts.map((a) => a.name).join(', ');
       return BaiReply(
@@ -339,7 +358,9 @@ class BaiAssistant {
     // Pre-flight: check if account has sufficient balance
     if (acc.balance < amount) {
       final accounts = await FinanceStorage.loadAccounts();
-      final otherAccounts = accounts.where((a) => a.id != acc.id && a.balance >= amount).toList();
+      final otherAccounts = accounts
+          .where((a) => a.id != acc.id && a.balance >= amount)
+          .toList();
       final allOthers = accounts.where((a) => a.id != acc.id).toList();
       final listToShow = otherAccounts.isNotEmpty ? otherAccounts : allOthers;
       final alternativeNames = listToShow.map((a) => a.name).join(', ');
@@ -362,9 +383,13 @@ class BaiAssistant {
       );
       await FinanceStorage.addTransaction(txn);
 
-      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final prevBalanceStr = _formatNumberWithCommas(
+        acc.balance.toStringAsFixed(2),
+      );
       final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalanceStr = _formatNumberWithCommas((acc.balance - amount).toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas(
+        (acc.balance - amount).toStringAsFixed(2),
+      );
 
       _resetState();
       return BaiReply(
@@ -378,14 +403,20 @@ class BaiAssistant {
     } catch (e) {
       final errMsg = e.toString();
       // Check for insufficient funds — retain state and ask for alternative account
-      final isInsufficientFunds = errMsg.toLowerCase().contains('insufficient') ||
+      final isInsufficientFunds =
+          errMsg.toLowerCase().contains('insufficient') ||
           errMsg.toLowerCase().contains('negative balance');
       if (isInsufficientFunds) {
         final accounts = await FinanceStorage.loadAccounts();
-        final otherAccounts = accounts.where((a) => a.id != acc.id && a.balance >= _pendingExpenseAmount!).toList();
+        final otherAccounts = accounts
+            .where((a) => a.id != acc.id && a.balance >= _pendingExpenseAmount!)
+            .toList();
         final alternativeNames = otherAccounts.isNotEmpty
             ? otherAccounts.map((a) => a.name).join(', ')
-            : accounts.where((a) => a.id != acc.id).map((a) => a.name).join(', ');
+            : accounts
+                  .where((a) => a.id != acc.id)
+                  .map((a) => a.name)
+                  .join(', ');
         // DO NOT reset state — keep transaction pending
         return BaiReply(
           "⚠️ Insufficient funds. ${_accountLabel(acc)} doesn't have enough balance for -$_currency${_formatNumberWithCommas(_pendingExpenseAmount!.toStringAsFixed(2))}.\n\nWhich alternative account would you like to use?\nAvailable: $alternativeNames",
@@ -402,16 +433,22 @@ class BaiAssistant {
 
   Future<BaiReply> _handleIncomeAccountResponse(String n) async {
     // Allow user to cancel the pending transaction
-    if (n == 'cancel' || n == 'cancel transaction' || n == 'nevermind' || n == 'never mind') {
+    if (n == 'cancel' ||
+        n == 'cancel transaction' ||
+        n == 'nevermind' ||
+        n == 'never mind') {
       _resetState();
-      return const BaiReply("Transaction cancelled. What else can I help you with?");
+      return const BaiReply(
+        "Transaction cancelled. What else can I help you with?",
+      );
     }
 
     final accounts = await FinanceStorage.loadAccounts();
     if (accounts.isEmpty) return _noAccountsReply();
 
     // Find the account from user input — try exact first, then fuzzy
-    Account? acc = _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
+    Account? acc =
+        _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
     if (acc == null) {
       final accountNames = accounts.map((a) => a.name).join(', ');
       return BaiReply(
@@ -438,9 +475,13 @@ class BaiAssistant {
       );
       await FinanceStorage.addTransaction(txn);
 
-      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final prevBalanceStr = _formatNumberWithCommas(
+        acc.balance.toStringAsFixed(2),
+      );
       final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalanceStr = _formatNumberWithCommas((acc.balance + amount).toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas(
+        (acc.balance + amount).toStringAsFixed(2),
+      );
 
       _resetState();
       return BaiReply(
@@ -454,7 +495,8 @@ class BaiAssistant {
     } catch (e) {
       final errMsg = e.toString();
       // Check for insufficient funds — retain state and ask for alternative account
-      final isInsufficientFunds = errMsg.toLowerCase().contains('insufficient') ||
+      final isInsufficientFunds =
+          errMsg.toLowerCase().contains('insufficient') ||
           errMsg.toLowerCase().contains('negative balance');
       if (isInsufficientFunds) {
         final accounts = await FinanceStorage.loadAccounts();
@@ -474,7 +516,11 @@ class BaiAssistant {
   }
 
   Future<BaiReply> _handleDuePaymentActionResponse(String n) async {
-    if (n == 'yes' || n == 'y' || n == 'yeah' || n == 'yep' || n.contains('paid')) {
+    if (n == 'yes' ||
+        n == 'y' ||
+        n == 'yeah' ||
+        n == 'yep' ||
+        n.contains('paid')) {
       _step = BaiStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
       final accountNames = accounts.map((a) => a.name).join(', ');
@@ -482,7 +528,12 @@ class BaiAssistant {
         "Awesome! What wallet are u using?\nAvailable: $accountNames",
         quickReplies: accounts.map((a) => a.name).toList(),
       );
-    } else if (n == 'no' || n == 'n' || n == 'not yet' || n == 'nope' || n.contains('cancel') || n.contains('reschedule')) {
+    } else if (n == 'no' ||
+        n == 'n' ||
+        n == 'not yet' ||
+        n == 'nope' ||
+        n.contains('cancel') ||
+        n.contains('reschedule')) {
       // reschedule for tomorrow
       final event = _pendingDueEvent!;
       final newDate = DateTime.now().add(const Duration(days: 1));
@@ -490,15 +541,20 @@ class BaiAssistant {
       await FutureEventStorage.updateEvent(updatedEvent);
 
       final dateStr = _formatDate(newDate);
-      final amountStr = _formatNumberWithCommas(event.amount.toStringAsFixed(2));
+      final amountStr = _formatNumberWithCommas(
+        event.amount.toStringAsFixed(2),
+      );
       _resetState();
       return BaiReply(
         "Payment Rescheduled!\n\n${event.description}\n-$_currency$amountStr\nWallet not specified\nScheduled for: $dateStr",
-        quickReplies: const ["What is my total balance?", "Show upcoming events"],
+        quickReplies: const [
+          "What is my total balance?",
+          "Show upcoming events",
+        ],
         highlightColor: 'red',
       );
     }
-    
+
     return BaiReply(
       "Sorry, I didn't get that. Did you pay your ${_pendingDueEvent!.description}?",
       quickReplies: const ["Yes", "No"],
@@ -512,7 +568,8 @@ class BaiAssistant {
     }
 
     final accounts = await FinanceStorage.loadAccounts();
-    Account? acc = _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
+    Account? acc =
+        _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
     if (acc == null) {
       return BaiReply(
         "I couldn't find that account. Which wallet are you using?",
@@ -522,12 +579,18 @@ class BaiAssistant {
 
     final event = _pendingDueEvent!;
     final amount = event.amount;
-    final isOutgoing = _categorizeFutureOutgoingEvent(event.description) != 'Bill' || event.description.toLowerCase().contains('debt') || event.description.toLowerCase().contains('loan');
+    final isOutgoing =
+        _categorizeFutureOutgoingEvent(event.description) != 'Bill' ||
+        event.description.toLowerCase().contains('debt') ||
+        event.description.toLowerCase().contains('loan');
 
     if (isOutgoing && acc.balance < amount) {
       return BaiReply(
         "⚠️ Insufficient funds in ${_accountLabel(acc)}. Choose another wallet:",
-        quickReplies: accounts.where((a) => a.balance >= amount).map((a) => a.name).toList(),
+        quickReplies: accounts
+            .where((a) => a.balance >= amount)
+            .map((a) => a.name)
+            .toList(),
       );
     }
 
@@ -542,18 +605,23 @@ class BaiAssistant {
         description: event.description,
       );
       await FinanceStorage.addTransaction(txn);
-      
+
       final updatedEvent = event.copyWith(isCompleted: true);
       await FutureEventStorage.updateEvent(updatedEvent);
-      
+
       // also clear from bills if it's there
       final bills = await BillStorage.loadBills();
       bills.removeWhere((b) => b.id == 'future_${event.id}');
       await BillStorage.saveBills(bills);
 
-      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final prevBalanceStr = _formatNumberWithCommas(
+        acc.balance.toStringAsFixed(2),
+      );
       final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalanceStr = _formatNumberWithCommas((isOutgoing ? acc.balance - amount : acc.balance + amount).toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas(
+        (isOutgoing ? acc.balance - amount : acc.balance + amount)
+            .toStringAsFixed(2),
+      );
 
       _resetState();
       return BaiReply(
@@ -636,18 +704,35 @@ class BaiAssistant {
     if (!_isExpenseIntent(n)) return null;
 
     // 2. Extract amount using slang-aware extractor (handles k/m suffixes)
-    final amount = _extractAmountWithSlang(n);
-    if (amount == null || amount <= 0) return null;
-
-    // Capture the raw amount string matched from text for description cleaning
-    final amountStr = RegExp(r'(\d+(?:\.\d+)?)\s*[km]?\b').firstMatch(n)?.group(0) ?? amount.toStringAsFixed(2);
-
     final accounts = await FinanceStorage.loadAccounts();
     if (accounts.isEmpty) return _noAccountsReply();
 
     // 3. Try to detect account from text
     Account? acc = _detectAccountFromText(n, accounts);
     bool accountProvided = (acc != null);
+    final fragmentItem = _extractExpenseItemFragment(n, acc);
+
+    double? amount = _extractAmountWithSlang(n);
+    if (amount == null || amount <= 0) {
+      if (fragmentItem.isEmpty || !accountProvided) return null;
+
+      final rememberedPrice = PriceStorage.getLastPriceAny(fragmentItem);
+      if (rememberedPrice == null || rememberedPrice <= 0) {
+        final category = _categorizeExpense(fragmentItem);
+        return BaiReply(
+          "How much was ${_titleCase(fragmentItem)}?\n\n"
+          "${_accountLabel(acc!)}\n"
+          "Category: $category",
+          quickReplies: const ["Cancel"],
+        );
+      }
+      amount = rememberedPrice;
+    }
+
+    // Capture the raw amount string matched from text for description cleaning
+    final amountStr =
+        RegExp(r'(\d+(?:,\d{3})*(?:\.\d+)?)\s*[km]?\b').firstMatch(n)?.group(0) ??
+        amount.toStringAsFixed(2);
 
     // Clean description using _cleanDescription
     String matchedAccSuffix = '';
@@ -666,7 +751,9 @@ class BaiAssistant {
       }
     }
 
-    String descStr = _cleanDescription(n, amountStr, matchedAccSuffix);
+    String descStr = fragmentItem.isNotEmpty
+        ? fragmentItem
+        : _cleanDescription(n, amountStr, matchedAccSuffix);
 
     // Clean up expense keywords from description to keep it clean
     final List<String> stripKeywords = [
@@ -718,13 +805,16 @@ class BaiAssistant {
       cleanedDesc = 'General Expense';
     } else {
       // Strip dangling k/m suffix tokens left from shorthand amounts
-      cleanedDesc = cleanedDesc.replaceAll(RegExp(r'\b[km]\b', caseSensitive: false), '');
+      cleanedDesc = cleanedDesc.replaceAll(
+        RegExp(r'\b[km]\b', caseSensitive: false),
+        '',
+      );
       cleanedDesc = cleanedDesc.replaceAll(RegExp(r'\s+'), ' ').trim();
       cleanedDesc = cleanedDesc[0].toUpperCase() + cleanedDesc.substring(1);
     }
 
     // If no account was detected, ask the user!
-    if (!accountProvided) {
+    if (acc == null) {
       _pendingExpenseAmount = amount;
       _pendingExpenseDescription = cleanedDesc;
       _pendingExpenseCategory = _categorizeExpense(cleanedDesc);
@@ -753,12 +843,16 @@ class BaiAssistant {
 
     try {
       await FinanceStorage.addTransaction(txn);
-      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final prevBalanceStr = _formatNumberWithCommas(
+        acc.balance.toStringAsFixed(2),
+      );
       final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalanceStr = _formatNumberWithCommas((acc.balance - amount).toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas(
+        (acc.balance - amount).toStringAsFixed(2),
+      );
 
       return BaiReply(
-        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
+        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n New Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -993,7 +1087,10 @@ class BaiAssistant {
         cleanedDesc = 'Freelance Income';
       } else if (n.contains('allowance')) {
         cleanedDesc = 'Allowance';
-      } else if (n.contains('debt') || n.contains('utang') || n.contains('paid back') || n.contains('pay back')) {
+      } else if (n.contains('debt') ||
+          n.contains('utang') ||
+          n.contains('paid back') ||
+          n.contains('pay back')) {
         cleanedDesc = 'Debt Payment';
       } else {
         cleanedDesc = 'General Income';
@@ -1049,9 +1146,13 @@ class BaiAssistant {
 
     try {
       await FinanceStorage.addTransaction(txn);
-      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final prevBalanceStr = _formatNumberWithCommas(
+        acc.balance.toStringAsFixed(2),
+      );
       final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalanceStr = _formatNumberWithCommas((acc.balance + amount).toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas(
+        (acc.balance + amount).toStringAsFixed(2),
+      );
 
       return BaiReply(
         "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
@@ -1116,8 +1217,14 @@ class BaiAssistant {
     final l = n.toLowerCase();
     final undoKeywords = [
       'undo',
+      'no',
+      'cancel',
+      'mali',
+      'wrong',
+      'erase that',
       'revert',
       'delete last',
+      'delete last entry',
       'remove last',
       'cancel last',
       'undo previous',
@@ -1126,7 +1233,13 @@ class BaiAssistant {
       'revert previous transaction',
     ];
 
-    if (!undoKeywords.any((k) => l.contains(k))) {
+    final exactUndoKeywords = ['undo', 'no', 'cancel', 'mali', 'wrong'];
+    final phraseUndoKeywords = undoKeywords.where(
+      (k) => !exactUndoKeywords.contains(k),
+    );
+
+    if (!exactUndoKeywords.contains(l) &&
+        !phraseUndoKeywords.any((k) => l.contains(k))) {
       return null;
     }
 
@@ -1138,10 +1251,25 @@ class BaiAssistant {
       );
     }
 
-    final type = deletedTxn.type == 'INCOME' ? 'income' : 'expense';
-    final action = deletedTxn.type == 'INCOME' ? 'received' : 'spent';
+    final accounts = await FinanceStorage.loadAccounts();
+    Account? restoredAccount;
+    for (final account in accounts) {
+      if (account.id == deletedTxn.accountId) {
+        restoredAccount = account;
+        break;
+      }
+    }
+
+    final restoredLabel = restoredAccount != null
+        ? _accountLabel(restoredAccount)
+        : deletedTxn.accountName;
+    final balanceLine = restoredAccount != null
+        ? "\n\nNew Balance: $_currency${_formatNumberWithCommas(restoredAccount.balance.toStringAsFixed(2))}"
+        : '';
     return BaiReply(
-      "✅ Undone!\n\n• Removed $type: $_currency${deletedTxn.amount.toStringAsFixed(2)} $action on ${deletedTxn.description}\n• Account: ${deletedTxn.accountName}\n• Balance has been reverted.",
+      "\u{1F504} Transaction Undo!\n\n"
+      "${deletedTxn.description} removed.\n"
+      "$restoredLabel balance restored.$balanceLine",
       quickReplies: const [
         "What is my total balance?",
         "Check account balances",
@@ -1427,7 +1555,14 @@ class BaiAssistant {
     if (_matchAny(l, ['allowance', 'baon', 'padala'])) {
       return 'Allowance';
     }
-    if (_matchAny(l, ['reimburse', 'refund', 'paid back', 'pay back', 'debt', 'utang'])) {
+    if (_matchAny(l, [
+      'reimburse',
+      'refund',
+      'paid back',
+      'pay back',
+      'debt',
+      'utang',
+    ])) {
       return 'Reimbursement';
     }
     if (_matchAny(l, ['interest', 'dividend', 'payout'])) {
@@ -1505,23 +1640,23 @@ class BaiAssistant {
     final l = text.toLowerCase();
 
     // Handle "m" for millions (e.g., "1m", "1.5m", "10m")
-    final mMatch = RegExp(r'(\d+(?:\.\d+)?)\s*m\b').firstMatch(l);
+    final mMatch = RegExp(r'(\d+(?:,\d{3})*(?:\.\d+)?)\s*m\b').firstMatch(l);
     if (mMatch != null) {
-      final value = double.tryParse(mMatch.group(1)!);
+      final value = double.tryParse(mMatch.group(1)!.replaceAll(',', ''));
       if (value != null) return value * 1000000;
     }
 
     // Handle "k" for thousands (e.g., "2k", "5k", "10k")
-    final kMatch = RegExp(r'(\d+(?:\.\d+)?)\s*k\b').firstMatch(l);
+    final kMatch = RegExp(r'(\d+(?:,\d{3})*(?:\.\d+)?)\s*k\b').firstMatch(l);
     if (kMatch != null) {
-      final value = double.tryParse(kMatch.group(1)!);
+      final value = double.tryParse(kMatch.group(1)!.replaceAll(',', ''));
       if (value != null) return value * 1000;
     }
 
     // Handle regular amounts
-    final amountMatch = RegExp(r'(\d+(?:\.\d+)?)').firstMatch(l);
+    final amountMatch = RegExp(r'(\d+(?:,\d{3})*(?:\.\d+)?)').firstMatch(l);
     if (amountMatch != null) {
-      return double.tryParse(amountMatch.group(1)!);
+      return double.tryParse(amountMatch.group(1)!.replaceAll(',', ''));
     }
 
     return null;
@@ -1636,6 +1771,80 @@ class BaiAssistant {
     return desc[0].toUpperCase() + desc.substring(1);
   }
 
+  String _extractExpenseItemFragment(String text, Account? account) {
+    var item = text.toLowerCase();
+
+    item = item.replaceAll(
+      RegExp(r'\b\d+(?:,\d{3})*(?:\.\d+)?\s*[km]?\b', caseSensitive: false),
+      ' ',
+    );
+    item = item.replaceAll(
+      RegExp(r'\b(?:pesos|peso|php|bucks|dollars?)\b', caseSensitive: false),
+      ' ',
+    );
+
+    if (account != null) {
+      item = item.replaceAll(
+        RegExp(RegExp.escape(account.name), caseSensitive: false),
+        ' ',
+      );
+    }
+
+    final accountWords = [
+      'gcash',
+      'maya',
+      'paymaya',
+      'cash',
+      'bank',
+      'bdo',
+      'landbank',
+      'psbank',
+      'wallet',
+      'card',
+      'account',
+    ];
+    for (final word in accountWords) {
+      item = item.replaceAll(
+        RegExp(r'\b' + word + r'\b', caseSensitive: false),
+        ' ',
+      );
+    }
+
+    item = item.replaceAll(
+      RegExp(
+        r'\b(?:spent|paid|cost|buy|bought|gastos|expense|bumili|add|log|logged|minus|deduct|spending|from|using|in|through|with|via|on|for|my|me|i)\b',
+        caseSensitive: false,
+      ),
+      ' ',
+    );
+    item = item.replaceAll(RegExp(r'[^\w\s]'), ' ');
+    item = item.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return item;
+  }
+
+  bool _looksLikeExpenseFragment(String text) {
+    final l = text.toLowerCase().trim();
+    if (l.isEmpty || _isIncomeIntent(l)) return false;
+
+    final amount = _extractAmountWithSlang(l);
+    final itemAfterAmount = _extractExpenseItemFragment(l, null);
+    if (amount != null && itemAfterAmount.isNotEmpty) return true;
+
+    final mentionsAccount = RegExp(
+      r'\b(?:gcash|maya|paymaya|cash|bank|bdo|landbank|psbank|wallet|card)\b',
+      caseSensitive: false,
+    ).hasMatch(l);
+    return mentionsAccount && itemAfterAmount.isNotEmpty;
+  }
+
+  String _titleCase(String text) {
+    final words = text.trim().split(RegExp(r'\s+'));
+    return words
+        .where((word) => word.isNotEmpty)
+        .map((word) => word[0].toUpperCase() + word.substring(1).toLowerCase())
+        .join(' ');
+  }
+
   bool _isIncomeIntent(String text) {
     final l = text.toLowerCase();
     // Strongly classified income indicators
@@ -1698,6 +1907,7 @@ class BaiAssistant {
   bool _isExpenseIntent(String text) {
     // If it's classified as income, it's not expense
     if (_isIncomeIntent(text)) return false;
+    if (_looksLikeExpenseFragment(text)) return true;
 
     final l = text.toLowerCase();
     final List<String> expenseKeywords = [
@@ -1775,6 +1985,8 @@ class BaiAssistant {
       'upcoming',
       'future',
       'tomorrow',
+      'tom ', // slang for tomorrow (space prevents matching 'tomato' etc.)
+      ' tom', // end-of-phrase variant
       "i'm paying",
       "i will pay",
       "i'll pay",
@@ -1797,8 +2009,11 @@ class BaiAssistant {
   }
 
   DateTime? _parseDateFromText(String text) {
-    final l = text.toLowerCase();
+    var l = text.toLowerCase();
     final now = DateTime.now();
+
+    // Normalize 'tom' slang → 'tomorrow' (as a whole word, not part of other words)
+    l = l.replaceAllMapped(RegExp(r'\btom\b'), (_) => 'tomorrow');
 
     // Parse "tomorrow"
     if (l.contains('tomorrow')) {
@@ -1827,7 +2042,13 @@ class BaiAssistant {
 
     // Parse "Friday", "Sunday", etc.
     final days = [
-      'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
     ];
     for (int i = 0; i < days.length; i++) {
       if (l.contains(days[i])) {
@@ -1860,8 +2081,15 @@ class BaiAssistant {
     }
 
     // If future keywords detected but no specific date, default to tomorrow
-    if (l.contains('tomorrow') || l.contains("i'm paying") || l.contains('i will pay') ||
+    if (l.contains('tomorrow') ||
+        l.contains("i'm paying") ||
+        l.contains('i will pay') ||
         l.contains("i'll pay")) {
+      return now.add(const Duration(days: 1));
+    }
+
+    // Also normalize standalone 'tom' (caught by futureKeywords but needs a date)
+    if (RegExp(r'\btom\b').hasMatch(l)) {
       return now.add(const Duration(days: 1));
     }
 
@@ -1954,7 +2182,9 @@ class BaiAssistant {
     ).firstMatch(scrubbed);
     if (currencyMatch != null) {
       final raw = currencyMatch.group(1) ?? currencyMatch.group(3);
-      final suffix = (currencyMatch.group(2) ?? currencyMatch.group(4))?.trim().toLowerCase();
+      final suffix = (currencyMatch.group(2) ?? currencyMatch.group(4))
+          ?.trim()
+          .toLowerCase();
       final parsed = double.tryParse(raw!.replaceAll(',', ''));
       if (parsed != null) {
         if (suffix == 'k') return parsed * 1000;
@@ -1987,7 +2217,7 @@ class BaiAssistant {
 
     final parsed = double.tryParse(amountMatch.group(1)!.replaceAll(',', ''));
     if (parsed == null) return null;
-    
+
     final suffix = amountMatch.group(2)?.trim().toLowerCase();
     if (suffix == 'k') return parsed * 1000;
     if (suffix == 'm') return parsed * 1000000;
@@ -2093,11 +2323,26 @@ class BaiAssistant {
     title = _removeMappedAmountFromTitle(title, amount);
 
     // Strip contractions first (i'm, i'll, i've, he's, she's, they're)
-    title = title.replaceAll(RegExp(r"\bi'[a-z]+\b", caseSensitive: false), ' ');
-    title = title.replaceAll(RegExp(r"\bhe'[a-z]+\b", caseSensitive: false), ' ');
-    title = title.replaceAll(RegExp(r"\bshe'[a-z]+\b", caseSensitive: false), ' ');
-    title = title.replaceAll(RegExp(r"\bwe'[a-z]+\b", caseSensitive: false), ' ');
-    title = title.replaceAll(RegExp(r"\bthey'[a-z]+\b", caseSensitive: false), ' ');
+    title = title.replaceAll(
+      RegExp(r"\bi'[a-z]+\b", caseSensitive: false),
+      ' ',
+    );
+    title = title.replaceAll(
+      RegExp(r"\bhe'[a-z]+\b", caseSensitive: false),
+      ' ',
+    );
+    title = title.replaceAll(
+      RegExp(r"\bshe'[a-z]+\b", caseSensitive: false),
+      ' ',
+    );
+    title = title.replaceAll(
+      RegExp(r"\bwe'[a-z]+\b", caseSensitive: false),
+      ' ',
+    );
+    title = title.replaceAll(
+      RegExp(r"\bthey'[a-z]+\b", caseSensitive: false),
+      ' ',
+    );
 
     title = title.replaceAll(
       RegExp(r'\b(?:this|on|by|due)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b'),
@@ -2119,7 +2364,6 @@ class BaiAssistant {
         .map((word) => word[0].toUpperCase() + word.substring(1))
         .join(' ');
   }
-
 
   Future<BaiReply?> _tryFutureEvent(String n) async {
     if (!_isFutureTense(n)) return null;
@@ -2201,7 +2445,9 @@ class BaiAssistant {
         final projectedBalance = detectedAcc != null
             ? '\n\nNew Balance after execution: $_currency${_formatNumberWithCommas((detectedAcc.balance - amount).toStringAsFixed(2))}'
             : '';
-        final frequencyNote = frequency == 'Once' ? '' : '\nFrequency: $frequency';
+        final frequencyNote = frequency == 'Once'
+            ? ''
+            : '\nFrequency: $frequency';
 
         return BaiReply(
           'Outgoing Payment Scheduled!\n\n$cleanTitle\n-$_currency$amountStr\n$accLine\nScheduled for: $dateStr$frequencyNote$projectedBalance',
@@ -2217,12 +2463,16 @@ class BaiAssistant {
             ? '${_accountLabel(detectedAcc)} (Current Balance: $_currency${_formatNumberWithCommas(detectedAcc.balance.toStringAsFixed(2))})'
             : 'Account not specified';
         final projectedBalance = detectedAcc != null
-            ? _formatNumberWithCommas((detectedAcc.balance + amount).toStringAsFixed(2))
+            ? _formatNumberWithCommas(
+                (detectedAcc.balance + amount).toStringAsFixed(2),
+              )
             : 'N/A';
-        final frequencyNote = frequency == 'Once' ? '' : '\nFrequency: $frequency';
+        final frequencyNote = frequency == 'Once'
+            ? ''
+            : '\nFrequency: $frequency';
 
         return BaiReply(
-          'Income Scheduled!\n\n$cleanTitle                                   +$_currency$amountStr\n$accLine\nScheduled for: $dateStr$frequencyNote\n\nNew Balance after execution: $_currency$projectedBalance',
+          '📅 Income Scheduled!\n\n$cleanTitle                                   +$_currency$amountStr\n$accLine\nScheduled for: $dateStr$frequencyNote\n\nNew Balance after execution: $_currency$projectedBalance',
           quickReplies: const [
             "What is my total balance?",
             "Show upcoming events",
@@ -2411,7 +2661,7 @@ class BaiAssistant {
       'later',
       'last',
       'next',
-      'recently'
+      'recently',
     ];
     for (final timeWord in timeWords) {
       title = title.replaceAll(

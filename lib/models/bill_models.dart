@@ -37,6 +37,7 @@ const List<String> predefinedIncomeTypes = [
   'Gift',
   'Refund',
   'Rental Income',
+  'Debt',
 ];
 
 // Legacy support - combined list

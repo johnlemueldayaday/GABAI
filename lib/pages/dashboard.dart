@@ -586,6 +586,42 @@ class _DashboardPageState extends State<DashboardPage> {
     final userName = SettingsService().userName;
     final displayName = userName.isNotEmpty ? userName : 'User';
 
+    final sortedTxns = List<FinanceTransaction>.from(_transactions)
+      ..sort((a, b) => b.date.compareTo(a.date));
+    final showExpenseFirst = sortedTxns.isNotEmpty && sortedTxns.first.isExpense;
+
+    Widget buildIncomeSection() {
+      return Column(
+        key: const ValueKey('recent_income_section'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 24),
+          _SectionHeader(title: 'Recent Income'),
+          _TransactionList(
+            transactions: _transactions.where((t) => t.isIncome).toList(),
+            accounts: _accounts,
+            isIncome: true,
+          ),
+        ],
+      );
+    }
+
+    Widget buildExpenseSection() {
+      return Column(
+        key: const ValueKey('recent_expenses_section'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 24),
+          _SectionHeader(title: 'Recent Expenses'),
+          _TransactionList(
+            transactions: _transactions.where((t) => t.isExpense).toList(),
+            accounts: _accounts,
+            isIncome: false,
+          ),
+        ],
+      );
+    }
+
     return Scaffold(
       backgroundColor: kBackground,
       appBar: AppBar(toolbarHeight: 0, backgroundColor: kBackground),
@@ -843,19 +879,13 @@ class _DashboardPageState extends State<DashboardPage> {
             _SectionHeader(title: 'Upcoming Events'),
             _UpcomingEventsList(bills: _bills),
 
-            const SizedBox(height: 24),
-            _SectionHeader(title: 'Recent Income'),
-            _TransactionList(
-              transactions: _transactions.where((t) => t.isIncome).toList(),
-              isIncome: true,
-            ),
-
-            const SizedBox(height: 24),
-            _SectionHeader(title: 'Recent Expenses'),
-            _TransactionList(
-              transactions: _transactions.where((t) => t.isExpense).toList(),
-              isIncome: false,
-            ),
+            if (showExpenseFirst) ...[
+              buildExpenseSection(),
+              buildIncomeSection(),
+            ] else ...[
+              buildIncomeSection(),
+              buildExpenseSection(),
+            ],
 
             const SizedBox(height: 40),
           ],
@@ -1034,8 +1064,13 @@ class _UpcomingEventsList extends StatelessWidget {
 
 class _TransactionList extends StatelessWidget {
   final List<FinanceTransaction> transactions;
+  final List<Account> accounts;
   final bool isIncome;
-  const _TransactionList({required this.transactions, required this.isIncome});
+  const _TransactionList({
+    required this.transactions,
+    required this.accounts,
+    required this.isIncome,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1061,6 +1096,16 @@ class _TransactionList extends StatelessWidget {
 
     return Column(
       children: items.map((t) {
+        final account = accounts.firstWhere(
+          (a) => a.id == t.accountId,
+          orElse: () => Account(
+            id: t.accountId,
+            name: t.accountName,
+            type: '',
+            icon: '💰',
+          ),
+        );
+
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           padding: const EdgeInsets.all(16),
@@ -1111,12 +1156,24 @@ class _TransactionList extends StatelessWidget {
                   ],
                 ),
               ),
-              Text(
-                '${isIncome ? '+' : '-'}${SettingsService().currency}${t.amount.toStringAsFixed(0)}',
-                style: GoogleFonts.plusJakartaSans(
-                  fontWeight: FontWeight.w800,
-                  color: isIncome ? kPrimary : Colors.red,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    '${isIncome ? '+' : '-'}${SettingsService().currency}${t.amount.toStringAsFixed(0)}',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontWeight: FontWeight.w800,
+                      color: isIncome ? kPrimary : Colors.red,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  AccountIconImage(
+                    name: account.name,
+                    icon: account.icon,
+                    size: 16,
+                  ),
+                ],
               ),
             ],
           ),

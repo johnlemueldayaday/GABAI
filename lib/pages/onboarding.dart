@@ -450,7 +450,7 @@ class _Screen1 extends StatelessWidget {
               color: kTextCharcoal,
             ),
             decoration: InputDecoration(
-              hintText: 'John Lemuel',
+              hintText: 'Your Name',
               hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
               filled: true,
               fillColor: kBackground,
@@ -510,7 +510,9 @@ class _Screen1 extends StatelessWidget {
                             duration: const Duration(milliseconds: 250),
                             curve: Curves.easeOut,
                             decoration: BoxDecoration(
-                              borderRadius: isCash ? BorderRadius.circular(12) : BorderRadius.zero,
+                              borderRadius: isCash
+                                  ? BorderRadius.circular(12)
+                                  : BorderRadius.zero,
                               border: !isCash
                                   ? Border.all(
                                       color: selected
@@ -526,14 +528,16 @@ class _Screen1 extends StatelessWidget {
                                         blurRadius: 14,
                                         spreadRadius: 2,
                                         offset: const Offset(0, 4),
-                                      )
+                                      ),
                                     ]
                                   : [
                                       BoxShadow(
-                                        color: Colors.black.withValues(alpha: 0.05),
+                                        color: Colors.black.withValues(
+                                          alpha: 0.05,
+                                        ),
                                         blurRadius: 6,
                                         offset: const Offset(0, 2),
-                                      )
+                                      ),
                                     ],
                             ),
                             child: _WalletOptionIcon(wallet: w, size: 45),
