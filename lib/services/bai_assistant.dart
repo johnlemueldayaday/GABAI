@@ -31,6 +31,8 @@ enum BaiStep {
   cartPrompt,
   awaitingExpenseAccount,
   awaitingIncomeAccount,
+  awaitingDuePaymentAction,
+  awaitingDuePaymentAccount,
 }
 
 /// BAI (Brother AI) - Unified smart assistant merging Ramsey + Tarsi
@@ -53,6 +55,9 @@ class BaiAssistant {
   double? _pendingIncomeAmount;
   String? _pendingIncomeDescription;
   String? _pendingIncomeCategory;
+
+  // Track pending due event when processing past-due events
+  FutureEvent? _pendingDueEvent;
 
   String _accountLabel(Account account) {
     final normalizedName = account.name.trim().toLowerCase();
@@ -84,6 +89,19 @@ class BaiAssistant {
         'Do I have upcoming bills?',
       ],
     );
+  }
+
+  Future<BaiReply> getAsyncGreeting() async {
+    final dueEvents = await FutureEventStorage.getDueEvents();
+    if (dueEvents.isNotEmpty) {
+      _pendingDueEvent = dueEvents.first;
+      _step = BaiStep.awaitingDuePaymentAction;
+      return BaiReply(
+        "You have a scheduled event due today: ${_pendingDueEvent!.description}.\nDid you pay your ${_pendingDueEvent!.description}?",
+        quickReplies: const ["Yes", "No"],
+      );
+    }
+    return greeting;
   }
 
   /// Main intent router — the brain of BAI
@@ -199,6 +217,14 @@ class BaiAssistant {
       return await _handleIncomeAccountResponse(n);
     }
 
+    if (_step == BaiStep.awaitingDuePaymentAction) {
+      return await _handleDuePaymentActionResponse(n);
+    }
+
+    if (_step == BaiStep.awaitingDuePaymentAccount) {
+      return await _handleDuePaymentAccountResponse(n);
+    }
+
     // Allow finance commands to break out of cooking flow
     final transferResult = await _tryTransfer(n);
     if (transferResult != null) {
@@ -277,21 +303,30 @@ class BaiAssistant {
     _pendingExpenseAmount = null;
     _pendingExpenseDescription = null;
     _pendingExpenseCategory = null;
+    _pendingExpenseCategory = null;
     _pendingIncomeAmount = null;
     _pendingIncomeDescription = null;
     _pendingIncomeCategory = null;
+    _pendingDueEvent = null;
   }
 
   Future<BaiReply> _handleExpenseAccountResponse(String n) async {
+    // Allow user to cancel the pending transaction
+    if (n == 'cancel' || n == 'cancel transaction' || n == 'nevermind' || n == 'never mind') {
+      _resetState();
+      return const BaiReply("Transaction cancelled. What else can I help you with?");
+    }
+
     final accounts = await FinanceStorage.loadAccounts();
     if (accounts.isEmpty) return _noAccountsReply();
 
-    // Find the account from user input
-    Account? acc = _findAccount(n, accounts);
+    // Find the account from user input — try exact first, then fuzzy
+    Account? acc = _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
     if (acc == null) {
       final accountNames = accounts.map((a) => a.name).join(', ');
       return BaiReply(
         "I couldn't find that account. Available accounts: $accountNames\n\nWhich account did you spend from?",
+        quickReplies: accounts.map((a) => a.name).toList(),
       );
     }
 
@@ -300,6 +335,20 @@ class BaiAssistant {
     final desc = _pendingExpenseDescription!;
     final category = _pendingExpenseCategory!;
     final cleanTitle = _cleanTransactionTitle(desc, amount: amount);
+
+    // Pre-flight: check if account has sufficient balance
+    if (acc.balance < amount) {
+      final accounts = await FinanceStorage.loadAccounts();
+      final otherAccounts = accounts.where((a) => a.id != acc.id && a.balance >= amount).toList();
+      final allOthers = accounts.where((a) => a.id != acc.id).toList();
+      final listToShow = otherAccounts.isNotEmpty ? otherAccounts : allOthers;
+      final alternativeNames = listToShow.map((a) => a.name).join(', ');
+      // DO NOT reset state — keep transaction pending
+      return BaiReply(
+        "⚠️ Insufficient funds. ${_accountLabel(acc)} only has $_currency${_formatNumberWithCommas(acc.balance.toStringAsFixed(2))} but the transaction requires -$_currency${_formatNumberWithCommas(amount.toStringAsFixed(2))}.\n\nWhich alternative account would you like to use?\nAvailable: $alternativeNames",
+        quickReplies: listToShow.map((a) => a.name).toList(),
+      );
+    }
 
     try {
       final txn = FinanceTransaction(
@@ -313,9 +362,13 @@ class BaiAssistant {
       );
       await FinanceStorage.addTransaction(txn);
 
+      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas((acc.balance - amount).toStringAsFixed(2));
+
       _resetState();
       return BaiReply(
-        "💸 Expense logged!\n\n- $_currency${amount.toStringAsFixed(2)} on $desc from ${_accountLabel(acc)} ($category)\n• New Balance: $_currency${(acc.balance - amount).toStringAsFixed(2)}",
+        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -323,24 +376,47 @@ class BaiAssistant {
         highlightColor: 'red',
       );
     } catch (e) {
-      _resetState();
+      final errMsg = e.toString();
+      // Check for insufficient funds — retain state and ask for alternative account
+      final isInsufficientFunds = errMsg.toLowerCase().contains('insufficient') ||
+          errMsg.toLowerCase().contains('negative balance');
+      if (isInsufficientFunds) {
+        final accounts = await FinanceStorage.loadAccounts();
+        final otherAccounts = accounts.where((a) => a.id != acc.id && a.balance >= _pendingExpenseAmount!).toList();
+        final alternativeNames = otherAccounts.isNotEmpty
+            ? otherAccounts.map((a) => a.name).join(', ')
+            : accounts.where((a) => a.id != acc.id).map((a) => a.name).join(', ');
+        // DO NOT reset state — keep transaction pending
+        return BaiReply(
+          "⚠️ Insufficient funds. ${_accountLabel(acc)} doesn't have enough balance for -$_currency${_formatNumberWithCommas(_pendingExpenseAmount!.toStringAsFixed(2))}.\n\nWhich alternative account would you like to use?\nAvailable: $alternativeNames",
+          quickReplies: otherAccounts.map((a) => a.name).toList(),
+        );
+      }
+      // For other errors, also retain state so user can retry
       return BaiReply(
-        "⚠️ ${e.toString()}",
-        quickReplies: const ["What is my total balance?"],
+        "⚠️ $errMsg\n\nThe transaction is still open. You can try a different account or type 'cancel'.",
+        quickReplies: const ["Cancel"],
       );
     }
   }
 
   Future<BaiReply> _handleIncomeAccountResponse(String n) async {
+    // Allow user to cancel the pending transaction
+    if (n == 'cancel' || n == 'cancel transaction' || n == 'nevermind' || n == 'never mind') {
+      _resetState();
+      return const BaiReply("Transaction cancelled. What else can I help you with?");
+    }
+
     final accounts = await FinanceStorage.loadAccounts();
     if (accounts.isEmpty) return _noAccountsReply();
 
-    // Find the account from user input
-    Account? acc = _findAccount(n, accounts);
+    // Find the account from user input — try exact first, then fuzzy
+    Account? acc = _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
     if (acc == null) {
       final accountNames = accounts.map((a) => a.name).join(', ');
       return BaiReply(
         "I couldn't find that account. Available accounts: $accountNames\n\nWhich account did you receive it in?",
+        quickReplies: accounts.map((a) => a.name).toList(),
       );
     }
 
@@ -362,9 +438,13 @@ class BaiAssistant {
       );
       await FinanceStorage.addTransaction(txn);
 
+      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas((acc.balance + amount).toStringAsFixed(2));
+
       _resetState();
       return BaiReply(
-        "💵 Income logged!\n\n+ $_currency${amount.toStringAsFixed(2)} to ${_accountLabel(acc)} ($category)\n• New Balance: $_currency${(acc.balance + amount).toStringAsFixed(2)}",
+        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -372,11 +452,121 @@ class BaiAssistant {
         highlightColor: 'green',
       );
     } catch (e) {
+      final errMsg = e.toString();
+      // Check for insufficient funds — retain state and ask for alternative account
+      final isInsufficientFunds = errMsg.toLowerCase().contains('insufficient') ||
+          errMsg.toLowerCase().contains('negative balance');
+      if (isInsufficientFunds) {
+        final accounts = await FinanceStorage.loadAccounts();
+        final otherAccounts = accounts.where((a) => a.id != acc.id).toList();
+        final alternativeNames = otherAccounts.map((a) => a.name).join(', ');
+        // DO NOT reset state — keep transaction pending
+        return BaiReply(
+          "⚠️ Something went wrong with ${_accountLabel(acc)}.\n\nThe transaction is still open. Try another account: $alternativeNames",
+          quickReplies: otherAccounts.map((a) => a.name).toList(),
+        );
+      }
+      return BaiReply(
+        "⚠️ $errMsg\n\nThe transaction is still open. You can try a different account or type 'cancel'.",
+        quickReplies: const ["Cancel"],
+      );
+    }
+  }
+
+  Future<BaiReply> _handleDuePaymentActionResponse(String n) async {
+    if (n == 'yes' || n == 'y' || n == 'yeah' || n == 'yep' || n.contains('paid')) {
+      _step = BaiStep.awaitingDuePaymentAccount;
+      final accounts = await FinanceStorage.loadAccounts();
+      final accountNames = accounts.map((a) => a.name).join(', ');
+      return BaiReply(
+        "Awesome! What wallet are u using?\nAvailable: $accountNames",
+        quickReplies: accounts.map((a) => a.name).toList(),
+      );
+    } else if (n == 'no' || n == 'n' || n == 'not yet' || n == 'nope' || n.contains('cancel') || n.contains('reschedule')) {
+      // reschedule for tomorrow
+      final event = _pendingDueEvent!;
+      final newDate = DateTime.now().add(const Duration(days: 1));
+      final updatedEvent = event.copyWith(scheduledDate: newDate);
+      await FutureEventStorage.updateEvent(updatedEvent);
+
+      final dateStr = _formatDate(newDate);
+      final amountStr = _formatNumberWithCommas(event.amount.toStringAsFixed(2));
       _resetState();
       return BaiReply(
-        "⚠️ ${e.toString()}",
-        quickReplies: const ["What is my total balance?"],
+        "Payment Rescheduled!\n\n${event.description}\n-$_currency$amountStr\nWallet not specified\nScheduled for: $dateStr",
+        quickReplies: const ["What is my total balance?", "Show upcoming events"],
+        highlightColor: 'red',
       );
+    }
+    
+    return BaiReply(
+      "Sorry, I didn't get that. Did you pay your ${_pendingDueEvent!.description}?",
+      quickReplies: const ["Yes", "No"],
+    );
+  }
+
+  Future<BaiReply> _handleDuePaymentAccountResponse(String n) async {
+    if (n == 'cancel' || n == 'nevermind') {
+      _resetState();
+      return const BaiReply("Got it, we can settle it later.");
+    }
+
+    final accounts = await FinanceStorage.loadAccounts();
+    Account? acc = _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
+    if (acc == null) {
+      return BaiReply(
+        "I couldn't find that account. Which wallet are you using?",
+        quickReplies: accounts.map((a) => a.name).toList(),
+      );
+    }
+
+    final event = _pendingDueEvent!;
+    final amount = event.amount;
+    final isOutgoing = _categorizeFutureOutgoingEvent(event.description) != 'Bill' || event.description.toLowerCase().contains('debt') || event.description.toLowerCase().contains('loan');
+
+    if (isOutgoing && acc.balance < amount) {
+      return BaiReply(
+        "⚠️ Insufficient funds in ${_accountLabel(acc)}. Choose another wallet:",
+        quickReplies: accounts.where((a) => a.balance >= amount).map((a) => a.name).toList(),
+      );
+    }
+
+    try {
+      final txn = FinanceTransaction(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        amount: amount,
+        accountId: acc.id,
+        accountName: acc.name,
+        type: isOutgoing ? 'EXPENSE' : 'INCOME',
+        category: event.category,
+        description: event.description,
+      );
+      await FinanceStorage.addTransaction(txn);
+      
+      final updatedEvent = event.copyWith(isCompleted: true);
+      await FutureEventStorage.updateEvent(updatedEvent);
+      
+      // also clear from bills if it's there
+      final bills = await BillStorage.loadBills();
+      bills.removeWhere((b) => b.id == 'future_${event.id}');
+      await BillStorage.saveBills(bills);
+
+      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas((isOutgoing ? acc.balance - amount : acc.balance + amount).toStringAsFixed(2));
+
+      _resetState();
+      return BaiReply(
+        "${isOutgoing ? 'Expense' : 'Income'} logged!\n\n${event.description}                                      ${isOutgoing ? '-' : '+'}$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
+        quickReplies: const [
+          "What is my total balance?",
+          "Check account balances",
+        ],
+        highlightColor: isOutgoing ? 'red' : 'green',
+      );
+    } catch (e) {
+      _resetState();
+      return BaiReply("⚠️ ${e.toString()}");
     }
   }
 
@@ -445,15 +635,12 @@ class BaiAssistant {
     // 1. Differentiate intent
     if (!_isExpenseIntent(n)) return null;
 
-    // 2. Extract amount
-    final amountReg = RegExp(r'(\d+(?:\.\d+)?)');
-    final amountMatch = amountReg.firstMatch(n);
-    if (amountMatch == null) return null;
-
-    final amountStr = amountMatch.group(1);
-    if (amountStr == null) return null;
-    final amount = double.tryParse(amountStr);
+    // 2. Extract amount using slang-aware extractor (handles k/m suffixes)
+    final amount = _extractAmountWithSlang(n);
     if (amount == null || amount <= 0) return null;
+
+    // Capture the raw amount string matched from text for description cleaning
+    final amountStr = RegExp(r'(\d+(?:\.\d+)?)\s*[km]?\b').firstMatch(n)?.group(0) ?? amount.toStringAsFixed(2);
 
     final accounts = await FinanceStorage.loadAccounts();
     if (accounts.isEmpty) return _noAccountsReply();
@@ -530,6 +717,9 @@ class BaiAssistant {
     if (cleanedDesc.isEmpty || cleanedDesc.toLowerCase() == 'i') {
       cleanedDesc = 'General Expense';
     } else {
+      // Strip dangling k/m suffix tokens left from shorthand amounts
+      cleanedDesc = cleanedDesc.replaceAll(RegExp(r'\b[km]\b', caseSensitive: false), '');
+      cleanedDesc = cleanedDesc.replaceAll(RegExp(r'\s+'), ' ').trim();
       cleanedDesc = cleanedDesc[0].toUpperCase() + cleanedDesc.substring(1);
     }
 
@@ -563,8 +753,12 @@ class BaiAssistant {
 
     try {
       await FinanceStorage.addTransaction(txn);
+      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas((acc.balance - amount).toStringAsFixed(2));
+
       return BaiReply(
-        "💸 Expense logged!\n\n- $_currency${amount.toStringAsFixed(2)} on $cleanedDesc from ${_accountLabel(acc)} ($category)\n• New Balance: $_currency${(acc.balance - amount).toStringAsFixed(2)}",
+        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -855,13 +1049,12 @@ class BaiAssistant {
 
     try {
       await FinanceStorage.addTransaction(txn);
-
-      // Always use the unified green card format
-      final sourceLabel = entity.isNotEmpty ? '$entity ($category)' : category;
-      final newBalance = (acc.balance + amount).toStringAsFixed(2);
+      final prevBalanceStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
+      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
+      final newBalanceStr = _formatNumberWithCommas((acc.balance + amount).toStringAsFixed(2));
 
       return BaiReply(
-        "💵 Income logged!\n\n+ $_currency${amount.toStringAsFixed(2)} to ${_accountLabel(acc)}\n• Source: $sourceLabel\n• New Balance: $_currency$newBalance",
+        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -1311,6 +1504,13 @@ class BaiAssistant {
   double? _extractAmountWithSlang(String text) {
     final l = text.toLowerCase();
 
+    // Handle "m" for millions (e.g., "1m", "1.5m", "10m")
+    final mMatch = RegExp(r'(\d+(?:\.\d+)?)\s*m\b').firstMatch(l);
+    if (mMatch != null) {
+      final value = double.tryParse(mMatch.group(1)!);
+      if (value != null) return value * 1000000;
+    }
+
     // Handle "k" for thousands (e.g., "2k", "5k", "10k")
     final kMatch = RegExp(r'(\d+(?:\.\d+)?)\s*k\b').firstMatch(l);
     if (kMatch != null) {
@@ -1533,6 +1733,23 @@ class BaiAssistant {
 
   bool _isFutureTense(String text) {
     final l = text.toLowerCase();
+
+    // GUARD: if the text contains past-tense markers, it is NOT a future event
+    final pastMarkers = [
+      'yesterday',
+      'earlier',
+      'just now',
+      'already',
+      'last night',
+      'last week',
+      'this morning',
+      'this afternoon',
+      'ago',
+      'kanina',
+      'kahapon',
+    ];
+    if (pastMarkers.any((k) => l.contains(k))) return false;
+
     final futureKeywords = [
       'is going to',
       'going to pay',
@@ -1557,6 +1774,14 @@ class BaiAssistant {
       'next week',
       'upcoming',
       'future',
+      'tomorrow',
+      "i'm paying",
+      "i will pay",
+      "i'll pay",
+      "i'm going to pay",
+      'paying next',
+      'paying this',
+      'paying on',
     ];
     if (futureKeywords.any((k) => l.contains(k))) return true;
 
@@ -1575,6 +1800,16 @@ class BaiAssistant {
     final l = text.toLowerCase();
     final now = DateTime.now();
 
+    // Parse "tomorrow"
+    if (l.contains('tomorrow')) {
+      return now.add(const Duration(days: 1));
+    }
+
+    // Parse "next week"
+    if (l.contains('next week')) {
+      return now.add(const Duration(days: 7));
+    }
+
     // Parse "this 30th", "on the 15th", "on 30th", etc.
     final dayMatch = RegExp(
       r'(?:this|on|by|due)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b',
@@ -1592,20 +1827,14 @@ class BaiAssistant {
 
     // Parse "Friday", "Sunday", etc.
     final days = [
-      'monday',
-      'tuesday',
-      'wednesday',
-      'thursday',
-      'friday',
-      'saturday',
-      'sunday',
+      'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
     ];
     for (int i = 0; i < days.length; i++) {
       if (l.contains(days[i])) {
-        int targetDay = i + 1; // DateTime weekday is 1-7 (Monday=1)
+        int targetDay = i + 1;
         int currentDay = now.weekday;
         int daysUntil = (targetDay - currentDay + 7) % 7;
-        if (daysUntil == 0) daysUntil = 7; // If today, go to next week
+        if (daysUntil == 0) daysUntil = 7;
         return now.add(Duration(days: daysUntil));
       }
     }
@@ -1628,6 +1857,12 @@ class BaiAssistant {
     // Parse "next month"
     if (l.contains('next month')) {
       return DateTime(now.year, now.month + 1, 1);
+    }
+
+    // If future keywords detected but no specific date, default to tomorrow
+    if (l.contains('tomorrow') || l.contains("i'm paying") || l.contains('i will pay') ||
+        l.contains("i'll pay")) {
+      return now.add(const Duration(days: 1));
     }
 
     return null;
@@ -1714,18 +1949,22 @@ class BaiAssistant {
     }
 
     final currencyMatch = RegExp(
-      r'(?:₱|php|peso|pesos)\s*(\d+(?:,\d{3})*(?:\.\d+)?)(\s*k)?\b|(\d+(?:,\d{3})*(?:\.\d+)?)(\s*k)?\s*(?:₱|php|peso|pesos)\b',
+      r'(?:₱|php|peso|pesos)\s*(\d+(?:,\d{3})*(?:\.\d+)?)(\s*[km])?\b|(\d+(?:,\d{3})*(?:\.\d+)?)(\s*[km])?\s*(?:₱|php|peso|pesos)\b',
       caseSensitive: false,
     ).firstMatch(scrubbed);
     if (currencyMatch != null) {
       final raw = currencyMatch.group(1) ?? currencyMatch.group(3);
-      final hasK = (currencyMatch.group(2) ?? currencyMatch.group(4)) != null;
+      final suffix = (currencyMatch.group(2) ?? currencyMatch.group(4))?.trim().toLowerCase();
       final parsed = double.tryParse(raw!.replaceAll(',', ''));
-      if (parsed != null) return hasK ? parsed * 1000 : parsed;
+      if (parsed != null) {
+        if (suffix == 'k') return parsed * 1000;
+        if (suffix == 'm') return parsed * 1000000;
+        return parsed;
+      }
     }
 
     final actionAmountMatch = RegExp(
-      r'\b(?:pay(?:\s+me)?(?:\s+back)?|send|transfer|clear|receive|expect|expecting|salary|allowance|remittance|freelance|incoming|income|payout)\D{0,30}?(\d+(?:,\d{3})*(?:\.\d+)?)(\s*k)?\b',
+      r'\b(?:pay(?:\s+me)?(?:\s+back)?|send|transfer|clear|receive|expect|expecting|salary|allowance|remittance|freelance|incoming|income|payout)\D{0,30}?(\d+(?:,\d{3})*(?:\.\d+)?)(\s*[km])?\b',
       caseSensitive: false,
     ).firstMatch(scrubbed);
     if (actionAmountMatch != null) {
@@ -1733,19 +1972,26 @@ class BaiAssistant {
         actionAmountMatch.group(1)!.replaceAll(',', ''),
       );
       if (parsed != null) {
-        return actionAmountMatch.group(2) != null ? parsed * 1000 : parsed;
+        final suffix = actionAmountMatch.group(2)?.trim().toLowerCase();
+        if (suffix == 'k') return parsed * 1000;
+        if (suffix == 'm') return parsed * 1000000;
+        return parsed;
       }
     }
 
     final amountMatch = RegExp(
-      r'\b(\d+(?:,\d{3})*(?:\.\d+)?)(\s*k)?\b',
+      r'\b(\d+(?:,\d{3})*(?:\.\d+)?)(\s*[km])?\b',
       caseSensitive: false,
     ).firstMatch(scrubbed);
     if (amountMatch == null) return null;
 
     final parsed = double.tryParse(amountMatch.group(1)!.replaceAll(',', ''));
     if (parsed == null) return null;
-    return amountMatch.group(2) != null ? parsed * 1000 : parsed;
+    
+    final suffix = amountMatch.group(2)?.trim().toLowerCase();
+    if (suffix == 'k') return parsed * 1000;
+    if (suffix == 'm') return parsed * 1000000;
+    return parsed;
   }
 
   String _categorizeFutureEvent(String text) {
@@ -1804,7 +2050,10 @@ class BaiAssistant {
     if (_matchAny(l, ['car loan', 'auto loan', 'vehicle loan'])) {
       return 'Car Loan';
     }
-    if (_matchAny(l, ['loan', 'debt'])) {
+    if (_matchAny(l, ['debt'])) {
+      return 'Debt';
+    }
+    if (_matchAny(l, ['loan'])) {
       return 'Loan';
     }
     if (_matchAny(l, ['insurance'])) {
@@ -1842,13 +2091,21 @@ class BaiAssistant {
     var title = text.toLowerCase();
     final amount = _extractFutureAmount(text);
     title = _removeMappedAmountFromTitle(title, amount);
+
+    // Strip contractions first (i'm, i'll, i've, he's, she's, they're)
+    title = title.replaceAll(RegExp(r"\bi'[a-z]+\b", caseSensitive: false), ' ');
+    title = title.replaceAll(RegExp(r"\bhe'[a-z]+\b", caseSensitive: false), ' ');
+    title = title.replaceAll(RegExp(r"\bshe'[a-z]+\b", caseSensitive: false), ' ');
+    title = title.replaceAll(RegExp(r"\bwe'[a-z]+\b", caseSensitive: false), ' ');
+    title = title.replaceAll(RegExp(r"\bthey'[a-z]+\b", caseSensitive: false), ' ');
+
     title = title.replaceAll(
       RegExp(r'\b(?:this|on|by|due)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b'),
       ' ',
     );
     title = title.replaceAll(
       RegExp(
-        r'\b(?:i|my|have|has|a|an|the|need|needs|to|pay|worth|around|about|bill|payment|due|drops|coming|up|for|on|by)\b',
+        r'\b(?:i|my|have|has|a|an|the|need|needs|to|pay|paying|worth|around|about|bill|payment|due|drops|coming|up|for|on|by|tomorrow|next|week|month|going|will|gonna|am|is|are)\b',
         caseSensitive: false,
       ),
       ' ',
@@ -1863,70 +2120,6 @@ class BaiAssistant {
         .join(' ');
   }
 
-  String _futureOutgoingConfirmationText({
-    required String input,
-    required String category,
-    required double amount,
-    required DateTime scheduledDate,
-    required String frequency,
-  }) {
-    final dueText = _formatDate(scheduledDate);
-    final signedAmount = _formatSignedCurrency(amount);
-    final frequencyLine = frequency == 'Monthly'
-        ? 'Frequency: Monthly'
-        : 'Frequency: $frequency';
-    final isBill = _matchAny(input, [
-      'bill',
-      'meralco',
-      'electricity',
-      'water',
-      'internet',
-      'wifi',
-    ]);
-    final isPayment = _matchAny(input, [
-      'need to pay',
-      'pay',
-      'paying',
-      'payment',
-      'insurance',
-      'loan',
-      'debt',
-    ]);
-
-    final templates = isBill
-        ? [
-            'Bill Reminder Logged!\n\n$signedAmount for $category\nDue: $dueText\n$frequencyLine\n\nThis will not affect your current balance until the scheduled date.',
-            'Upcoming Bill Scheduled!\n\n$signedAmount $category\nDue on: $dueText\n$frequencyLine\n\nThis stays in your calendar until it is due.',
-            'Outgoing Bill Added!\n\n$signedAmount for your $category\nSchedule: $dueText\n$frequencyLine\n\nNo wallet balance has changed yet.',
-            'Bill Payment Queued!\n\n$signedAmount for $category\nScheduled: $dueText\n$frequencyLine\n\nI marked this as an outgoing payment.',
-          ]
-        : isPayment
-        ? [
-            'Upcoming Payment Tracked!\n\n$signedAmount for $category\nDue: $dueText\n$frequencyLine\n\nThis will not affect your current balance until the scheduled date.',
-            'Outgoing Payment Added!\n\n$signedAmount for your $category\nComing up: $dueText\n$frequencyLine\n\nYour balance stays unchanged for now.',
-            'Payment Reminder Set!\n\n$signedAmount for your $category\nDue on: $dueText\n$frequencyLine\n\nI marked this as an outgoing calendar entry.',
-            'Loan Payment Scheduled!\n\n$signedAmount for $category\nDue: $dueText\n$frequencyLine\n\nThis is tracked as an outgoing payment.',
-            'Upcoming Outgoing Saved!\n\n$signedAmount for $category\nScheduled for: $dueText\n$frequencyLine\n\nNo current balance was deducted yet.',
-          ]
-        : [
-            'Upcoming Bill Scheduled!\n\n$signedAmount for $category\nDue: $dueText\n$frequencyLine\n\nThis will not affect your current balance until the scheduled date.',
-            'Outgoing Entry Added!\n\n$signedAmount for $category\nScheduled for: $dueText\n$frequencyLine\n\nYour current wallet balance is unchanged.',
-            'Payment Schedule Saved!\n\n$signedAmount for your $category\nDue on: $dueText\n$frequencyLine\n\nI marked this as an outgoing payment.',
-            'Outgoing Reminder Saved!\n\n$signedAmount for $category\nComing up: $dueText\n$frequencyLine\n\nThis stays pending until the scheduled date.',
-          ];
-
-    return _pickVariation(templates);
-  }
-
-  String _formatSignedCurrency(double amount) {
-    return '-$_currency${_formatNumberWithCommas(amount.toStringAsFixed(2))}';
-  }
-
-  String _pickVariation(List<String> values) {
-    if (values.isEmpty) return '';
-    final index = DateTime.now().microsecondsSinceEpoch % values.length;
-    return values[index];
-  }
 
   Future<BaiReply?> _tryFutureEvent(String n) async {
     if (!_isFutureTense(n)) return null;
@@ -1994,59 +2187,49 @@ class BaiAssistant {
       );
       await BillStorage.saveBills(bills);
 
-      // Format confirmation message
-      String confirmationTitle;
-      String confirmationMessage;
+      // Load accounts to show current balance of detected account
+      final accounts = await FinanceStorage.loadAccounts();
+      final detectedAcc = _detectAccountFromText(n, accounts);
+      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
+      final dateStr = _formatDate(scheduledDate);
 
       if (isOutgoing) {
+        // Outgoing: show current balance, and projected balance after execution
+        final accLine = detectedAcc != null
+            ? '${_accountLabel(detectedAcc)} (Current Balance: $_currency${_formatNumberWithCommas(detectedAcc.balance.toStringAsFixed(2))})'
+            : 'Wallet not specified';
+        final projectedBalance = detectedAcc != null
+            ? '\n\nNew Balance after execution: $_currency${_formatNumberWithCommas((detectedAcc.balance - amount).toStringAsFixed(2))}'
+            : '';
+        final frequencyNote = frequency == 'Once' ? '' : '\nFrequency: $frequency';
+
         return BaiReply(
-          _futureOutgoingConfirmationText(
-            input: n,
-            category: category,
-            amount: amount,
-            scheduledDate: scheduledDate,
-            frequency: frequency,
-          ),
+          'Outgoing Payment Scheduled!\n\n$cleanTitle\n-$_currency$amountStr\n$accLine\nScheduled for: $dateStr$frequencyNote$projectedBalance',
           quickReplies: const [
             "Show upcoming events",
             "What is my total balance?",
           ],
           highlightColor: 'red',
         );
-      } else if (frequency == 'Monthly') {
-        confirmationTitle = '📅 Recurring Incoming Event Set!';
-        confirmationMessage =
-            'Registered a Monthly incoming $category of $_currency${amount.toStringAsFixed(2)} starting on ${_formatDate(scheduledDate)}.';
-      } else if (category == 'Investment' && entity.isNotEmpty) {
-        confirmationTitle = '📅 Upcoming Incoming Entry Added!';
-        confirmationMessage =
-            "I've scheduled $_currency${amount.toStringAsFixed(2)} from $entity as a one-time Investment return for ${_formatDate(scheduledDate)}.";
-      } else if (category == 'Freelance') {
-        confirmationTitle = '📅 Expected Payout Tracked!';
-        confirmationMessage =
-            'Added an incoming Freelance payment of $_currency${amount.toStringAsFixed(2)} scheduled for ${_formatDate(scheduledDate)}.';
-      } else if (category == 'Business') {
-        confirmationTitle = '📅 Pending Business Order Logged!';
-        confirmationMessage =
-            'Anticipating $_currency${amount.toStringAsFixed(2)} in Business income ${_formatDate(scheduledDate)}.';
-      } else if (category == 'Salary') {
-        confirmationTitle = '📅 Payday Reminder Set!';
-        confirmationMessage =
-            'Added a future Salary entry of $_currency${amount.toStringAsFixed(2)} expected on ${_formatDate(scheduledDate)}.';
       } else {
-        confirmationTitle = '📅 Future Event Scheduled!';
-        confirmationMessage =
-            'Added a future $category entry of $_currency${amount.toStringAsFixed(2)} for ${_formatDate(scheduledDate)}.';
-      }
+        // Incoming: show current balance, and projected balance after execution
+        final accLine = detectedAcc != null
+            ? '${_accountLabel(detectedAcc)} (Current Balance: $_currency${_formatNumberWithCommas(detectedAcc.balance.toStringAsFixed(2))})'
+            : 'Account not specified';
+        final projectedBalance = detectedAcc != null
+            ? _formatNumberWithCommas((detectedAcc.balance + amount).toStringAsFixed(2))
+            : 'N/A';
+        final frequencyNote = frequency == 'Once' ? '' : '\nFrequency: $frequency';
 
-      return BaiReply(
-        '$confirmationTitle\n\n$confirmationMessage\n\n💡 This will not affect your current balance until the scheduled date.',
-        quickReplies: const [
-          "What is my total balance?",
-          "Show upcoming events",
-        ],
-        highlightColor: 'green',
-      );
+        return BaiReply(
+          'Income Scheduled!\n\n$cleanTitle                                   +$_currency$amountStr\n$accLine\nScheduled for: $dateStr$frequencyNote\n\nNew Balance after execution: $_currency$projectedBalance',
+          quickReplies: const [
+            "What is my total balance?",
+            "Show upcoming events",
+          ],
+          highlightColor: 'green',
+        );
+      }
     } catch (e) {
       return BaiReply(
         "⚠️ Failed to schedule future event: $e",
@@ -2217,10 +2400,30 @@ class BaiAssistant {
       );
     }
 
+    // Remove time/date words
+    final timeWords = [
+      'yesterday',
+      'today',
+      'tomorrow',
+      'ago',
+      'now',
+      'earlier',
+      'later',
+      'last',
+      'next',
+      'recently'
+    ];
+    for (final timeWord in timeWords) {
+      title = title.replaceAll(
+        RegExp(r'\b' + timeWord + r'\b', caseSensitive: false),
+        '',
+      );
+    }
+
     // Remove currency symbols and amounts
     title = title.replaceAll(RegExp(r'[₱$€£¥]'), '');
     title = title.replaceAll(
-      RegExp(r'\b\d+(?:,\d+)*(?:\.\d+)?\s*k?\b', caseSensitive: false),
+      RegExp(r'\b\d+(?:,\d+)*(?:\.\d+)?\s*[km]?\b', caseSensitive: false),
       '',
     );
 

@@ -45,18 +45,23 @@ class _BaiChatPageState extends State<BaiChatPage> {
   void initState() {
     super.initState();
     if (_savedMessages.isEmpty) {
-      final g = _assistant.greeting;
-      setState(() {
-        _savedMessages.add(_BaiChatMessage(text: g.text, isUser: false));
-        if (g.extraTexts != null) {
-          for (var t in g.extraTexts!) {
-            _savedMessages.add(_BaiChatMessage(text: t, isUser: false));
-          }
-        }
-        _savedQuickReplies = g.quickReplies;
-      });
-      _scrollToBottom();
+      _loadGreeting();
     }
+  }
+
+  Future<void> _loadGreeting() async {
+    final g = await _assistant.getAsyncGreeting();
+    if (!mounted) return;
+    setState(() {
+      _savedMessages.add(_BaiChatMessage(text: g.text, isUser: false));
+      if (g.extraTexts != null) {
+        for (var t in g.extraTexts!) {
+          _savedMessages.add(_BaiChatMessage(text: t, isUser: false));
+        }
+      }
+      _savedQuickReplies = g.quickReplies;
+    });
+    _scrollToBottom();
   }
 
   @override
