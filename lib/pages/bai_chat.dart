@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../config/app_theme.dart';
+import '../navigation/app_routes.dart';
 import '../services/bai_assistant.dart';
 import '../widgets/app_drawer.dart';
 import '../pages/cart.dart';
@@ -113,7 +114,10 @@ class _BaiChatPageState extends State<BaiChatPage> {
       if (reply.navigateTo == 'cart_detail' && mounted) {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const CartDetailPage()),
+          MaterialPageRoute(
+            settings: const RouteSettings(name: kCartDetailRouteName),
+            builder: (_) => const CartDetailPage(),
+          ),
         );
       }
     });

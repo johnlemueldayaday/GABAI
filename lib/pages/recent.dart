@@ -6,6 +6,7 @@ import 'package:gabay/pages/cart.dart' show CartDetailPage;
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/pages/price_comparison.dart';
 import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/navigation/app_routes.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
@@ -591,6 +592,9 @@ class _RecentPageState extends State<RecentPage> {
                               Navigator.pushReplacement(
                                 context,
                                 MaterialPageRoute(
+                                  settings: const RouteSettings(
+                                    name: kCartDetailRouteName,
+                                  ),
                                   builder: (_) => const CartDetailPage(),
                                 ),
                               );

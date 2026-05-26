@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/navigation/app_routes.dart';
 import 'package:gabay/pages/dashboard.dart';
 import 'package:gabay/pages/onboarding.dart';
 
@@ -46,6 +47,7 @@ class _SplashScreenState extends State<SplashScreen>
       if (mounted) {
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
+            settings: const RouteSettings(name: kDashboardRouteName),
             pageBuilder: (context, animation, secondaryAnimation) =>
                 const OnboardingGate(child: DashboardPage()),
             transitionsBuilder:

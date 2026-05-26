@@ -10,6 +10,7 @@ import '../pages/bills.dart';
 import '../pages/wallet.dart';
 import '../pages/bai_chat.dart';
 import '../config/app_theme.dart';
+import '../navigation/app_routes.dart';
 import 'bai_floating_bubble.dart';
 
 class AppDrawer extends StatelessWidget {
@@ -94,7 +95,10 @@ class AppDrawer extends StatelessWidget {
               if (currentPage != 'Cart') {
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (_) => const CartPage()),
+                  MaterialPageRoute(
+                    settings: const RouteSettings(name: kCartRouteName),
+                    builder: (_) => const CartPage(),
+                  ),
                 );
               }
             },
@@ -177,7 +181,10 @@ class AppDrawer extends StatelessWidget {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const SettingsPage()),
+                MaterialPageRoute(
+                  settings: const RouteSettings(name: kSettingsRouteName),
+                  builder: (_) => const SettingsPage(),
+                ),
               );
             },
           ),

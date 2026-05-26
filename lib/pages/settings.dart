@@ -8,6 +8,7 @@ import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/services/future_event_storage.dart';
 import 'package:gabay/pages/splash_screen.dart';
+import 'package:gabay/navigation/app_routes.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -156,6 +157,9 @@ class _SettingsPageState extends State<SettingsPage> {
                           Navigator.pushAndRemoveUntil(
                             context,
                             MaterialPageRoute(
+                              settings: const RouteSettings(
+                                name: kSplashRouteName,
+                              ),
                               builder: (_) => const SplashScreen(),
                             ),
                             (route) => false,
@@ -174,7 +178,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   _InfoTile(label: 'App Name', value: 'GABAY'),
                   _Divider(),
-                  _InfoTile(label: 'Version', value: '1.0.0'),
+                  _InfoTile(label: 'Version', value: '1.42'),
                 ],
               ),
               const SizedBox(height: 8),

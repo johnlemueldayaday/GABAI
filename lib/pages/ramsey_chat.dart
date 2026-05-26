@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/navigation/app_routes.dart';
 import 'package:gabay/services/ramsey_cooking_assistant.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/widgets/app_drawer.dart';
@@ -139,7 +140,10 @@ class _RamseyChatPageState extends State<RamseyChatPage> {
       if (reply.navigateTo == 'cart_detail' && mounted) {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => const CartDetailPage()),
+          MaterialPageRoute(
+            settings: const RouteSettings(name: kCartDetailRouteName),
+            builder: (_) => const CartDetailPage(),
+          ),
         );
       }
     });

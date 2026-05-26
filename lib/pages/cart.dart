@@ -10,6 +10,7 @@ import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/account_icon.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/widgets/bai_floating_bubble.dart';
+import 'package:gabay/navigation/app_routes.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/settings_service.dart';
@@ -59,7 +60,10 @@ class GroceryApp extends StatelessWidget {
               child: child ?? const SizedBox.shrink(),
             );
           },
-          home: const SplashScreen(),
+          initialRoute: kSplashRouteName,
+          routes: {
+            kSplashRouteName: (_) => const SplashScreen(),
+          },
         );
       },
     );
@@ -133,7 +137,10 @@ class _CartPageState extends State<CartPage> {
     GroceryStorage.saveAll();
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const CartDetailPage()),
+      MaterialPageRoute(
+        settings: const RouteSettings(name: kCartDetailRouteName),
+        builder: (_) => const CartDetailPage(),
+      ),
     ).then((_) {
       if (mounted) setState(() {});
     });
@@ -158,7 +165,10 @@ class _CartPageState extends State<CartPage> {
     if (!mounted) return;
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const CartDetailPage()),
+      MaterialPageRoute(
+        settings: const RouteSettings(name: kCartDetailRouteName),
+        builder: (_) => const CartDetailPage(),
+      ),
     ).then((_) {
       if (mounted) setState(() {});
     });
