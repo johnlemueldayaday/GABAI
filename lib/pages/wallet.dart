@@ -15,6 +15,62 @@ class WalletPage extends StatefulWidget {
   State<WalletPage> createState() => _WalletPageState();
 }
 
+class _WalletChoiceButton extends StatelessWidget {
+  final WalletOption wallet;
+  final bool isAdded;
+  final VoidCallback? onTap;
+
+  const _WalletChoiceButton({
+    required this.wallet,
+    required this.isAdded,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: isAdded ? 0.45 : 1,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          width: 78,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: BoxDecoration(
+            color: kBackground,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isAdded ? kBorder : Color(wallet.colorValue),
+              width: isAdded ? 1 : 1.5,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              AccountIconImage(
+                name: wallet.name,
+                icon: wallet.assetPath,
+                size: 40,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                isAdded ? 'Added' : wallet.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: isAdded ? kMuted : kTextCharcoal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _WalletPageState extends State<WalletPage> {
   List<Account> _accounts = [];
   List<FinanceTransaction> _transactions = [];
@@ -41,6 +97,205 @@ class _WalletPageState extends State<WalletPage> {
     }
   }
 
+  Future<void> _addWallet(WalletOption wallet) async {
+    final alreadyExists = _accounts.any(
+      (account) => account.name.toLowerCase() == wallet.name.toLowerCase(),
+    );
+    if (alreadyExists) return;
+
+    final account = Account(
+      id: '${DateTime.now().microsecondsSinceEpoch}${wallet.name}',
+      name: wallet.name,
+      type: wallet.category,
+      balance: 0.0,
+      icon: wallet.assetPath,
+      colorValue: wallet.colorValue,
+    );
+
+    await FinanceStorage.addAccount(account);
+    await _loadData();
+  }
+
+  void _showAddWalletSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(
+          color: kCardBg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: EdgeInsets.fromLTRB(
+          24,
+          20,
+          24,
+          24 + MediaQuery.of(context).viewInsets.bottom,
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Add Wallet',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: kTextCharcoal,
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close, color: kMuted),
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Choose the wallet you want to add.',
+                style: GoogleFonts.plusJakartaSans(
+                  color: kMuted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 18),
+              ...walletOptionGroups.map((group) {
+                final label = group['label'] as String;
+                final options = group['options'] as List<String>;
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: kMuted,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: options.map((name) {
+                          final wallet = walletOptionByName(name);
+                          final isAdded = _accounts.any(
+                            (account) =>
+                                account.name.toLowerCase() ==
+                                wallet.name.toLowerCase(),
+                          );
+
+                          return _WalletChoiceButton(
+                            wallet: wallet,
+                            isAdded: isAdded,
+                            onTap: isAdded
+                                ? null
+                                : () async {
+                                    await _addWallet(wallet);
+                                    if (context.mounted) {
+                                      Navigator.pop(context);
+                                    }
+                                  },
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _undoTransaction(FinanceTransaction transaction) async {
+    final deleted = await FinanceStorage.deleteTransaction(transaction.id);
+    if (!mounted) return;
+
+    if (deleted == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaction was already removed.')),
+      );
+      await _loadData();
+      return;
+    }
+
+    await _loadData();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Undid ${transaction.description.isNotEmpty ? transaction.description : transaction.category}.',
+        ),
+      ),
+    );
+  }
+
+  Future<bool> _confirmUndoTransaction(FinanceTransaction transaction) async {
+    final title = transaction.description.isNotEmpty
+        ? transaction.description
+        : transaction.category;
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Undo transaction?'),
+            content: Text('This will remove "$title" and restore the balance.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Undo'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Widget _swipeUndoBackground() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.22)),
+      ),
+      alignment: Alignment.centerRight,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.undo_rounded, color: Colors.red, size: 20),
+          const SizedBox(height: 2),
+          Text(
+            'Undo',
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.red,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ignore: unused_element
   void _showAddAccountSheet() {
     final nameCtrl = TextEditingController();
     String selectedType = accountTypes.first;
@@ -293,7 +548,7 @@ class _WalletPageState extends State<WalletPage> {
         actions: [
           IconButton(
             icon: Icon(Icons.add_card_rounded, color: kPrimary),
-            onPressed: _showAddAccountSheet,
+            onPressed: _showAddWalletSheet,
           ),
         ],
       ),
@@ -316,16 +571,6 @@ class _WalletPageState extends State<WalletPage> {
                           fontSize: 16,
                           fontWeight: FontWeight.w800,
                           color: kTextCharcoal,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _showAddAccountSheet,
-                        child: Text(
-                          '+ Add New',
-                          style: TextStyle(
-                            color: kPrimary,
-                            fontWeight: FontWeight.bold,
-                          ),
                         ),
                       ),
                     ],
@@ -466,91 +711,123 @@ class _WalletPageState extends State<WalletPage> {
                             _transactions[_transactions.length - 1 - index];
                         final isExpense = txn.isExpense;
                         final color = isExpense ? Colors.red : kPrimary;
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 12),
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: kCardBg,
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: kBorder),
-                            boxShadow: [kShadowSoft],
+                        final account = _accounts.firstWhere(
+                          (account) => account.id == txn.accountId,
+                          orElse: () => Account(
+                            id: txn.accountId,
+                            name: txn.accountName,
+                            type: '',
                           ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: color.withValues(alpha: 0.1),
-                                  shape: BoxShape.circle,
+                        );
+                        final title = txn.description.isNotEmpty
+                            ? txn.description
+                            : txn.category;
+                        final previousBalance = txn.previousBalance;
+
+                        return Dismissible(
+                          key: ValueKey('wallet_transaction_undo_${txn.id}'),
+                          direction: DismissDirection.endToStart,
+                          background: _swipeUndoBackground(),
+                          confirmDismiss: (_) async {
+                            final confirmed = await _confirmUndoTransaction(
+                              txn,
+                            );
+                            if (confirmed) {
+                              await _undoTransaction(txn);
+                            }
+                            return false;
+                          },
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: kCardBg,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: kBorder),
+                              boxShadow: [kShadowSoft],
+                            ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: color.withValues(alpha: 0.1),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Icon(
+                                    isExpense
+                                        ? Icons.arrow_outward_rounded
+                                        : Icons.south_west_rounded,
+                                    color: color,
+                                    size: 18,
+                                  ),
                                 ),
-                                child: Icon(
-                                  isExpense
-                                      ? Icons.arrow_outward_rounded
-                                      : Icons.south_west_rounded,
-                                  color: color,
-                                  size: 18,
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontWeight: FontWeight.bold,
+                                          color: kTextCharcoal,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        DateFormat(
+                                          'MMM d, yyyy',
+                                        ).format(txn.date),
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 11,
+                                          color: kMuted,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      txn.description.isNotEmpty
-                                          ? txn.description
-                                          : txn.category,
+                                      '${isExpense ? "-" : "+"}$_currency${NumberFormat('#,##0').format(txn.amount)}',
                                       style: GoogleFonts.plusJakartaSans(
-                                        fontWeight: FontWeight.bold,
-                                        color: kTextCharcoal,
+                                        fontWeight: FontWeight.w800,
+                                        color: color,
+                                        fontSize: 15,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
+                                    const SizedBox(height: 6),
                                     Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          txn.accountName,
-                                          style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 11,
-                                            color: kMuted,
-                                            fontWeight: FontWeight.w600,
+                                        if (previousBalance != null) ...[
+                                          Text(
+                                            '$_currency${NumberFormat('#,##0').format(previousBalance)}',
+                                            style: GoogleFonts.plusJakartaSans(
+                                              fontSize: 10,
+                                              color: kMuted,
+                                              fontWeight: FontWeight.w700,
+                                            ),
                                           ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          width: 3,
-                                          height: 3,
-                                          decoration: BoxDecoration(
-                                            color: kMuted,
-                                            shape: BoxShape.circle,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          DateFormat(
-                                            'MMM d, h:mm a',
-                                          ).format(txn.date),
-                                          style: GoogleFonts.plusJakartaSans(
-                                            fontSize: 11,
-                                            color: kMuted,
-                                            fontWeight: FontWeight.w600,
-                                          ),
+                                          const SizedBox(width: 6),
+                                        ],
+                                        AccountIconImage(
+                                          name: account.name,
+                                          icon: account.icon,
+                                          size: 16,
                                         ),
                                       ],
                                     ),
                                   ],
                                 ),
-                              ),
-                              Text(
-                                '${isExpense ? "-" : "+"}$_currency${txn.amount.toStringAsFixed(2)}',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontWeight: FontWeight.w800,
-                                  color: color,
-                                  fontSize: 15,
-                                ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         );
                       },

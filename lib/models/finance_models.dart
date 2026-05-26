@@ -8,6 +8,78 @@ const List<String> accountTypes = [
   'Savings',
 ];
 
+class WalletOption {
+  final String name;
+  final String category;
+  final String assetPath;
+  final int colorValue;
+
+  const WalletOption({
+    required this.name,
+    required this.category,
+    required this.assetPath,
+    required this.colorValue,
+  });
+}
+
+const List<WalletOption> walletOptions = [
+  WalletOption(
+    name: 'GCash',
+    category: 'E-Wallet',
+    assetPath: 'assets/images/gcash.png',
+    colorValue: 0xFF007AFF,
+  ),
+  WalletOption(
+    name: 'Maya',
+    category: 'E-Wallet',
+    assetPath: 'assets/images/paymaya.png',
+    colorValue: 0xFF6C22A6,
+  ),
+  WalletOption(
+    name: 'Cash',
+    category: 'Cash',
+    assetPath: 'assets/images/cash.png',
+    colorValue: 0xFF10B981,
+  ),
+  WalletOption(
+    name: 'BDO',
+    category: 'Bank',
+    assetPath: 'assets/images/bdo.png',
+    colorValue: 0xFF1D4ED8,
+  ),
+  WalletOption(
+    name: 'Landbank',
+    category: 'Bank',
+    assetPath: 'assets/images/landbank.png',
+    colorValue: 0xFF15803D,
+  ),
+  WalletOption(
+    name: 'PSBank',
+    category: 'Bank',
+    assetPath: 'assets/images/psbank.png',
+    colorValue: 0xFFB91C1C,
+  ),
+];
+
+const List<Map<String, Object>> walletOptionGroups = [
+  {
+    'label': 'E-Wallet',
+    'options': ['GCash', 'Maya'],
+  },
+  {
+    'label': 'Cash',
+    'options': ['Cash'],
+  },
+  {
+    'label': 'Bank',
+    'options': ['BDO', 'Landbank', 'PSBank'],
+  },
+];
+
+WalletOption walletOptionByName(String name) {
+  return walletOptions.firstWhere((wallet) => wallet.name == name);
+}
+
 /// Predefined transaction categories
 const List<String> expenseCategories = [
   'Food',
@@ -108,6 +180,7 @@ class FinanceTransaction {
   final String category;
   final String description;
   final DateTime date;
+  final double? previousBalance;
 
   FinanceTransaction({
     required this.id,
@@ -118,6 +191,7 @@ class FinanceTransaction {
     required this.category,
     this.description = '',
     DateTime? date,
+    this.previousBalance,
   }) : date = date ?? DateTime.now();
 
   FinanceTransaction copyWith({
@@ -129,6 +203,7 @@ class FinanceTransaction {
     String? category,
     String? description,
     DateTime? date,
+    double? previousBalance,
   }) {
     return FinanceTransaction(
       id: id ?? this.id,
@@ -139,6 +214,7 @@ class FinanceTransaction {
       category: category ?? this.category,
       description: description ?? this.description,
       date: date ?? this.date,
+      previousBalance: previousBalance ?? this.previousBalance,
     );
   }
 
@@ -151,6 +227,7 @@ class FinanceTransaction {
     'category': category,
     'description': description,
     'date': date.toIso8601String(),
+    'previousBalance': previousBalance,
   };
 
   factory FinanceTransaction.fromJson(Map<String, dynamic> json) =>
@@ -163,6 +240,7 @@ class FinanceTransaction {
         category: json['category'],
         description: json['description'] ?? '',
         date: DateTime.parse(json['date']),
+        previousBalance: (json['previousBalance'] as num?)?.toDouble(),
       );
 
   /// Returns true if this is an income transaction

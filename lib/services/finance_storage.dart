@@ -132,7 +132,7 @@ class FinanceStorage {
 
     // 2. Save the transaction
     final transactions = await loadTransactions();
-    transactions.add(txn);
+    transactions.add(txn.copyWith(previousBalance: account.balance));
     await saveTransactions(transactions);
 
     // 3. Update the account balance
@@ -281,6 +281,31 @@ class FinanceStorage {
     }
 
     return lastTxn;
+  }
+
+  /// Delete a specific transaction and revert its account balance.
+  static Future<FinanceTransaction?> deleteTransaction(
+    String transactionId,
+  ) async {
+    final transactions = await loadTransactions();
+    final txnIndex = transactions.indexWhere((t) => t.id == transactionId);
+    if (txnIndex == -1) return null;
+
+    final txn = transactions.removeAt(txnIndex);
+    await saveTransactions(transactions);
+
+    final accounts = await loadAccounts();
+    final accountIndex = accounts.indexWhere((a) => a.id == txn.accountId);
+    if (accountIndex != -1) {
+      final account = accounts[accountIndex];
+      final newBalance = txn.isIncome
+          ? account.balance - txn.amount
+          : account.balance + txn.amount;
+      accounts[accountIndex] = account.copyWith(balance: newBalance);
+      await saveAccounts(accounts);
+    }
+
+    return txn;
   }
 
   /// Check if an account type should not allow negative balances.

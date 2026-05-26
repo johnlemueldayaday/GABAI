@@ -580,6 +580,29 @@ class _DashboardPageState extends State<DashboardPage> {
     return total;
   }
 
+  Future<void> _undoTransaction(FinanceTransaction transaction) async {
+    final deleted = await FinanceStorage.deleteTransaction(transaction.id);
+    if (!mounted) return;
+
+    if (deleted == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Transaction was already removed.')),
+      );
+      await _loadData();
+      return;
+    }
+
+    await _loadData();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          'Undid ${transaction.description.isNotEmpty ? transaction.description : transaction.category}.',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final recentLists = AppState.recentLists;
@@ -601,6 +624,7 @@ class _DashboardPageState extends State<DashboardPage> {
             transactions: _transactions.where((t) => t.isIncome).toList(),
             accounts: _accounts,
             isIncome: true,
+            onUndo: _undoTransaction,
           ),
         ],
       );
@@ -617,6 +641,7 @@ class _DashboardPageState extends State<DashboardPage> {
             transactions: _transactions.where((t) => t.isExpense).toList(),
             accounts: _accounts,
             isIncome: false,
+            onUndo: _undoTransaction,
           ),
         ],
       );
@@ -789,30 +814,31 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
             const SizedBox(height: 24),
 
-            // Stats Row
+            // Stats Row — VisionOS Glassmorphic Island
             Row(
               children: [
-                // Compact Bar Chart
+                // Animated 3D Bar Chart
                 Expanded(
-                  flex: 2,
                   child: Container(
-                    height: 120,
-                    padding: const EdgeInsets.all(12),
+                    height: 130,
+                    padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
                     decoration: BoxDecoration(
                       color: kCardBg,
                       borderRadius: BorderRadius.circular(20),
                       boxShadow: [kShadowSoft],
                     ),
-                    child: _MiniTrendChart(recentLists: recentLists),
+                    child: _GlassTrendChart(
+                      recentLists: recentLists,
+                      transactions: _transactions,
+                    ),
                   ),
                 ),
-                const SizedBox(width: 16),
-                // Spent Card
+                const SizedBox(width: 12),
+                // Spent Card — Glassmorphic Pill
                 Expanded(
-                  flex: 3,
                   child: Container(
-                    height: 120,
-                    padding: const EdgeInsets.all(16),
+                    height: 130,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
                     decoration: BoxDecoration(
                       color: kCardBg,
                       borderRadius: BorderRadius.circular(20),
@@ -822,50 +848,36 @@ class _DashboardPageState extends State<DashboardPage> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Spent $_timeFilter',
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600,
-                                color: kMuted,
-                              ),
-                            ),
-                            PopupMenuButton<String>(
-                              icon: Icon(
-                                Icons.keyboard_arrow_down_rounded,
-                                color: kMuted,
-                                size: 20,
-                              ),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onSelected: (val) =>
-                                  setState(() => _timeFilter = val),
-                              itemBuilder: (context) => ['Day', 'Week', 'Month']
-                                  .map(
-                                    (f) => PopupMenuItem(
-                                      value: f,
-                                      child: Text(
-                                        f,
-                                        style: GoogleFonts.plusJakartaSans(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                        ),
-                                      ),
-                                    ),
-                                  )
-                                  .toList(),
-                            ),
-                          ],
+                        _DynamicIslandFilter(
+                          selectedValue: _timeFilter,
+                          onChanged: (val) =>
+                              setState(() => _timeFilter = val),
                         ),
-                        Text(
-                          '${SettingsService().currency}${_calculateSpent().toStringAsFixed(0)}',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 24,
-                            fontWeight: FontWeight.w800,
-                            color: kTextCharcoal,
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 400),
+                          transitionBuilder: (child, animation) {
+                            return FadeTransition(
+                              opacity: animation,
+                              child: SlideTransition(
+                                position: Tween<Offset>(
+                                  begin: const Offset(0, 0.15),
+                                  end: Offset.zero,
+                                ).animate(CurvedAnimation(
+                                  parent: animation,
+                                  curve: Curves.easeOut,
+                                )),
+                                child: child,
+                              ),
+                            );
+                          },
+                          child: Text(
+                            '${SettingsService().currency}${_calculateSpent().toStringAsFixed(0)}',
+                            key: ValueKey<String>('spent_$_timeFilter'),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              color: kTextCharcoal,
+                            ),
                           ),
                         ),
                       ],
@@ -895,19 +907,51 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-class _MiniTrendChart extends StatelessWidget {
+class _GlassTrendChart extends StatefulWidget {
   final List<GroceryList> recentLists;
-  const _MiniTrendChart({required this.recentLists});
+  final List<FinanceTransaction> transactions;
+  const _GlassTrendChart({
+    required this.recentLists,
+    required this.transactions,
+  });
+
+  @override
+  State<_GlassTrendChart> createState() => _GlassTrendChartState();
+}
+
+class _GlassTrendChartState extends State<_GlassTrendChart>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animCtrl;
+  late Animation<double> _barAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _animCtrl = AnimationController(
+      duration: const Duration(milliseconds: 1200),
+      vsync: this,
+    );
+    _barAnim = CurvedAnimation(
+      parent: _animCtrl,
+      curve: Curves.easeOutBack,
+    );
+    _animCtrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final sunday = now.subtract(Duration(days: now.weekday % 7));
     final startOfWeek = DateTime(sunday.year, sunday.month, sunday.day);
-
     final weeklyData = List.generate(7, (index) => 0.0);
 
-    for (final list in recentLists) {
+    for (final list in widget.recentLists) {
       final difference = list.date.difference(startOfWeek).inDays;
       if (difference >= 0 && difference < 7) {
         weeklyData[difference] += list.items.fold(
@@ -917,33 +961,246 @@ class _MiniTrendChart extends StatelessWidget {
       }
     }
 
-    final chartMax =
-        weeklyData.fold(0.0, (max, val) => val > max ? val : max) * 1.2;
-    if (chartMax == 0) {
-      return const Center(child: Icon(Icons.bar_chart, color: Colors.grey));
+    for (final txn in widget.transactions) {
+      if (!txn.isExpense) continue;
+      final difference = txn.date.difference(startOfWeek).inDays;
+      if (difference >= 0 && difference < 7) {
+        weeklyData[difference] += txn.amount;
+      }
     }
 
-    return BarChart(
-      BarChartData(
-        maxY: chartMax > 0 ? chartMax : 100,
-        titlesData: const FlTitlesData(show: false),
-        borderData: FlBorderData(show: false),
-        gridData: const FlGridData(show: false),
-        barTouchData: BarTouchData(enabled: false),
-        barGroups: List.generate(7, (i) {
-          final isToday = i == now.weekday % 7;
-          return BarChartGroupData(
-            x: i,
-            barRods: [
-              BarChartRodData(
-                toY: weeklyData[i],
-                color: isToday ? kPrimary : kPrimary.withValues(alpha: 0.3),
-                width: 8,
-                borderRadius: BorderRadius.circular(4),
+    final chartMax =
+        weeklyData.fold(0.0, (double max, val) => val > max ? val : max) * 1.3;
+    final dayLabels = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+    final todayIndex = now.weekday % 7;
+
+    if (chartMax == 0) {
+      return Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            Icons.bar_chart_rounded,
+            color: kMuted.withValues(alpha: 0.3),
+            size: 28,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'No data this week',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 10,
+              color: kMuted,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return AnimatedBuilder(
+      animation: _barAnim,
+      builder: (context, _) {
+        return BarChart(
+          BarChartData(
+            maxY: chartMax > 0 ? chartMax : 100,
+            titlesData: FlTitlesData(
+              show: true,
+              topTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
               ),
-            ],
-          );
-        }),
+              rightTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              leftTitles: const AxisTitles(
+                sideTitles: SideTitles(showTitles: false),
+              ),
+              bottomTitles: AxisTitles(
+                sideTitles: SideTitles(
+                  showTitles: true,
+                  reservedSize: 24,
+                  getTitlesWidget: (value, meta) {
+                    final i = value.toInt();
+                    if (i < 0 || i >= 7) return const SizedBox.shrink();
+                    final isToday = i == todayIndex;
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: isToday
+                            ? BoxDecoration(
+                                color: kPrimarySoft,
+                                shape: BoxShape.circle,
+                              )
+                            : null,
+                        child: Text(
+                          dayLabels[i],
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 9,
+                            fontWeight:
+                                isToday ? FontWeight.w800 : FontWeight.w600,
+                            color: isToday
+                                ? kPrimary
+                                : kMuted.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            borderData: FlBorderData(show: false),
+            gridData: const FlGridData(show: false),
+            barTouchData: BarTouchData(enabled: false),
+            barGroups: List.generate(7, (i) {
+              final isToday = i == todayIndex;
+              final hasData = weeklyData[i] > 0;
+              return BarChartGroupData(
+                x: i,
+                barRods: [
+                  BarChartRodData(
+                    toY: (hasData ? weeklyData[i] : chartMax * 0.04) *
+                        _barAnim.value,
+                    gradient: hasData
+                        ? LinearGradient(
+                            colors: isToday
+                                ? [
+                                    kPrimaryLight,
+                                    Color.lerp(kPrimaryLight, Colors.white, 0.45)!,
+                                    kPrimary,
+                                    Color.lerp(kPrimary, Colors.black, 0.15)!,
+                                  ]
+                                : [
+                                    kPrimary.withValues(alpha: 0.35),
+                                    kPrimary.withValues(alpha: 0.15),
+                                    kPrimary.withValues(alpha: 0.25),
+                                  ],
+                            begin: Alignment.centerLeft,
+                            end: Alignment.centerRight,
+                            stops: isToday
+                                ? const [0.0, 0.25, 0.75, 1.0]
+                                : const [0.0, 0.5, 1.0],
+                          )
+                        : null,
+                    color: hasData ? null : kMuted.withValues(alpha: 0.08),
+                    width: 10,
+                    borderRadius: BorderRadius.circular(5),
+                    backDrawRodData: BackgroundBarChartRodData(
+                      show: true,
+                      toY: chartMax,
+                      color: kMuted.withValues(alpha: 0.05),
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ),
+          duration: Duration.zero,
+        );
+      },
+    );
+  }
+}
+
+class _DynamicIslandFilter extends StatefulWidget {
+  final String selectedValue;
+  final ValueChanged<String> onChanged;
+
+  const _DynamicIslandFilter({
+    required this.selectedValue,
+    required this.onChanged,
+  });
+
+  @override
+  State<_DynamicIslandFilter> createState() => _DynamicIslandFilterState();
+}
+
+class _DynamicIslandFilterState extends State<_DynamicIslandFilter> {
+  bool _expanded = false;
+  double _scale = 1.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _scale = 0.95),
+      onTapUp: (_) => setState(() => _scale = 1.0),
+      onTapCancel: () => setState(() => _scale = 1.0),
+      onTap: () {
+        setState(() {
+          _expanded = !_expanded;
+        });
+      },
+      child: AnimatedScale(
+        scale: _scale,
+        duration: const Duration(milliseconds: 100),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 350),
+          curve: Curves.easeOutBack,
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+          decoration: BoxDecoration(
+            color: kPrimarySoft,
+            borderRadius: BorderRadius.circular(_expanded ? 12 : 20),
+            border: Border.all(
+              color: kPrimary.withValues(alpha: 0.15),
+            ),
+          ),
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            child: _expanded
+                ? Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: ['Day', 'Week', 'Month'].map((filter) {
+                      final isSelected = filter == widget.selectedValue;
+                      return GestureDetector(
+                        onTap: () {
+                          widget.onChanged(filter);
+                          setState(() {
+                            _expanded = false;
+                          });
+                        },
+                        child: Container(
+                          margin: const EdgeInsets.symmetric(horizontal: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected ? kPrimary : Colors.transparent,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            filter,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: isSelected ? Colors.white : kPrimary,
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'Spent ${widget.selectedValue}',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: kPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(
+                        Icons.keyboard_arrow_down_rounded,
+                        color: kPrimary,
+                        size: 14,
+                      ),
+                    ],
+                  ),
+          ),
+        ),
       ),
     );
   }
@@ -1066,11 +1323,84 @@ class _TransactionList extends StatelessWidget {
   final List<FinanceTransaction> transactions;
   final List<Account> accounts;
   final bool isIncome;
+  final Future<void> Function(FinanceTransaction) onUndo;
   const _TransactionList({
     required this.transactions,
     required this.accounts,
     required this.isIncome,
+    required this.onUndo,
   });
+
+  String _money(double value, {bool decimals = false}) {
+    final pattern = decimals ? '#,##0.00' : '#,##0';
+    return '${SettingsService().currency}${NumberFormat(pattern).format(value)}';
+  }
+
+  String _displayTitle(FinanceTransaction transaction) {
+    final description = transaction.description.trim();
+    final category = transaction.category.trim();
+    if (description.isEmpty) return category;
+    if (!isIncome || category.isEmpty || category == 'Others') {
+      return description;
+    }
+    if (description.toLowerCase().contains(category.toLowerCase())) {
+      return description;
+    }
+    return '$description $category';
+  }
+
+  Future<bool> _confirmUndo(
+    BuildContext context,
+    FinanceTransaction transaction,
+  ) async {
+    final title = _displayTitle(transaction);
+    return await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Undo transaction?'),
+            content: Text('This will remove "$title" and restore the balance.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Undo'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
+  Widget _swipeUndoBackground() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.red.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.red.withValues(alpha: 0.22)),
+      ),
+      alignment: Alignment.centerRight,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.undo_rounded, color: Colors.red, size: 20),
+          const SizedBox(height: 2),
+          Text(
+            'Undo',
+            style: GoogleFonts.plusJakartaSans(
+              color: Colors.red,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1106,76 +1436,104 @@ class _TransactionList extends StatelessWidget {
           ),
         );
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: kCardBg,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: kBorder.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: (isIncome ? kPrimary : Colors.red).withValues(
-                    alpha: 0.1,
+        return Dismissible(
+          key: ValueKey('transaction_undo_${t.id}'),
+          direction: DismissDirection.endToStart,
+          background: _swipeUndoBackground(),
+          confirmDismiss: (_) async {
+            final confirmed = await _confirmUndo(context, t);
+            if (confirmed) {
+              await onUndo(t);
+            }
+            return false;
+          },
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: kCardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: kBorder.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: (isIncome ? kPrimary : Colors.red).withValues(
+                      alpha: 0.1,
+                    ),
+                    shape: BoxShape.circle,
                   ),
-                  shape: BoxShape.circle,
+                  child: Icon(
+                    isIncome
+                        ? Icons.south_west_rounded
+                        : Icons.north_east_rounded,
+                    color: isIncome ? kPrimary : Colors.red,
+                    size: 20,
+                  ),
                 ),
-                child: Icon(
-                  isIncome
-                      ? Icons.south_west_rounded
-                      : Icons.north_east_rounded,
-                  color: isIncome ? kPrimary : Colors.red,
-                  size: 20,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _displayTitle(t),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.w700,
+                          color: kTextCharcoal,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        DateFormat('MMM d, yyyy').format(t.date),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: kMuted,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
-                      t.description.isNotEmpty ? t.description : t.category,
+                      '${isIncome ? '+' : '-'}${_money(t.amount)}',
                       style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w700,
-                        color: kTextCharcoal,
+                        fontWeight: FontWeight.w800,
+                        color: isIncome ? kPrimary : Colors.red,
                       ),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      DateFormat('MMM d, yyyy').format(t.date),
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: kMuted,
-                      ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (t.previousBalance != null) ...[
+                          Text(
+                            _money(t.previousBalance!),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: kMuted,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        AccountIconImage(
+                          name: account.name,
+                          icon: account.icon,
+                          size: 16,
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    '${isIncome ? '+' : '-'}${SettingsService().currency}${t.amount.toStringAsFixed(0)}',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.w800,
-                      color: isIncome ? kPrimary : Colors.red,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  AccountIconImage(
-                    name: account.name,
-                    icon: account.icon,
-                    size: 16,
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         );
       }).toList(),

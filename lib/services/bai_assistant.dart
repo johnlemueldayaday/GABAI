@@ -393,7 +393,7 @@ class BaiAssistant {
 
       _resetState();
       return BaiReply(
-        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
+        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -485,7 +485,7 @@ class BaiAssistant {
 
       _resetState();
       return BaiReply(
-        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
+        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -625,7 +625,7 @@ class BaiAssistant {
 
       _resetState();
       return BaiReply(
-        "${isOutgoing ? 'Expense' : 'Income'} logged!\n\n${event.description}                                      ${isOutgoing ? '-' : '+'}$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
+        "${isOutgoing ? 'Expense' : 'Income'} logged!\n\n${event.description}                                      ${isOutgoing ? '-' : '+'}$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -685,7 +685,7 @@ class BaiAssistant {
         amount: amount,
       );
       return BaiReply(
-        "✅ Transfer Successful!\n\n• Moved $_currency${amount.toStringAsFixed(2)} from ${_accountLabel(from)} to ${_accountLabel(to)}.",
+        "✅ Transfer Successful!\n\nMoved $_currency${amount.toStringAsFixed(2)} from ${_accountLabel(from)} to ${_accountLabel(to)}.",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -721,7 +721,7 @@ class BaiAssistant {
         final category = _categorizeExpense(fragmentItem);
         return BaiReply(
           "How much was ${_titleCase(fragmentItem)}?\n\n"
-          "${_accountLabel(acc!)}\n"
+          "${_accountLabel(acc)}\n"
           "Category: $category",
           quickReplies: const ["Cancel"],
         );
@@ -731,7 +731,9 @@ class BaiAssistant {
 
     // Capture the raw amount string matched from text for description cleaning
     final amountStr =
-        RegExp(r'(\d+(?:,\d{3})*(?:\.\d+)?)\s*[km]?\b').firstMatch(n)?.group(0) ??
+        RegExp(
+          r'(\d+(?:,\d{3})*(?:\.\d+)?)\s*[km]?\b',
+        ).firstMatch(n)?.group(0) ??
         amount.toStringAsFixed(2);
 
     // Clean description using _cleanDescription
@@ -785,6 +787,19 @@ class BaiAssistant {
         '',
       );
     }
+    if (acc != null) {
+      cleanedDesc = cleanedDesc.replaceAll(
+        RegExp(RegExp.escape(acc.name), caseSensitive: false),
+        '',
+      );
+    }
+    cleanedDesc = cleanedDesc.replaceAll(
+      RegExp(
+        r'\b(?:gcash|maya|paymaya|cash|bdo|landbank|psbank|bank|wallet|account)\b',
+        caseSensitive: false,
+      ),
+      '',
+    );
     // Clean double spaces and dangling prepositions
     cleanedDesc = cleanedDesc.replaceAll(RegExp(r'\s+'), ' ').trim();
     cleanedDesc = cleanedDesc.replaceFirst(
@@ -852,7 +867,7 @@ class BaiAssistant {
       );
 
       return BaiReply(
-        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n New Balance: $_currency$newBalanceStr",
+        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -1099,11 +1114,17 @@ class BaiAssistant {
       cleanedDesc = cleanedDesc[0].toUpperCase() + cleanedDesc.substring(1);
     }
 
+    final pendingCategory = _categorizeIncome('$n $cleanedDesc');
+    final pendingEntity = _extractEntity(n);
+
     // If no account was detected, ask the user!
     if (acc == null) {
       _pendingIncomeAmount = amount;
-      _pendingIncomeDescription = cleanedDesc;
-      _pendingIncomeCategory = _categorizeIncome(cleanedDesc);
+      _pendingIncomeDescription = pendingCategory == 'Gift' &&
+              pendingEntity.isNotEmpty
+          ? '$pendingEntity $pendingCategory'
+          : cleanedDesc;
+      _pendingIncomeCategory = pendingCategory;
       _step = BaiStep.awaitingIncomeAccount;
 
       final accountNames = accounts.map((a) => a.name).join(', ');
@@ -1112,8 +1133,8 @@ class BaiAssistant {
       );
     }
 
-    final category = _categorizeIncome(cleanedDesc);
-    final entity = _extractEntity(n);
+    final category = pendingCategory;
+    final entity = pendingEntity;
 
     // Format description with entity if detected
     String formattedDesc = cleanedDesc;
@@ -1123,6 +1144,8 @@ class BaiAssistant {
       } else if (_isAllowance(n)) {
         formattedDesc = '$entity ($category)';
       } else if (_isPassiveIncome(n)) {
+        formattedDesc = '$entity $category';
+      } else if (category == 'Gift') {
         formattedDesc = '$entity $category';
       } else {
         formattedDesc = entity.isNotEmpty
@@ -1155,7 +1178,7 @@ class BaiAssistant {
       );
 
       return BaiReply(
-        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\n• New Balance: $_currency$newBalanceStr",
+        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -1186,7 +1209,7 @@ class BaiAssistant {
       final lines = accounts
           .map(
             (a) =>
-                "• ${_accountLabel(a)}: $_currency${a.balance.toStringAsFixed(2)}",
+                "${_accountLabel(a)}: $_currency${a.balance.toStringAsFixed(2)}",
           )
           .toList();
       return BaiReply(
@@ -1205,7 +1228,7 @@ class BaiAssistant {
           n == 'check $name balance' ||
           (n.contains('how much') && n.contains(name))) {
         return BaiReply(
-          "• ${_accountLabel(a)} balance: $_currency${a.balance.toStringAsFixed(2)}",
+          "${_accountLabel(a)} balance: $_currency${a.balance.toStringAsFixed(2)}",
           quickReplies: const ["What is my total balance?"],
         );
       }
@@ -1349,7 +1372,7 @@ class BaiAssistant {
           : '-$_currency${difference.abs().toStringAsFixed(2)}';
 
       return BaiReply(
-        "✅ Corrected!\n\n• Updated $type from $_currency${oldAmount.toStringAsFixed(2)} to $_currency${newAmount.toStringAsFixed(2)}\n• Adjustment: $diffText\n• Account: ${account.name}",
+        "✅ Corrected!\n\nUpdated $type from $_currency${oldAmount.toStringAsFixed(2)} to $_currency${newAmount.toStringAsFixed(2)}\nAdjustment: $diffText\nAccount: ${account.name}",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -1537,6 +1560,9 @@ class BaiAssistant {
 
   String _categorizeIncome(String desc) {
     final l = desc.toLowerCase();
+    if (_matchAny(l, ['gave me', 'gift', 'regalo'])) {
+      return 'Gift';
+    }
     if (_matchAny(l, ['salary', 'sweldo', 'paycheck'])) {
       return 'Salary';
     }
@@ -1745,6 +1771,12 @@ class BaiAssistant {
     String desc = text;
     // Remove the amount
     desc = desc.replaceFirst(amountStr, '');
+    desc = desc.replaceFirst(
+      RegExp(
+        r'\b' + RegExp.escape(amountStr.replaceFirst(RegExp(r'\.0$'), '')) + r'\b',
+      ),
+      '',
+    );
     // Remove the account match suffix if provided
     if (accMatchText != null && accMatchText.isNotEmpty) {
       desc = desc.replaceFirst(accMatchText, '');
@@ -1942,7 +1974,7 @@ class BaiAssistant {
   // ═══════════════════════════════════════════════
 
   bool _isFutureTense(String text) {
-    final l = text.toLowerCase();
+    final l = _normalizeFutureText(text);
 
     // GUARD: if the text contains past-tense markers, it is NOT a future event
     final pastMarkers = [
@@ -1997,9 +2029,7 @@ class BaiAssistant {
     ];
     if (futureKeywords.any((k) => l.contains(k))) return true;
 
-    final hasFutureDateMarker = RegExp(
-      r'\b(?:on|this|next|by|due)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b',
-    ).hasMatch(l);
+    final hasFutureDateMarker = _hasFutureDateReference(l);
     final hasIncomingAction = RegExp(
       r'\b(?:pay(?:\s+me)?(?:\s+back)?|send|transfer|clear|drop|receive|expect|incoming|salary|allowance|remittance|freelance)\b',
     ).hasMatch(l);
@@ -2008,8 +2038,50 @@ class BaiAssistant {
     return hasFutureDateMarker && (hasIncomingAction || hasOutgoingObligation);
   }
 
+  String _normalizeFutureText(String text) {
+    var normalized = text.toLowerCase().trim();
+    final replacements = <String, String>{
+      'tomorow': 'tomorrow',
+      'tommorow': 'tomorrow',
+      'tmrw': 'tomorrow',
+      'tmr': 'tomorrow',
+      'electrcity': 'electricity',
+      'electricty': 'electricity',
+      'eletricity': 'electricity',
+      'elctricity': 'electricity',
+      'bil ': 'bill ',
+      'bll ': 'bill ',
+      'homecredit': 'home credit',
+      'net flix': 'netflix',
+      'netfilx': 'netflix',
+      'netfix': 'netflix',
+    };
+
+    for (final entry in replacements.entries) {
+      normalized = normalized.replaceAll(entry.key, entry.value);
+    }
+    return normalized.replaceAll(RegExp(r'\s+'), ' ');
+  }
+
+  bool _hasFutureDateReference(String text) {
+    final l = _normalizeFutureText(text);
+    return l.contains('tomorrow') ||
+        RegExp(r'\btom\b').hasMatch(l) ||
+        l.contains('next week') ||
+        l.contains('next month') ||
+        RegExp(
+          r'\b(?:on|this|next|by|due)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b',
+        ).hasMatch(l) ||
+        RegExp(
+          r'\bnext\s+month\s+(?:on\s+)?(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b',
+        ).hasMatch(l) ||
+        RegExp(
+          r'\b(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b',
+        ).hasMatch(l);
+  }
+
   DateTime? _parseDateFromText(String text) {
-    var l = text.toLowerCase();
+    var l = _normalizeFutureText(text);
     final now = DateTime.now();
 
     // Normalize 'tom' slang → 'tomorrow' (as a whole word, not part of other words)
@@ -2023,6 +2095,17 @@ class BaiAssistant {
     // Parse "next week"
     if (l.contains('next week')) {
       return now.add(const Duration(days: 7));
+    }
+
+    // Parse "next month 12th", "next month on the 12th", etc.
+    final nextMonthDayMatch = RegExp(
+      r'\bnext\s+month\s+(?:on\s+)?(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b',
+    ).firstMatch(l);
+    if (nextMonthDayMatch != null) {
+      final day = int.tryParse(nextMonthDayMatch.group(1)!);
+      if (day != null && day >= 1 && day <= 31) {
+        return DateTime(now.year, now.month + 1, day);
+      }
     }
 
     // Parse "this 30th", "on the 15th", "on 30th", etc.
@@ -2114,42 +2197,22 @@ class BaiAssistant {
     return 'Once';
   }
 
-  String _defaultFutureFrequency(String text, {required bool isOutgoing}) {
+  String _defaultFutureFrequency(String text) {
     final explicit = _parseFrequency(text);
     if (explicit != 'Once' ||
         RegExp(r'\b(?:once|one-time|one time)\b').hasMatch(text)) {
       return explicit;
     }
 
-    if (isOutgoing &&
-        _matchAny(text, [
-          'loan',
-          'bill',
-          'insurance',
-          'rent',
-          'subscription',
-          'meralco',
-          'electric',
-          'electricity',
-          'water',
-          'internet',
-          'wifi',
-          'credit card',
-          'home credit',
-        ])) {
-      return 'Monthly';
-    }
-
     return explicit;
   }
 
   bool _isFutureOutgoingObligation(String text) {
-    final l = text.toLowerCase();
-    final hasDueLanguage = RegExp(
-      r'\b(?:due|deadline|drops|coming up|on|this|by)\b',
-    ).hasMatch(l);
+    final l = _normalizeFutureText(text);
+    final hasDueLanguage = _hasFutureDateReference(l) ||
+        RegExp(r'\b(?:due|deadline|drops|coming up|by)\b').hasMatch(l);
     final hasObligation = RegExp(
-      r'\b(?:need(?:s)?\s+to\s+pay|have\s+(?:a\s+)?(?:loan|bill|debt)|has\s+(?:a\s+)?(?:loan|bill|debt)|loan|bill|debt|insurance|rent|meralco|electricity|water|internet|wifi|subscription|credit card|home credit|payment)\b',
+      r'\b(?:need(?:s)?\s+to\s+pay|have\s+(?:a\s+)?(?:loan|bill|debt)|has\s+(?:a\s+)?(?:loan|bill|debt)|loan|bill|debt|insurance|rent|meralco|electricity|electric|power|water|internet|wifi|subscription|netflix|spotify|credit card|home credit|payment)\b',
     ).hasMatch(l);
     final payOut =
         RegExp(r'\b(?:pay|paying|paid)\b').hasMatch(l) &&
@@ -2159,10 +2222,13 @@ class BaiAssistant {
   }
 
   double? _extractFutureAmount(String text) {
-    var scrubbed = text.toLowerCase();
+    var scrubbed = _normalizeFutureText(text);
 
     final datePatterns = [
       RegExp(r'\b(?:this|on|by|due)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b'),
+      RegExp(
+        r'\bnext\s+month\s+(?:on\s+)?(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b',
+      ),
       RegExp(r'\b\d{1,2}(?:st|nd|rd|th)?\s+(?:of\s+)?(?:the\s+)?month\b'),
       RegExp(
         r'\b(?:next|this)\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week|month)\b',
@@ -2275,7 +2341,7 @@ class BaiAssistant {
   }
 
   String _categorizeFutureOutgoingEvent(String text) {
-    final l = text.toLowerCase();
+    final l = _normalizeFutureText(text);
 
     if (_matchAny(l, ['car loan', 'auto loan', 'vehicle loan'])) {
       return 'Car Loan';
@@ -2293,7 +2359,7 @@ class BaiAssistant {
       return 'Meralco Bill';
     }
     if (_matchAny(l, ['electric', 'electricity', 'power'])) {
-      return 'Electricity';
+      return 'Electricity Bill';
     }
     if (_matchAny(l, ['water'])) {
       return 'Water';
@@ -2304,7 +2370,13 @@ class BaiAssistant {
     if (_matchAny(l, ['rent'])) {
       return 'Rent';
     }
-    if (_matchAny(l, ['subscription', 'netflix', 'spotify'])) {
+    if (_matchAny(l, ['netflix'])) {
+      return 'Netflix';
+    }
+    if (_matchAny(l, ['spotify'])) {
+      return 'Spotify';
+    }
+    if (_matchAny(l, ['subscription'])) {
       return 'Subscription';
     }
     if (_matchAny(l, ['credit card'])) {
@@ -2318,7 +2390,7 @@ class BaiAssistant {
   }
 
   String _cleanFutureOutgoingTitle(String text) {
-    var title = text.toLowerCase();
+    var title = _normalizeFutureText(text);
     final amount = _extractFutureAmount(text);
     title = _removeMappedAmountFromTitle(title, amount);
 
@@ -2366,15 +2438,16 @@ class BaiAssistant {
   }
 
   Future<BaiReply?> _tryFutureEvent(String n) async {
-    if (!_isFutureTense(n)) return null;
+    final normalized = _normalizeFutureText(n);
+    if (!_isFutureTense(normalized)) return null;
 
     // Extract the money amount after date markers have been removed, so
     // ordinals like "30th" never become the amount.
-    final amount = _extractFutureAmount(n);
+    final amount = _extractFutureAmount(normalized);
     if (amount == null || amount <= 0) return null;
 
     // Parse date
-    final scheduledDate = _parseDateFromText(n);
+    final scheduledDate = _parseDateFromText(normalized);
     if (scheduledDate == null) {
       return BaiReply(
         "⚠️ I couldn't determine the date. Please specify when this event will occur (e.g., 'this 30th', 'on Friday', 'on the 15th').",
@@ -2382,18 +2455,18 @@ class BaiAssistant {
       );
     }
 
-    final isOutgoing = _isFutureOutgoingObligation(n);
+    final isOutgoing = _isFutureOutgoingObligation(normalized);
 
     // Parse frequency
-    final frequency = _defaultFutureFrequency(n, isOutgoing: isOutgoing);
+    final frequency = _defaultFutureFrequency(normalized);
 
     // Parse category
     final category = isOutgoing
-        ? _categorizeFutureOutgoingEvent(n)
-        : _categorizeFutureEvent(n);
+        ? _categorizeFutureOutgoingEvent(normalized)
+        : _categorizeFutureEvent(normalized);
 
     // Extract entity
-    final entity = _extractEntity(n);
+    final entity = _extractEntity(normalized);
 
     // Create description
     String description = category;
@@ -2433,7 +2506,7 @@ class BaiAssistant {
 
       // Load accounts to show current balance of detected account
       final accounts = await FinanceStorage.loadAccounts();
-      final detectedAcc = _detectAccountFromText(n, accounts);
+      final detectedAcc = _detectAccountFromText(normalized, accounts);
       final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
       final dateStr = _formatDate(scheduledDate);
 
@@ -2441,16 +2514,18 @@ class BaiAssistant {
         // Outgoing: show current balance, and projected balance after execution
         final accLine = detectedAcc != null
             ? '${_accountLabel(detectedAcc)} (Current Balance: $_currency${_formatNumberWithCommas(detectedAcc.balance.toStringAsFixed(2))})'
-            : 'Wallet not specified';
+            : 'Account not specified';
         final projectedBalance = detectedAcc != null
-            ? '\n\nNew Balance after execution: $_currency${_formatNumberWithCommas((detectedAcc.balance - amount).toStringAsFixed(2))}'
-            : '';
+            ? _formatNumberWithCommas(
+                (detectedAcc.balance - amount).toStringAsFixed(2),
+              )
+            : 'N/A';
         final frequencyNote = frequency == 'Once'
             ? ''
             : '\nFrequency: $frequency';
 
         return BaiReply(
-          'Outgoing Payment Scheduled!\n\n$cleanTitle\n-$_currency$amountStr\n$accLine\nScheduled for: $dateStr$frequencyNote$projectedBalance',
+          '📅 Bill Scheduled!\n\n$cleanTitle                                      -$_currency$amountStr\n$accLine\nScheduled for: $dateStr$frequencyNote\n\nNew Balance after execution: $_currency$projectedBalance',
           quickReplies: const [
             "Show upcoming events",
             "What is my total balance?",
@@ -2785,25 +2860,25 @@ class BaiAssistant {
   BaiReply _helpReply() => const BaiReply(
     "Here's everything I can help you with:\n\n"
     "🍳 Cooking\n"
-    "• 'What can I cook for dinner?'\n"
-    "• 'Recipe for adobo'\n"
-    "• 'Suggest a weekly meal plan'\n\n"
+    "'What can I cook for dinner?'\n"
+    "'Recipe for adobo'\n"
+    "'Suggest a weekly meal plan'\n\n"
     "🛒 Grocery Tracking\n"
-    "• 'How much did I spend this week?'\n"
-    "• 'Show my budget'\n"
-    "• 'Show analytics'\n\n"
+    "'How much did I spend this week?'\n"
+    "'Show my budget'\n"
+    "'Show analytics'\n\n"
     "📋 Bills\n"
-    "• 'Do I have upcoming bills?'\n"
-    "• 'How much are my bills this week?'\n\n"
+    "'Do I have upcoming bills?'\n"
+    "'How much are my bills this week?'\n\n"
     "💰 Finance & Wallet\n"
-    "• 'What is my total balance?'\n"
-    "• 'Spent 150 on coffee from Cash'\n"
-    "• 'Received 25000 salary to Bank Account'\n"
-    "• 'Transfer 500 from Bank to GCash'\n\n"
+    "'What is my total balance?'\n"
+    "'Spent 150 on coffee from Cash'\n"
+    "'Received 25000 salary to Bank Account'\n"
+    "'Transfer 500 from Bank to GCash'\n\n"
     "📅 Future Events\n"
-    "• 'Lance is going to pay me back 500 this 30th'\n"
-    "• 'Expect my 25k salary to clear on the 15th'\n"
-    "• 'Client will transfer 15k freelance milestone on Friday'",
+    "'Lance is going to pay me back 500 this 30th'\n"
+    "'Expect my 25k salary to clear on the 15th'\n"
+    "'Client will transfer 15k freelance milestone on Friday'",
     quickReplies: [
       "What can I cook?",
       "What is my total balance?",

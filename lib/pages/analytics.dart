@@ -44,8 +44,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
   double get _totalIncome =>
       _transactions.where((t) => t.isIncome).fold(0.0, (s, t) => s + t.amount);
 
-  double get _totalExpenses =>
-      _transactions.where((t) => t.isExpense).fold(0.0, (s, t) => s + t.amount);
+  double get _totalExpenses {
+    final grocerySpent = AppState.recentLists.fold(
+      0.0,
+      (sum, list) =>
+          sum + list.items.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit)),
+    );
+    final txnsSpent = _transactions.where((t) => t.isExpense).fold(0.0, (s, t) => s + t.amount);
+    return grocerySpent + txnsSpent;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -580,6 +587,7 @@ class _BillsPieCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final billTotals = <String, double>{};
     for (final bill in bills) {
+      if (bill.isIncome) continue;
       final type = bill.type.trim().isEmpty ? 'Other' : bill.type.trim();
       billTotals[type] = (billTotals[type] ?? 0) + bill.amount;
     }
@@ -708,7 +716,7 @@ class _BillsPieCard extends StatelessWidget {
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 20),
                 child: Text(
-                  'No bills added yet',
+                  'No outgoing bills added yet',
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 14,
                     fontWeight: FontWeight.w500,
