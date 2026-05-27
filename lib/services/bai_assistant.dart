@@ -122,8 +122,9 @@ class BaiAssistant {
     if (dueEvents.isNotEmpty) {
       _pendingDueEvent = dueEvents.first;
       _step = BaiStep.awaitingDuePaymentAction;
+      final amountStr = _formatNumberWithCommas(_pendingDueEvent!.amount.toStringAsFixed(2));
       return BaiReply(
-        "You have a scheduled event due today: ${_pendingDueEvent!.description}.\nDid you pay your ${_pendingDueEvent!.description}?",
+        "You have a scheduled event due today:\n${_pendingDueEvent!.description} $_currency$amountStr\n\nDid you pay your ${_pendingDueEvent!.description}?",
         quickReplies: const ["Yes", "No"],
       );
     }
@@ -548,14 +549,16 @@ class BaiAssistant {
         n.contains('paid')) {
       _step = BaiStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
-      final accountNames = accounts.map((a) => a.name).join(', ');
+      final accountTokens = accounts.map((a) => _accountIconToken(a)).join(', ');
       return BaiReply(
-        "Awesome! What wallet are u using?\nAvailable: $accountNames",
+        "Awesome! What wallet are u using?\nAvailable: $accountTokens",
         quickReplies: accounts.map((a) => a.name).toList(),
       );
     } else if (n == 'no' ||
         n == 'n' ||
         n == 'not yet' ||
+        n.contains("haven't") ||
+        n.contains("havent") ||
         n == 'nope' ||
         n.contains('cancel') ||
         n.contains('reschedule')) {
@@ -610,8 +613,9 @@ class BaiAssistant {
         event.description.toLowerCase().contains('loan');
 
     if (isOutgoing && acc.balance < amount) {
+      final reqStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
       return BaiReply(
-        "⚠️ Insufficient funds in ${_accountLabel(acc)}. Choose another wallet:",
+        "⚠️ Insufficient funds in ${_accountLabel(acc)} (Has: $_currency${acc.balance}, Needs: $_currency$reqStr). Choose another wallet:",
         quickReplies: accounts
             .where((a) => a.balance >= amount)
             .map((a) => a.name)
@@ -639,18 +643,17 @@ class BaiAssistant {
       bills.removeWhere((b) => b.id == 'future_${event.id}');
       await BillStorage.saveBills(bills);
 
-      final prevBalanceStr = _formatNumberWithCommas(
-        acc.balance.toStringAsFixed(2),
-      );
       final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
       final newBalanceStr = _formatNumberWithCommas(
-        (isOutgoing ? acc.balance - amount : acc.balance + amount)
-            .toStringAsFixed(2),
+        (isOutgoing ? acc.balance - amount : acc.balance + amount).toStringAsFixed(2),
       );
+      final icon = _accountIconToken(acc);
+      final title = isOutgoing ? '💸 Paid Bill!' : '💵 Income Received!';
+      final sign = isOutgoing ? '-' : '+';
 
       _resetState();
       return BaiReply(
-        "${isOutgoing ? 'Expense' : 'Income'} logged!\n\n${event.description}                                      ${isOutgoing ? '-' : '+'}$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
+        "$title\n\n${event.description}                                      $sign$_currency$amountStr $icon\nRemaining balance :                    $_currency$newBalanceStr $icon",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",

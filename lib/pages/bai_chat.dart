@@ -383,13 +383,13 @@ class _BubbleWidget extends StatelessWidget {
       final line = lines[i];
       TextStyle lineStyle;
 
-      if (line.contains('Expense logged!')) {
+      if (line.contains('Expense logged!') || line.contains('Paid Bill!')) {
         lineStyle = GoogleFonts.plusJakartaSans(
           color: Colors.redAccent,
           fontWeight: FontWeight.w800,
           fontSize: 15,
         );
-      } else if (line.contains('Income logged!')) {
+      } else if (line.contains('Income logged!') || line.contains('Income Received!')) {
         lineStyle = GoogleFonts.plusJakartaSans(
           color: const Color(0xFF10B981),
           fontWeight: FontWeight.w800,
