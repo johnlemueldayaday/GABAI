@@ -11,7 +11,7 @@ import '../pages/wallet.dart';
 import '../pages/bai_chat.dart';
 import '../config/app_theme.dart';
 import '../navigation/app_routes.dart';
-import 'bai_floating_bubble.dart';
+
 
 class AppDrawer extends StatelessWidget {
   final String currentPage;

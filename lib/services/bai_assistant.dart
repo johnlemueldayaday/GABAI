@@ -77,6 +77,31 @@ class BaiAssistant {
     return hasAssetIcon ? account.name : '${account.icon} ${account.name}';
   }
 
+  /// Returns an inline icon token like `{{icon:assets/images/gcash.png}}`
+  /// that the chat bubble widget can parse and render as an inline image.
+  String _accountIconToken(Account account) {
+    final normalizedName = account.name.trim().toLowerCase();
+    const iconMap = {
+      'gcash': 'assets/images/gcash.png',
+      'maya': 'assets/images/paymaya.png',
+      'paymaya': 'assets/images/paymaya.png',
+      'cash': 'assets/images/cash.png',
+      'bdo': 'assets/images/bdo.png',
+      'landbank': 'assets/images/landbank.png',
+      'psbank': 'assets/images/psbank.png',
+    };
+    String? assetPath;
+    if (account.icon.startsWith('assets/images/')) {
+      assetPath = account.icon;
+    } else {
+      assetPath = iconMap[normalizedName];
+    }
+    if (assetPath != null) {
+      return '{{icon:$assetPath}}';
+    }
+    return '${account.icon} ${account.name}';
+  }
+
   BaiReply get greeting {
     final meal = RamseyCookingAssistant.detectMeal(
       DateTime.now(),
@@ -393,7 +418,7 @@ class BaiAssistant {
 
       _resetState();
       return BaiReply(
-        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
+        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -485,7 +510,7 @@ class BaiAssistant {
 
       _resetState();
       return BaiReply(
-        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
+        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -625,7 +650,7 @@ class BaiAssistant {
 
       _resetState();
       return BaiReply(
-        "${isOutgoing ? 'Expense' : 'Income'} logged!\n\n${event.description}                                      ${isOutgoing ? '-' : '+'}$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
+        "${isOutgoing ? 'Expense' : 'Income'} logged!\n\n${event.description}                                      ${isOutgoing ? '-' : '+'}$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -643,33 +668,82 @@ class BaiAssistant {
   // ═══════════════════════════════════════════════
 
   Future<BaiReply?> _tryTransfer(String n) async {
-    final reg = RegExp(
-      r'(?:transfer|move|send|transferred|moved|sent)\s+(\d+(?:\.\d+)?)\s*(?:pesos|php|₱)?\s*from\s+(.+?)\s+to\s+(.+)',
+    // Check if the message contains explicit transfer keywords
+    final explicitRegex = RegExp(
+      r'\b(transfer|move|send|transferred|moved|sent)\b',
+      caseSensitive: false,
     );
-    final m = reg.firstMatch(n);
-    if (m == null) return null;
+    final bool isExplicit = explicitRegex.hasMatch(n);
 
-    final amount = double.tryParse(m.group(1) ?? '');
-    final fromName = m.group(2)?.trim() ?? '';
-    final toName = m.group(3)?.trim() ?? '';
+    // 1. Check if "to" is present in the string as a separator
+    final toIndex = n.toLowerCase().indexOf(' to ');
+    if (toIndex == -1) return null;
+
+    // 2. Locate the amount anywhere in the string.
+    // Supports numbers with optional decimals and optional suffix like 'k' or 'm'.
+    // e.g. "500", "500.50", "500k", "500 cash"
+    final amountRegex = RegExp(
+      r'(\d+(?:\.\d+)?)\s*([km]?\b|[km]?(?=\D|$))',
+      caseSensitive: false,
+    );
+    final amountMatch = amountRegex.firstMatch(n);
+    if (amountMatch == null) return null;
+
+    final amountStr = amountMatch.group(1)!;
+    final suffixStr = amountMatch.group(2) ?? '';
+    double? amount = double.tryParse(amountStr);
     if (amount == null || amount <= 0) return null;
+
+    if (suffixStr.toLowerCase() == 'k') {
+      amount *= 1000;
+    } else if (suffixStr.toLowerCase() == 'm') {
+      amount *= 1000000;
+    }
+
+    // 3. Remove the parsed amount chunk from the string to get clean parts
+    final amountFullMatch = amountMatch.group(0)!;
+    final cleanedText = n.replaceFirst(amountFullMatch, ' ');
+
+    // 4. Split by the word "to"
+    final splitParts = cleanedText.split(RegExp(r'\s+to\s+', caseSensitive: false));
+    if (splitParts.length < 2) return null;
+
+    // The left part contains the source account name and optional noise
+    // The right part contains the destination account name and optional noise
+    String leftSide = splitParts[0].trim();
+    String rightSide = splitParts.sublist(1).join(' to ').trim();
+
+    // Remove noise words from leftSide and rightSide
+    final noiseWords = RegExp(
+      r'\b(transfer|move|send|transferred|moved|sent|from|pesos|php|₱)\b',
+      caseSensitive: false,
+    );
+    leftSide = leftSide.replaceAll(noiseWords, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    rightSide = rightSide.replaceAll(noiseWords, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
 
     final accounts = await FinanceStorage.loadAccounts();
     if (accounts.isEmpty) return _noAccountsReply();
 
-    final from = _findAccount(fromName, accounts);
-    final to = _findAccount(toName, accounts);
+    // 5. Detect accounts
+    final from = _findAccount(leftSide, accounts) ?? _detectAccountFromText(leftSide, accounts);
+    final to = _findAccount(rightSide, accounts) ?? _detectAccountFromText(rightSide, accounts);
+
+    // If it's not an explicit request and we can't find one of the accounts,
+    // we fall through to let other intent handlers process it.
     if (from == null) {
+      if (!isExplicit) return null;
       return BaiReply(
-        "⚠️ Can't find account '$fromName'. Available: ${accounts.map((e) => e.name).join(', ')}",
+        "⚠️ Can't find source account '$leftSide'. Available: ${accounts.map((e) => e.name).join(', ')}",
       );
     }
     if (to == null) {
+      if (!isExplicit) return null;
       return BaiReply(
-        "⚠️ Can't find account '$toName'. Available: ${accounts.map((e) => e.name).join(', ')}",
+        "⚠️ Can't find destination account '$rightSide'. Available: ${accounts.map((e) => e.name).join(', ')}",
       );
     }
     if (from.id == to.id) {
+      if (!isExplicit) return null;
       return const BaiReply("⚠️ Source and destination must be different.");
     }
     if (from.balance < amount) {
@@ -679,13 +753,32 @@ class BaiAssistant {
     }
 
     try {
+      final prevFromBal = from.balance;
+      final prevToBal = to.balance;
+
       await FinanceStorage.transferMoney(
         fromAccount: from,
         toAccount: to,
         amount: amount,
       );
+
+      final amountStrFmt = _formatNumberWithCommas(amount.toStringAsFixed(2));
+      final prevFromStr = _formatNumberWithCommas(
+        prevFromBal.toStringAsFixed(2),
+      );
+      final prevToStr = _formatNumberWithCommas(prevToBal.toStringAsFixed(2));
+      final newFromStr = _formatNumberWithCommas(
+        (prevFromBal - amount).toStringAsFixed(2),
+      );
+      final newToStr = _formatNumberWithCommas(
+        (prevToBal + amount).toStringAsFixed(2),
+      );
+
+      final fromIcon = _accountIconToken(from);
+      final toIcon = _accountIconToken(to);
+
       return BaiReply(
-        "✅ Transfer Successful!\n\nMoved $_currency${amount.toStringAsFixed(2)} from ${_accountLabel(from)} to ${_accountLabel(to)}.",
+        "🏛️ Transfer Logged!\n\nMoney Transfer                     +$_currency$amountStrFmt $toIcon\n\n$toIcon prev: $_currency$prevToStr → $_currency$newToStr\n$fromIcon prev: $_currency$prevFromStr → $_currency$newFromStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -867,7 +960,7 @@ class BaiAssistant {
       );
 
       return BaiReply(
-        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
+        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -1120,8 +1213,8 @@ class BaiAssistant {
     // If no account was detected, ask the user!
     if (acc == null) {
       _pendingIncomeAmount = amount;
-      _pendingIncomeDescription = pendingCategory == 'Gift' &&
-              pendingEntity.isNotEmpty
+      _pendingIncomeDescription =
+          pendingCategory == 'Gift' && pendingEntity.isNotEmpty
           ? '$pendingEntity $pendingCategory'
           : cleanedDesc;
       _pendingIncomeCategory = pendingCategory;
@@ -1178,7 +1271,7 @@ class BaiAssistant {
       );
 
       return BaiReply(
-        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (Previous Balance: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
+        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
         quickReplies: const [
           "What is my total balance?",
           "Check account balances",
@@ -1250,6 +1343,9 @@ class BaiAssistant {
       'delete last entry',
       'remove last',
       'cancel last',
+      'nvm',
+      'nevermind',
+      'delete',
       'undo previous',
       'revert previous',
       'undo last transaction',
@@ -1773,7 +1869,9 @@ class BaiAssistant {
     desc = desc.replaceFirst(amountStr, '');
     desc = desc.replaceFirst(
       RegExp(
-        r'\b' + RegExp.escape(amountStr.replaceFirst(RegExp(r'\.0$'), '')) + r'\b',
+        r'\b' +
+            RegExp.escape(amountStr.replaceFirst(RegExp(r'\.0$'), '')) +
+            r'\b',
       ),
       '',
     );
@@ -2209,7 +2307,8 @@ class BaiAssistant {
 
   bool _isFutureOutgoingObligation(String text) {
     final l = _normalizeFutureText(text);
-    final hasDueLanguage = _hasFutureDateReference(l) ||
+    final hasDueLanguage =
+        _hasFutureDateReference(l) ||
         RegExp(r'\b(?:due|deadline|drops|coming up|by)\b').hasMatch(l);
     final hasObligation = RegExp(
       r'\b(?:need(?:s)?\s+to\s+pay|have\s+(?:a\s+)?(?:loan|bill|debt)|has\s+(?:a\s+)?(?:loan|bill|debt)|loan|bill|debt|insurance|rent|meralco|electricity|electric|power|water|internet|wifi|subscription|netflix|spotify|credit card|home credit|payment)\b',

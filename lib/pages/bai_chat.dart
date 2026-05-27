@@ -190,17 +190,13 @@ class _BaiChatPageState extends State<BaiChatPage> {
             Container(
               width: 44,
               height: 44,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [kPrimary, kPrimaryLight]),
+              decoration: const BoxDecoration(
                 shape: BoxShape.circle,
               ),
-              alignment: Alignment.center,
-              child: Text(
-                'BAI',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/bai.png',
+                  fit: BoxFit.cover,
                 ),
               ),
             ),
@@ -331,6 +327,42 @@ class _BubbleWidget extends StatelessWidget {
   final _BaiChatMessage message;
   const _BubbleWidget({required this.message});
 
+  // Pattern for inline icon tokens: {{icon:assets/images/gcash.png}}
+  static final _iconTokenPattern = RegExp(r'\{\{icon:([^}]+)\}\}');
+
+  /// Splits a line into a list of InlineSpan (TextSpan + WidgetSpan for icons).
+  List<InlineSpan> _parseLineWithIcons(String line, TextStyle style) {
+    final List<InlineSpan> spans = [];
+    int lastEnd = 0;
+
+    for (final match in _iconTokenPattern.allMatches(line)) {
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(text: line.substring(lastEnd, match.start), style: style));
+      }
+      final assetPath = match.group(1)!;
+      spans.add(
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Image.asset(assetPath, width: 20, height: 20, fit: BoxFit.contain),
+          ),
+        ),
+      );
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < line.length) {
+      spans.add(TextSpan(text: line.substring(lastEnd), style: style));
+    }
+
+    if (spans.isEmpty) {
+      spans.add(TextSpan(text: line, style: style));
+    }
+
+    return spans;
+  }
+
   Widget _buildRichText(String text, bool isUser) {
     if (isUser) {
       return Text(
@@ -345,64 +377,51 @@ class _BubbleWidget extends StatelessWidget {
     }
 
     final lines = text.split('\n');
-    final List<TextSpan> spans = [];
+    final List<InlineSpan> spans = [];
 
     for (int i = 0; i < lines.length; i++) {
       final line = lines[i];
+      TextStyle lineStyle;
+
       if (line.contains('Expense logged!')) {
-        spans.add(
-          TextSpan(
-            text: line,
-            style: GoogleFonts.plusJakartaSans(
-              color: Colors.redAccent,
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-            ),
-          ),
+        lineStyle = GoogleFonts.plusJakartaSans(
+          color: Colors.redAccent,
+          fontWeight: FontWeight.w800,
+          fontSize: 15,
         );
       } else if (line.contains('Income logged!')) {
-        spans.add(
-          TextSpan(
-            text: line,
-            style: GoogleFonts.plusJakartaSans(
-              color: const Color(0xFF10B981), // Premium emerald green
-              fontWeight: FontWeight.w800,
-              fontSize: 15,
-            ),
-          ),
+        lineStyle = GoogleFonts.plusJakartaSans(
+          color: const Color(0xFF10B981),
+          fontWeight: FontWeight.w800,
+          fontSize: 15,
+        );
+      } else if (line.contains('Transfer Logged!')) {
+        lineStyle = GoogleFonts.plusJakartaSans(
+          color: const Color(0xFF3B82F6),
+          fontWeight: FontWeight.w800,
+          fontSize: 15,
         );
       } else if (line.trim().startsWith('-')) {
-        // Highlight logged negative amount line in red
-        spans.add(
-          TextSpan(
-            text: line,
-            style: GoogleFonts.plusJakartaSans(
-              color: Colors.redAccent,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+        lineStyle = GoogleFonts.plusJakartaSans(
+          color: Colors.redAccent,
+          fontWeight: FontWeight.w600,
         );
       } else if (line.trim().startsWith('+')) {
-        // Highlight logged positive amount line in green
-        spans.add(
-          TextSpan(
-            text: line,
-            style: GoogleFonts.plusJakartaSans(
-              color: const Color(0xFF10B981),
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+        lineStyle = GoogleFonts.plusJakartaSans(
+          color: const Color(0xFF10B981),
+          fontWeight: FontWeight.w600,
         );
       } else {
-        spans.add(
-          TextSpan(
-            text: line,
-            style: GoogleFonts.plusJakartaSans(
-              color: kTextCharcoal,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+        lineStyle = GoogleFonts.plusJakartaSans(
+          color: kTextCharcoal,
+          fontWeight: FontWeight.w500,
         );
+      }
+
+      if (_iconTokenPattern.hasMatch(line)) {
+        spans.addAll(_parseLineWithIcons(line, lineStyle));
+      } else {
+        spans.add(TextSpan(text: line, style: lineStyle));
       }
 
       if (i < lines.length - 1) {
@@ -446,17 +465,13 @@ class _BubbleWidget extends StatelessWidget {
               width: 32,
               height: 32,
               margin: const EdgeInsets.only(bottom: 12, right: 8),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [kPrimary, kPrimaryLight]),
+              decoration: const BoxDecoration(
                 shape: BoxShape.circle,
               ),
-              alignment: Alignment.center,
-              child: Text(
-                'B',
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
+              child: ClipOval(
+                child: Image.asset(
+                  'assets/images/bai.png',
+                  fit: BoxFit.cover,
                 ),
               ),
             ),
