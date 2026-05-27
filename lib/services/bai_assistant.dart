@@ -137,6 +137,27 @@ class BaiAssistant {
     'debt collection', // friend paying you back
   };
 
+  /// Known outgoing categories for scheduled events.
+  static const _outgoingCategories = {
+    'car loan',
+    'auto loan',
+    'vehicle loan',
+    'loan',
+    'debt',
+    'insurance',
+    'meralco bill',
+    'electricity bill',
+    'electricity',
+    'water',
+    'internet',
+    'rent',
+    'netflix',
+    'spotify',
+    'subscription',
+    'credit card',
+    'home credit',
+  };
+
   /// Returns true if the pending due event is an EXPENSE (outgoing money).
   /// Returns false if it is INCOME (incoming money like Salary, Allowance, etc.)
   bool _pendingEventIsOutgoing() {
@@ -144,9 +165,12 @@ class BaiAssistant {
     if (event == null) return false;
     // Check stored category first — most reliable
     final cat = event.category.toLowerCase().trim();
+    if (_outgoingCategories.contains(cat)) return true;
     if (_incomeCategories.contains(cat)) return false;
     // Fallback: check description keywords
-    return _isFutureOutgoingObligation(event.description.toLowerCase());
+    return _isFutureOutgoingObligation(
+      '${event.category} ${event.description}'.toLowerCase(),
+    );
   }
 
   Future<BaiReply> getAsyncGreeting() async {
