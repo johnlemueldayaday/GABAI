@@ -117,14 +117,52 @@ class BaiAssistant {
     );
   }
 
+  /// Known income categories — anything the user RECEIVES.
+  static const _incomeCategories = {
+    'salary',
+    'freelance',
+    'business',
+    'allowance',
+    'scholarship',
+    'investment',
+    'remittance',
+    'bonus',
+    'commission',
+    'pension',
+    'rental income',
+    'dividends',
+    'gift',
+    'refund',
+    'reimbursement',
+    'debt collection', // friend paying you back
+  };
+
+  /// Returns true if the pending due event is an EXPENSE (outgoing money).
+  /// Returns false if it is INCOME (incoming money like Salary, Allowance, etc.)
+  bool _pendingEventIsOutgoing() {
+    final event = _pendingDueEvent;
+    if (event == null) return false;
+    // Check stored category first — most reliable
+    final cat = event.category.toLowerCase().trim();
+    if (_incomeCategories.contains(cat)) return false;
+    // Fallback: check description keywords
+    return _isFutureOutgoingObligation(event.description.toLowerCase());
+  }
+
   Future<BaiReply> getAsyncGreeting() async {
     final dueEvents = await FutureEventStorage.getDueEvents();
     if (dueEvents.isNotEmpty) {
       _pendingDueEvent = dueEvents.first;
       _step = BaiStep.awaitingDuePaymentAction;
-      final amountStr = _formatNumberWithCommas(_pendingDueEvent!.amount.toStringAsFixed(2));
+      final amountStr = _formatNumberWithCommas(
+        _pendingDueEvent!.amount.toStringAsFixed(2),
+      );
+      final isOutgoing = _pendingEventIsOutgoing();
+      final question = isOutgoing
+          ? "Did you pay your ${_pendingDueEvent!.description}?"
+          : "Did you receive your ${_pendingDueEvent!.description}?";
       return BaiReply(
-        "You have a scheduled event due today:\n${_pendingDueEvent!.description} $_currency$amountStr\n\nDid you pay your ${_pendingDueEvent!.description}?",
+        "You have a scheduled event due today:\n${_pendingDueEvent!.description} $_currency$amountStr\n\n$question",
         quickReplies: const ["Yes", "No"],
       );
     }
@@ -542,31 +580,58 @@ class BaiAssistant {
   }
 
   Future<BaiReply> _handleDuePaymentActionResponse(String n) async {
-    if (n == 'yes' ||
-        n == 'y' ||
-        n == 'yeah' ||
-        n == 'yep' ||
-        n.contains('paid')) {
+    final isOutgoing = _pendingEventIsOutgoing();
+    final confirmWords = isOutgoing
+        ? ['yes', 'y', 'yeah', 'yep', 'paid', 'done', 'sure']
+        : [
+            'yes',
+            'y',
+            'yeah',
+            'yep',
+            'received',
+            'got it',
+            'yup',
+            'sure',
+            'done',
+          ];
+    final confirmed = confirmWords.any((w) => n == w || n.contains(w));
+
+    if (confirmed) {
       _step = BaiStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
-      final accountTokens = accounts.map((a) => _accountIconToken(a)).join(', ');
+      final accountTokens = accounts
+          .map((a) => _accountIconToken(a))
+          .join(', ');
+      final prompt = isOutgoing
+          ? "Awesome! What wallet are you using?\nAvailable: $accountTokens"
+          : "Nice! What wallet did you receive it in?\nAvailable: $accountTokens";
       return BaiReply(
-        "Awesome! What wallet are u using?\nAvailable: $accountTokens",
+        prompt,
         quickReplies: accounts.map((a) => a.name).toList(),
       );
-    } else if (n == 'no' ||
-        n == 'n' ||
-        n == 'not yet' ||
-        n.contains("haven't") ||
-        n.contains("havent") ||
-        n == 'nope' ||
-        n.contains('cancel') ||
-        n.contains('reschedule')) {
-      // reschedule for tomorrow
+    }
+
+    final noWords = [
+      'no',
+      'n',
+      'nope',
+      'not yet',
+      "haven't",
+      'havent',
+      'not paid',
+      'not received',
+      'nah',
+      'cancel',
+      'reschedule',
+    ];
+    final denied = noWords.any((w) => n == w || n.contains(w));
+
+    if (denied) {
       final event = _pendingDueEvent!;
       final newDate = DateTime.now().add(const Duration(days: 1));
-      final updatedEvent = event.copyWith(scheduledDate: newDate);
-      await FutureEventStorage.updateEvent(updatedEvent);
+      await FutureEventStorage.updateEvent(
+        event.copyWith(scheduledDate: newDate),
+      );
 
       final dateStr = _formatDate(newDate);
       final amountStr = _formatNumberWithCommas(
@@ -574,19 +639,21 @@ class BaiAssistant {
       );
       _resetState();
       return BaiReply(
-        "Payment Rescheduled!\n\n${event.description}\n-$_currency$amountStr\nWallet not specified\nScheduled for: $dateStr",
+        isOutgoing
+            ? "⏭️ Rescheduled!\n\n${event.description}\n$_currency$amountStr\nPayment moved to: $dateStr"
+            : "⏭️ Rescheduled!\n\n${event.description}\n$_currency$amountStr\nExpected receipt moved to: $dateStr",
         quickReplies: const [
           "What is my total balance?",
           "Show upcoming events",
         ],
-        highlightColor: 'red',
+        highlightColor: isOutgoing ? 'red' : 'green',
       );
     }
 
-    return BaiReply(
-      "Sorry, I didn't get that. Did you pay your ${_pendingDueEvent!.description}?",
-      quickReplies: const ["Yes", "No"],
-    );
+    final question = isOutgoing
+        ? "Sorry, I didn't get that. Did you pay your ${_pendingDueEvent!.description}?"
+        : "Sorry, I didn't get that. Did you receive your ${_pendingDueEvent!.description}?";
+    return BaiReply(question, quickReplies: const ["Yes", "No"]);
   }
 
   Future<BaiReply> _handleDuePaymentAccountResponse(String n) async {
@@ -607,15 +674,14 @@ class BaiAssistant {
 
     final event = _pendingDueEvent!;
     final amount = event.amount;
-    final isOutgoing =
-        _categorizeFutureOutgoingEvent(event.description) != 'Bill' ||
-        event.description.toLowerCase().contains('debt') ||
-        event.description.toLowerCase().contains('loan');
+    final isOutgoing = _pendingEventIsOutgoing();
 
+    // Only check insufficient funds for outgoing/expense events
     if (isOutgoing && acc.balance < amount) {
       final reqStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
+      final hasStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
       return BaiReply(
-        "⚠️ Insufficient funds in ${_accountLabel(acc)} (Has: $_currency${acc.balance}, Needs: $_currency$reqStr). Choose another wallet:",
+        "⚠️ Insufficient funds in ${_accountLabel(acc)}\n(Has: $_currency$hasStr, Needs: $_currency$reqStr)\nChoose another wallet:",
         quickReplies: accounts
             .where((a) => a.balance >= amount)
             .map((a) => a.name)
@@ -644,22 +710,34 @@ class BaiAssistant {
       await BillStorage.saveBills(bills);
 
       final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
+      final newBalance = isOutgoing
+          ? acc.balance - amount
+          : acc.balance + amount;
       final newBalanceStr = _formatNumberWithCommas(
-        (isOutgoing ? acc.balance - amount : acc.balance + amount).toStringAsFixed(2),
+        newBalance.toStringAsFixed(2),
       );
       final icon = _accountIconToken(acc);
-      final title = isOutgoing ? '💸 Paid Bill!' : '💵 Income Received!';
-      final sign = isOutgoing ? '-' : '+';
 
       _resetState();
-      return BaiReply(
-        "$title\n\n${event.description}                                      $sign$_currency$amountStr $icon\nRemaining balance :                    $_currency$newBalanceStr $icon",
-        quickReplies: const [
-          "What is my total balance?",
-          "Check account balances",
-        ],
-        highlightColor: isOutgoing ? 'red' : 'green',
-      );
+      if (isOutgoing) {
+        return BaiReply(
+          "💸 Paid Bill!\n\n${event.description}                                      -$_currency$amountStr $icon\nRemaining balance :                    $_currency$newBalanceStr $icon",
+          quickReplies: const [
+            "What is my total balance?",
+            "Check account balances",
+          ],
+          highlightColor: 'red',
+        );
+      } else {
+        return BaiReply(
+          "💵 Received Income!\n\n${event.description}    +$_currency$amountStr $icon\nNew Balance :    $_currency$newBalanceStr $icon",
+          quickReplies: const [
+            "What is my total balance?",
+            "Check account balances",
+          ],
+          highlightColor: 'green',
+        );
+      }
     } catch (e) {
       _resetState();
       return BaiReply("⚠️ ${e.toString()}");
@@ -708,7 +786,9 @@ class BaiAssistant {
     final cleanedText = n.replaceFirst(amountFullMatch, ' ');
 
     // 4. Split by the word "to"
-    final splitParts = cleanedText.split(RegExp(r'\s+to\s+', caseSensitive: false));
+    final splitParts = cleanedText.split(
+      RegExp(r'\s+to\s+', caseSensitive: false),
+    );
     if (splitParts.length < 2) return null;
 
     // The left part contains the source account name and optional noise
@@ -721,15 +801,25 @@ class BaiAssistant {
       r'\b(transfer|move|send|transferred|moved|sent|from|pesos|php|₱)\b',
       caseSensitive: false,
     );
-    leftSide = leftSide.replaceAll(noiseWords, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
-    rightSide = rightSide.replaceAll(noiseWords, ' ').replaceAll(RegExp(r'\s+'), ' ').trim();
+    leftSide = leftSide
+        .replaceAll(noiseWords, ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    rightSide = rightSide
+        .replaceAll(noiseWords, ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
 
     final accounts = await FinanceStorage.loadAccounts();
     if (accounts.isEmpty) return _noAccountsReply();
 
     // 5. Detect accounts
-    final from = _findAccount(leftSide, accounts) ?? _detectAccountFromText(leftSide, accounts);
-    final to = _findAccount(rightSide, accounts) ?? _detectAccountFromText(rightSide, accounts);
+    final from =
+        _findAccount(leftSide, accounts) ??
+        _detectAccountFromText(leftSide, accounts);
+    final to =
+        _findAccount(rightSide, accounts) ??
+        _detectAccountFromText(rightSide, accounts);
 
     // If it's not an explicit request and we can't find one of the accounts,
     // we fall through to let other intent handlers process it.

@@ -244,6 +244,8 @@ class FinanceTransaction {
       );
 
   /// Returns true if this is an income transaction
+
+  /// Returns true if this is an income transaction
   bool get isIncome => type == 'INCOME';
 
   /// Returns true if this is an expense transaction
@@ -254,13 +256,11 @@ class FinanceTransaction {
 class FutureEvent {
   final String id;
   final double amount;
-  final String
-  category; // Salary, Freelance, Business, Allowance, Scholarship, Investment, Remittance
+  final String category; // Salary, Freelance, Business, Allowance, Scholarship, Investment, Remittance
   final String description;
   final DateTime scheduledDate;
   final String frequency; // 'Once', 'Monthly', 'Weekly'
-  final String?
-  entity; // Optional: who is sending/receiving (e.g., "Lance", "Client")
+  final String? entity; // Optional: who is sending/receiving (e.g., "Lance", "Client")
   final bool isCompleted;
 
   FutureEvent({
@@ -318,11 +318,28 @@ class FutureEvent {
     isCompleted: json['isCompleted'] ?? false,
   );
 
-  /// Returns true if the event is due today or in the past
-  bool get isDue =>
-      DateTime.now().isAfter(scheduledDate) ||
-      DateTime.now().isAtSameMomentAs(scheduledDate);
+  /// Returns true if the event is due today or overdue.
+  /// Triggers from 12:00 AM of the scheduled date onwards until completed.
+  bool get isDue {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final eventDay = DateTime(
+      scheduledDate.year,
+      scheduledDate.month,
+      scheduledDate.day,
+    );
+    return !todayStart.isBefore(eventDay);
+  }
 
-  /// Returns true if the event is in the future
-  bool get isUpcoming => scheduledDate.isAfter(DateTime.now());
+  /// Returns true if the event is scheduled for a future date (not today, not past).
+  bool get isUpcoming {
+    final now = DateTime.now();
+    final todayStart = DateTime(now.year, now.month, now.day);
+    final eventDay = DateTime(
+      scheduledDate.year,
+      scheduledDate.month,
+      scheduledDate.day,
+    );
+    return eventDay.isAfter(todayStart);
+  }
 }

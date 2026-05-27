@@ -389,7 +389,7 @@ class _BubbleWidget extends StatelessWidget {
           fontWeight: FontWeight.w800,
           fontSize: 15,
         );
-      } else if (line.contains('Income logged!') || line.contains('Income Received!')) {
+      } else if (line.contains('Income logged!') || line.contains('Income Received!') || line.contains('Received Income!')) {
         lineStyle = GoogleFonts.plusJakartaSans(
           color: const Color(0xFF10B981),
           fontWeight: FontWeight.w800,
