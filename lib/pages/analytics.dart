@@ -48,9 +48,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     final grocerySpent = AppState.recentLists.fold(
       0.0,
       (sum, list) =>
-          sum + list.items.fold(0.0, (s, i) => s + getItemTotal(i.price, i.qty, i.unit)),
+          sum +
+          list.items.fold(
+            0.0,
+            (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
+          ),
     );
-    final txnsSpent = _transactions.where((t) => t.isExpense).fold(0.0, (s, t) => s + t.amount);
+    final txnsSpent = _transactions
+        .where((t) => t.isExpense)
+        .fold(0.0, (s, t) => s + t.amount);
     return grocerySpent + txnsSpent;
   }
 
@@ -106,9 +112,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           const SizedBox(height: 24),
           _SectionHeader(title: 'Grocery Category Breakdown'),
           _CategoryDonutCard(recentLists: recentLists),
-          const SizedBox(height: 24),
-          _SectionHeader(title: 'Grocery Spent Comparison'),
-          _TrendCard(recentLists: recentLists),
           const SizedBox(height: 24),
           _SectionHeader(title: 'Bills Breakdown'),
           _BillsPieCard(bills: bills),

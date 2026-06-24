@@ -12,7 +12,6 @@ import '../pages/bai_chat.dart';
 import '../config/app_theme.dart';
 import '../navigation/app_routes.dart';
 
-
 class AppDrawer extends StatelessWidget {
   final String currentPage;
 
@@ -73,6 +72,20 @@ class AppDrawer extends StatelessWidget {
             },
           ),
           _DrawerItem(
+            icon: Icons.insights_rounded,
+            label: 'Analytics',
+            isSelected: currentPage == 'Analytics',
+            onTap: () {
+              Navigator.pop(context);
+              if (currentPage != 'Analytics') {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => const AnalyticsPage()),
+                );
+              }
+            },
+          ),
+          _DrawerItem(
             icon: Icons.account_balance_wallet_outlined,
             label: 'Account',
             isSelected: currentPage == 'Account',
@@ -127,20 +140,6 @@ class AppDrawer extends StatelessWidget {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(builder: (_) => const BillsPage()),
-                );
-              }
-            },
-          ),
-          _DrawerItem(
-            icon: Icons.insights_rounded,
-            label: 'Analytics',
-            isSelected: currentPage == 'Analytics',
-            onTap: () {
-              Navigator.pop(context);
-              if (currentPage != 'Analytics') {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const AnalyticsPage()),
                 );
               }
             },

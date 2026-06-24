@@ -745,7 +745,7 @@ class BaiAssistant {
       _resetState();
       if (isOutgoing) {
         return BaiReply(
-          "💸 Paid Bill!\n\n${event.description}                                      -$_currency$amountStr $icon\nRemaining balance :                    $_currency$newBalanceStr $icon",
+          "💸 Paid Bill!\n\n${event.description}    -$_currency$amountStr $icon\nRemaining balance :    $_currency$newBalanceStr $icon",
           quickReplies: const [
             "What is my total balance?",
             "Check account balances",

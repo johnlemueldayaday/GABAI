@@ -51,7 +51,8 @@ class SettingsService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _currency = prefs.getString(_keyCurrency) ?? '₱';
     final themeIndex = prefs.getInt(_keyThemeMode) ?? 0;
-    _themeMode = ThemeMode.values[themeIndex.clamp(0, ThemeMode.values.length - 1)];
+    _themeMode =
+        ThemeMode.values[themeIndex.clamp(0, ThemeMode.values.length - 1)];
     _budgetAlerts = prefs.getBool(_keyBudgetAlerts) ?? true;
     _smartSuggestions = prefs.getBool(_keySmartSuggestions) ?? true;
     _compactView = prefs.getBool(_keyCompactView) ?? false;

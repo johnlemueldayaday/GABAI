@@ -75,6 +75,7 @@ class _WalletPageState extends State<WalletPage> {
   List<Account> _accounts = [];
   List<FinanceTransaction> _transactions = [];
   bool _isLoading = true;
+  bool _showMyAccounts = false;
   final String _currency = SettingsService().currency;
 
   @override
@@ -547,6 +548,20 @@ class _WalletPageState extends State<WalletPage> {
         centerTitle: true,
         actions: [
           IconButton(
+            icon: Icon(
+              _showMyAccounts
+                  ? Icons.visibility_rounded
+                  : Icons.visibility_off_rounded,
+              color: kPrimary,
+            ),
+            onPressed: () {
+              setState(() {
+                _showMyAccounts = !_showMyAccounts;
+              });
+            },
+            tooltip: _showMyAccounts ? 'Hide accounts' : 'Show accounts',
+          ),
+          IconButton(
             icon: Icon(Icons.add_card_rounded, color: kPrimary),
             onPressed: _showAddWalletSheet,
           ),
@@ -562,21 +577,22 @@ class _WalletPageState extends State<WalletPage> {
                   vertical: 16,
                 ),
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        'My Accounts',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
-                          color: kTextCharcoal,
+                  if (_showMyAccounts) ...[
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'My Accounts',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: kTextCharcoal,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  GridView.builder(
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     gridDelegate:
@@ -666,6 +682,8 @@ class _WalletPageState extends State<WalletPage> {
                       );
                     },
                   ),
+                    const SizedBox(height: 24),
+                  ],
                   const SizedBox(height: 24),
                   Text(
                     'Recent Transactions',
