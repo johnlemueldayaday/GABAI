@@ -86,7 +86,10 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
   }
 
   void _handleRouteChange() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   void _openBai() {

@@ -433,7 +433,7 @@ class _Screen1 extends StatelessWidget {
           const SizedBox(height: 20),
           // Name field
           Text(
-            'Your name',
+            'Your namee',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 12,
               fontWeight: FontWeight.w700,
