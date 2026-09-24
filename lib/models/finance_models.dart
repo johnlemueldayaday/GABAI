@@ -61,21 +61,6 @@ const List<WalletOption> walletOptions = [
   ),
 ];
 
-const List<Map<String, Object>> walletOptionGroups = [
-  {
-    'label': 'E-Wallet',
-    'options': ['GCash', 'Maya'],
-  },
-  {
-    'label': 'Cash',
-    'options': ['Cash'],
-  },
-  {
-    'label': 'Bank',
-    'options': ['BDO', 'Landbank', 'PSBank'],
-  },
-];
-
 WalletOption walletOptionByName(String name) {
   return walletOptions.firstWhere((wallet) => wallet.name == name);
 }
@@ -256,11 +241,13 @@ class FinanceTransaction {
 class FutureEvent {
   final String id;
   final double amount;
-  final String category; // Salary, Freelance, Business, Allowance, Scholarship, Investment, Remittance
+  final String
+  category; // Salary, Freelance, Business, Allowance, Scholarship, Investment, Remittance
   final String description;
   final DateTime scheduledDate;
   final String frequency; // 'Once', 'Monthly', 'Weekly'
-  final String? entity; // Optional: who is sending/receiving (e.g., "Lance", "Client")
+  final String?
+  entity; // Optional: who is sending/receiving (e.g., "Lance", "Client")
   final bool isCompleted;
 
   FutureEvent({

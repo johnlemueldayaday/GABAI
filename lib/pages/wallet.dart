@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
@@ -34,8 +35,8 @@ class _WalletChoiceButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          width: 78,
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           decoration: BoxDecoration(
             color: kBackground,
             borderRadius: BorderRadius.circular(12),
@@ -44,25 +45,35 @@ class _WalletChoiceButton extends StatelessWidget {
               width: isAdded ? 1 : 1.5,
             ),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          child: Row(
             children: [
               AccountIconImage(
                 name: wallet.name,
                 icon: wallet.assetPath,
-                size: 40,
+                size: 36,
               ),
-              const SizedBox(height: 8),
-              Text(
-                isAdded ? 'Added' : wallet.name,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: isAdded ? kMuted : kTextCharcoal,
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  wallet.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: isAdded ? kMuted : kTextCharcoal,
+                  ),
                 ),
               ),
+              if (isAdded)
+                Text(
+                  'Added',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: kMuted,
+                  ),
+                ),
             ],
           ),
         ),
@@ -85,7 +96,21 @@ class _WalletPageState extends State<WalletPage> {
   }
 
   Future<void> _loadData() async {
-    final accounts = await FinanceStorage.loadAccounts();
+    var accounts = await FinanceStorage.loadAccounts();
+
+    if (!accounts.any((account) => account.name.toLowerCase() == 'cash')) {
+      final cash = walletOptionByName('Cash');
+      accounts = await FinanceStorage.addAccount(
+        Account(
+          id: '${DateTime.now().microsecondsSinceEpoch}Cash',
+          name: cash.name,
+          type: cash.category,
+          balance: 0.0,
+          icon: cash.assetPath,
+          colorValue: cash.colorValue,
+        ),
+      );
+    }
 
     _accounts = accounts;
 
@@ -98,127 +123,254 @@ class _WalletPageState extends State<WalletPage> {
     }
   }
 
-  Future<void> _addWallet(WalletOption wallet) async {
-    final alreadyExists = _accounts.any(
-      (account) => account.name.toLowerCase() == wallet.name.toLowerCase(),
-    );
-    if (alreadyExists) return;
+  Future<void> _saveWalletBalance(WalletOption wallet, double balance) async {
+    Account? existingAccount;
+    for (final account in _accounts) {
+      if (account.name.toLowerCase() == wallet.name.toLowerCase()) {
+        existingAccount = account;
+        break;
+      }
+    }
 
-    final account = Account(
-      id: '${DateTime.now().microsecondsSinceEpoch}${wallet.name}',
-      name: wallet.name,
-      type: wallet.category,
-      balance: 0.0,
-      icon: wallet.assetPath,
-      colorValue: wallet.colorValue,
-    );
+    final previousBalance = existingAccount?.balance ?? 0;
+    if (existingAccount == null) {
+      existingAccount = Account(
+        id: '${DateTime.now().microsecondsSinceEpoch}${wallet.name}',
+        name: wallet.name,
+        type: wallet.category,
+        balance: 0,
+        icon: wallet.assetPath,
+        colorValue: wallet.colorValue,
+      );
+      await FinanceStorage.addAccount(existingAccount);
+    }
 
-    await FinanceStorage.addAccount(account);
+    if (balance > previousBalance) {
+      await FinanceStorage.addTransaction(
+        FinanceTransaction(
+          id: '${DateTime.now().microsecondsSinceEpoch}_wallet_top_up',
+          amount: balance - previousBalance,
+          accountId: existingAccount.id,
+          accountName: existingAccount.name,
+          type: 'INCOME',
+          category: 'Wallet Top-up',
+          description: 'Added money to ${existingAccount.name}',
+        ),
+      );
+    } else if (balance != previousBalance) {
+      await FinanceStorage.updateAccount(
+        existingAccount.copyWith(balance: balance),
+      );
+    }
+
     await _loadData();
   }
 
-  void _showAddWalletSheet() {
-    showModalBottomSheet(
+  Future<void> _showAddWalletSheet() async {
+    final selectableWallets =
+        walletOptions
+            .where((wallet) => wallet.name.toLowerCase() != 'cash')
+            .toList()
+          ..sort((a, b) => a.name.compareTo(b.name));
+
+    final balanceCtrl = TextEditingController();
+    WalletOption? selectedWallet;
+    var showingBalance = false;
+    var isSaving = false;
+    await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        decoration: BoxDecoration(
-          color: kCardBg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        ),
-        padding: EdgeInsets.fromLTRB(
-          24,
-          20,
-          24,
-          24 + MediaQuery.of(context).viewInsets.bottom,
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) {
+          return Container(
+            decoration: BoxDecoration(
+              color: kCardBg,
+              borderRadius: const BorderRadius.vertical(
+                top: Radius.circular(28),
+              ),
+            ),
+            padding: EdgeInsets.fromLTRB(
+              24,
+              20,
+              24,
+              24 + MediaQuery.of(context).viewInsets.bottom,
+            ),
+            child: SafeArea(
+              top: false,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Add Wallet',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: kTextCharcoal,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: Icon(Icons.close, color: kMuted),
-                    tooltip: 'Close',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Choose the wallet you want to add.',
-                style: GoogleFonts.plusJakartaSans(
-                  color: kMuted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 18),
-              ...walletOptionGroups.map((group) {
-                final label = group['label'] as String;
-                final options = group['options'] as List<String>;
-
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        label,
+                        'Add Wallet',
                         style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: kMuted,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: kTextCharcoal,
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 10,
-                        runSpacing: 10,
-                        children: options.map((name) {
-                          final wallet = walletOptionByName(name);
-                          final isAdded = _accounts.any(
-                            (account) =>
-                                account.name.toLowerCase() ==
-                                wallet.name.toLowerCase(),
-                          );
-
-                          return _WalletChoiceButton(
-                            wallet: wallet,
-                            isAdded: isAdded,
-                            onTap: isAdded
-                                ? null
-                                : () async {
-                                    await _addWallet(wallet);
-                                    if (context.mounted) {
-                                      Navigator.pop(context);
-                                    }
-                                  },
-                          );
-                        }).toList(),
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: Icon(Icons.close, color: kMuted),
+                        tooltip: 'Close',
                       ),
                     ],
                   ),
-                );
-              }),
-            ],
-          ),
-        ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Choose the wallet you want to add.',
+                    style: GoogleFonts.plusJakartaSans(
+                      color: kMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (!showingBalance) ...[
+                    const SizedBox(height: 18),
+                    ...selectableWallets.map((wallet) {
+                      final isAdded = _accounts.any(
+                        (account) =>
+                            account.name.toLowerCase() ==
+                            wallet.name.toLowerCase(),
+                      );
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _WalletChoiceButton(
+                          wallet: wallet,
+                          isAdded: isAdded,
+                          onTap: () {
+                            selectedWallet = wallet;
+                            final existing = _accounts.where(
+                              (account) =>
+                                  account.name.toLowerCase() ==
+                                  wallet.name.toLowerCase(),
+                            );
+                            final account = existing.isEmpty
+                                ? null
+                                : existing.first;
+                            balanceCtrl.text =
+                                account == null || account.balance == 0
+                                ? ''
+                                : account.balance.toStringAsFixed(2);
+                            setSheetState(() => showingBalance = true);
+                          },
+                        ),
+                      );
+                    }),
+                  ] else ...[
+                    const SizedBox(height: 18),
+                    Text(
+                      'How much money is in your ${selectedWallet!.name}?',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Enter the starting balance for this wallet.',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: kMuted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    TextField(
+                      controller: balanceCtrl,
+                      autofocus: true,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+                      ],
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        color: kTextCharcoal,
+                      ),
+                      decoration: InputDecoration(
+                        hintText: '0.00',
+                        hintStyle: TextStyle(
+                          color: kMuted.withValues(alpha: 0.5),
+                        ),
+                        prefixText: '₱',
+                        prefixStyle: GoogleFonts.plusJakartaSans(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: kTextCharcoal,
+                        ),
+                        filled: true,
+                        fillColor: kBackground,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: kPrimary, width: 2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                final value = double.tryParse(
+                                  balanceCtrl.text.replaceAll(',', ''),
+                                );
+                                if (value == null || value < 0) return;
+                                setSheetState(() => isSaving = true);
+                                await _saveWalletBalance(
+                                  selectedWallet!,
+                                  value,
+                                );
+                                if (sheetContext.mounted) {
+                                  setSheetState(() {
+                                    isSaving = false;
+                                    showingBalance = false;
+                                  });
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: kPrimary,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor: kPrimary.withValues(
+                            alpha: 0.6,
+                          ),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Text(
+                          'Confirm',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
+    balanceCtrl.dispose();
   }
 
   Future<void> _undoTransaction(FinanceTransaction transaction) async {
@@ -593,95 +745,96 @@ class _WalletPageState extends State<WalletPage> {
                     ),
                     const SizedBox(height: 8),
                     GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 1.4,
-                        ),
-                    itemCount: _accounts.length,
-                    itemBuilder: (context, index) {
-                      final acc = _accounts[index];
-                      return Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: kCardBg,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(color: kBorder),
-                          boxShadow: [kShadowSoft],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: Color(
-                                      acc.colorValue,
-                                    ).withValues(alpha: 0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: AccountIconImage(
-                                    name: acc.name,
-                                    icon: acc.icon,
-                                    size: 22,
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: kBackground,
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                  child: Text(
-                                    acc.type,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 9,
-                                      fontWeight: FontWeight.bold,
-                                      color: kMuted,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 1.4,
+                          ),
+                      itemCount: _accounts.length,
+                      itemBuilder: (context, index) {
+                        final acc = _accounts[index];
+                        return Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: kCardBg,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(color: kBorder),
+                            boxShadow: [kShadowSoft],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(
+                                      color: Color(
+                                        acc.colorValue,
+                                      ).withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: AccountIconImage(
+                                      name: acc.name,
+                                      icon: acc.icon,
+                                      size: 22,
                                     ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  acc.name,
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold,
-                                    color: kTextCharcoal,
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 4,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: kBackground,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      acc.type,
+                                      style: GoogleFonts.plusJakartaSans(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.bold,
+                                        color: kMuted,
+                                      ),
+                                    ),
                                   ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '$_currency${acc.balance.toStringAsFixed(2)}',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(acc.colorValue),
+                                ],
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    acc.name,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: kTextCharcoal,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '$_currency${acc.balance.toStringAsFixed(2)}',
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(acc.colorValue),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
                     const SizedBox(height: 24),
                   ],
                   const SizedBox(height: 24),
