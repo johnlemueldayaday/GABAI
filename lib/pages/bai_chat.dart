@@ -190,14 +190,9 @@ class _BaiChatPageState extends State<BaiChatPage> {
             Container(
               width: 44,
               height: 44,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(shape: BoxShape.circle),
               child: ClipOval(
-                child: Image.asset(
-                  'assets/images/bai.png',
-                  fit: BoxFit.cover,
-                ),
+                child: Image.asset('assets/images/bai.png', fit: BoxFit.cover),
               ),
             ),
             const SizedBox(width: 12),
@@ -245,6 +240,14 @@ class _BaiChatPageState extends State<BaiChatPage> {
           ],
         ),
         actions: [
+          IconButton(
+            onPressed: () => Navigator.maybePop(context),
+            icon: Icon(
+              Icons.keyboard_double_arrow_down_rounded,
+              color: kTextCharcoal,
+            ),
+            tooltip: 'Minimize to bubble',
+          ),
           IconButton(
             onPressed: _clearChat,
             icon: Icon(Icons.delete_sweep_outlined, color: kTextCharcoal),
@@ -337,7 +340,9 @@ class _BubbleWidget extends StatelessWidget {
 
     for (final match in _iconTokenPattern.allMatches(line)) {
       if (match.start > lastEnd) {
-        spans.add(TextSpan(text: line.substring(lastEnd, match.start), style: style));
+        spans.add(
+          TextSpan(text: line.substring(lastEnd, match.start), style: style),
+        );
       }
       final assetPath = match.group(1)!;
       spans.add(
@@ -345,7 +350,12 @@ class _BubbleWidget extends StatelessWidget {
           alignment: PlaceholderAlignment.middle,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 2),
-            child: Image.asset(assetPath, width: 20, height: 20, fit: BoxFit.contain),
+            child: Image.asset(
+              assetPath,
+              width: 20,
+              height: 20,
+              fit: BoxFit.contain,
+            ),
           ),
         ),
       );
@@ -389,7 +399,9 @@ class _BubbleWidget extends StatelessWidget {
           fontWeight: FontWeight.w800,
           fontSize: 15,
         );
-      } else if (line.contains('Income logged!') || line.contains('Income Received!') || line.contains('Received Income!')) {
+      } else if (line.contains('Income logged!') ||
+          line.contains('Income Received!') ||
+          line.contains('Received Income!')) {
         lineStyle = GoogleFonts.plusJakartaSans(
           color: const Color(0xFF10B981),
           fontWeight: FontWeight.w800,
@@ -432,10 +444,7 @@ class _BubbleWidget extends StatelessWidget {
     return RichText(
       text: TextSpan(
         children: spans,
-        style: GoogleFonts.plusJakartaSans(
-          fontSize: 14,
-          height: 1.45,
-        ),
+        style: GoogleFonts.plusJakartaSans(fontSize: 14, height: 1.45),
       ),
     );
   }
@@ -465,14 +474,9 @@ class _BubbleWidget extends StatelessWidget {
               width: 32,
               height: 32,
               margin: const EdgeInsets.only(bottom: 12, right: 8),
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-              ),
+              decoration: const BoxDecoration(shape: BoxShape.circle),
               child: ClipOval(
-                child: Image.asset(
-                  'assets/images/bai.png',
-                  fit: BoxFit.cover,
-                ),
+                child: Image.asset('assets/images/bai.png', fit: BoxFit.cover),
               ),
             ),
           ],

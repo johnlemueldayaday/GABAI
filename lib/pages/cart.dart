@@ -61,9 +61,7 @@ class GroceryApp extends StatelessWidget {
             );
           },
           initialRoute: kSplashRouteName,
-          routes: {
-            kSplashRouteName: (_) => const SplashScreen(),
-          },
+          routes: {kSplashRouteName: (_) => const SplashScreen()},
         );
       },
     );
@@ -1311,6 +1309,101 @@ class _CartDetailPageState extends State<CartDetailPage>
     }
   }
 
+  Future<double?> _promptCashTopUp(double minimumAmount) async {
+    final amountController = TextEditingController(
+      text: minimumAmount.toStringAsFixed(2),
+    );
+    String? errorMessage;
+
+    final amount = await showDialog<double>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => Dialog(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 420),
+            child: SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Add Money to Cash',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w700,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Add at least ₱${minimumAmount.toStringAsFixed(2)} to cover this trip.',
+                      style: GoogleFonts.plusJakartaSans(
+                        color: kMuted,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: amountController,
+                      autofocus: true,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Amount to add',
+                        prefixText: '₱',
+                        errorText: errorMessage,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(dialogContext),
+                          child: const Text('Cancel'),
+                        ),
+                        const SizedBox(width: 8),
+                        ElevatedButton(
+                          onPressed: () {
+                            final enteredAmount = double.tryParse(
+                              amountController.text.trim().replaceAll(',', ''),
+                            );
+                            if (enteredAmount == null ||
+                                enteredAmount < minimumAmount) {
+                              setDialogState(() {
+                                errorMessage =
+                                    'Enter at least ₱${minimumAmount.toStringAsFixed(2)}.';
+                              });
+                              return;
+                            }
+                            Navigator.pop(dialogContext, enteredAmount);
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: kPrimary,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Add Money'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    amountController.dispose();
+    return amount;
+  }
+
   Future<void> _finishList() async {
     final checkedItems = _items.where((i) => i.isDone).toList();
     if (checkedItems.isEmpty) {
@@ -1354,51 +1447,104 @@ class _CartDetailPageState extends State<CartDetailPage>
       if (!mounted) return;
       selectedAccount = await showDialog<Account>(
         context: context,
-        builder: (context) => AlertDialog(
-          backgroundColor: kCardBg,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          title: Text(
-            'Select Account',
-            style: GoogleFonts.plusJakartaSans(
-              fontWeight: FontWeight.w700,
-              color: kTextCharcoal,
+        builder: (context) {
+          final listHeight = (accounts.length * 72.0)
+              .clamp(72.0, MediaQuery.of(context).size.height * 0.5)
+              .toDouble();
+          return Dialog(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Select Account',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.w700,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: listHeight,
+                      child: ListView.builder(
+                        itemCount: accounts.length,
+                        itemBuilder: (context, index) {
+                          final account = accounts[index];
+                          return ListTile(
+                            contentPadding: EdgeInsets.zero,
+                            leading: AccountIconImage(
+                              name: account.name,
+                              icon: account.icon,
+                              size: 28,
+                            ),
+                            title: Text(
+                              account.name,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w600,
+                                color: kTextCharcoal,
+                              ),
+                            ),
+                            subtitle: Text(
+                              '₱${account.balance.toStringAsFixed(2)}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w500,
+                                color: kMuted,
+                              ),
+                            ),
+                            onTap: () => Navigator.pop(context, account),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: accounts.map((account) {
-              return ListTile(
-                leading: AccountIconImage(
-                  name: account.name,
-                  icon: account.icon,
-                  size: 28,
-                ),
-                title: Text(
-                  account.name,
-                  style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w600,
-                    color: kTextCharcoal,
-                  ),
-                ),
-                subtitle: Text(
-                  '₱${account.balance.toStringAsFixed(2)}',
-                  style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w500,
-                    color: kMuted,
-                  ),
-                ),
-                onTap: () => Navigator.pop(context, account),
-              );
-            }).toList(),
-          ),
-        ),
+          );
+        },
       );
     }
 
     if (selectedAccount == null) {
       return; // User cancelled
+    }
+
+    if (selectedAccount.name.toLowerCase() == 'cash' &&
+        totalSpent > selectedAccount.balance) {
+      final minimumTopUp = totalSpent - selectedAccount.balance;
+      final amountToAdd = await _promptCashTopUp(minimumTopUp);
+      if (amountToAdd == null) return;
+
+      try {
+        await FinanceStorage.addTransaction(
+          FinanceTransaction(
+            id: '${DateTime.now().millisecondsSinceEpoch}_cash_top_up',
+            amount: amountToAdd,
+            accountId: selectedAccount.id,
+            accountName: selectedAccount.name,
+            type: 'INCOME',
+            category: 'Cash Top-up',
+            description: 'Added money to Cash',
+          ),
+        );
+        selectedAccount =
+            await FinanceStorage.findAccountByName(selectedAccount.name) ??
+            selectedAccount;
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to add money to Cash: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        return;
+      }
     }
 
     if (totalSpent > 0) {

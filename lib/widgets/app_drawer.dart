@@ -151,7 +151,7 @@ class AppDrawer extends StatelessWidget {
             onTap: () {
               Navigator.pop(context);
               if (currentPage != 'BAI') {
-                Navigator.pushReplacement(
+                Navigator.push(
                   context,
                   MaterialPageRoute(
                     settings: const RouteSettings(name: kBaiChatRouteName),

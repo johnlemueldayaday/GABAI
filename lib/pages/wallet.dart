@@ -677,6 +677,14 @@ class _WalletPageState extends State<WalletPage> {
 
   @override
   Widget build(BuildContext context) {
+    final addedWallets = _accounts.where((account) {
+      return walletOptions.any(
+        (wallet) =>
+            wallet.name.toLowerCase() == account.name.toLowerCase() &&
+            wallet.name.toLowerCase() != 'cash',
+      );
+    }).toList();
+
     return Scaffold(
       backgroundColor: kBackground,
       drawer: const AppDrawer(currentPage: 'Account'),
@@ -836,6 +844,47 @@ class _WalletPageState extends State<WalletPage> {
                       },
                     ),
                     const SizedBox(height: 24),
+                  ],
+                  if (addedWallets.isNotEmpty) ...[
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: addedWallets.map((account) {
+                          return Container(
+                            margin: const EdgeInsets.only(right: 10),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: kCardBg,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: kBorder),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                AccountIconImage(
+                                  name: account.name,
+                                  icon: account.icon,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '$_currency${account.balance.toStringAsFixed(2)}',
+                                  style: GoogleFonts.plusJakartaSans(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.black,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                   ],
                   const SizedBox(height: 24),
                   Text(

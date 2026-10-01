@@ -207,6 +207,9 @@ class BaiAssistant {
       return greeting;
     }
 
+    final allocationReply = await _trySetDailyAllocation(n);
+    if (allocationReply != null) return allocationReply;
+
     // ─── 1. STATE MACHINE (mid-conversation flows take priority) ───
     final undoResult = await _tryUndo(n);
     if (undoResult != null &&
@@ -1620,6 +1623,56 @@ class BaiAssistant {
   // ═══════════════════════════════════════════════
   //  INTENT DETECTION HELPERS
   // ═══════════════════════════════════════════════
+
+  Future<BaiReply?> _trySetDailyAllocation(String input) async {
+    var normalized = input
+        .replaceAll(RegExp(r'\b(?:daliy|dayly|dailly)\b'), 'daily')
+        .replaceAll(RegExp(r'\b(?:montly|monthy|mothly|monhtly)\b'), 'monthly')
+        .replaceAll(RegExp(r'\b(?:budjet|budgt|budged)\b'), 'budget')
+        .replaceAll(
+          RegExp(r'\b(?:alocation|allocaton|allcation|allocashun|alokasyon)\b'),
+          'allocation',
+        )
+        .replaceAll(RegExp(r'\b(?:spendng|spendin|spendign)\b'), 'spending')
+        .replaceAll(RegExp(r'\b(?:gastos|gastusin|gagastusin)\b'), 'spending')
+        .replaceAll(
+          RegExp(r'\b(?:araw[- ]araw|kada araw|bawat araw)\b'),
+          'daily',
+        )
+        .replaceAll(
+          RegExp(r'\b(?:kada buwan|bawat buwan|buwanang)\b'),
+          'monthly',
+        );
+    normalized = normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    final hasDailyPeriod = RegExp(
+      r'\b(?:daily|every\s*day|each\s*day|per\s*day|everyday)\b',
+    ).hasMatch(normalized);
+    final hasMonthlyPeriod = RegExp(
+      r'\b(?:monthly|every\s*month|each\s*month|per\s*month)\b',
+    ).hasMatch(normalized);
+    final hasBudgetTerm = RegExp(
+      r'\b(?:budget|allocation|spending|spend|allowance|limit)\b',
+    ).hasMatch(normalized);
+    if (!hasDailyPeriod && !hasMonthlyPeriod && !hasBudgetTerm) return null;
+
+    final amount = _extractAmountWithSlang(normalized);
+    if (amount == null || !amount.isFinite || amount <= 0) return null;
+
+    final dailyAmount = hasMonthlyPeriod ? amount / 30 : amount;
+    await SettingsService().setDailySpendingAllocation(dailyAmount);
+
+    final formattedDaily = _formatNumberWithCommas(
+      dailyAmount.toStringAsFixed(2),
+    );
+    final monthlyNote = hasMonthlyPeriod
+        ? ' That is ${SettingsService().currency}${_formatNumberWithCommas(amount.toStringAsFixed(2))} per month divided across 30 days.'
+        : '';
+    return BaiReply(
+      'Updated your daily spending allocation to ${SettingsService().currency}$formattedDaily per day.$monthlyNote',
+      quickReplies: const ['Set my daily budget to 500', 'Show my budget'],
+    );
+  }
 
   bool _isWeeklyBillAsk(String n) =>
       (n.contains('how much') && n.contains('bill')) ||
@@ -3082,6 +3135,8 @@ class BaiAssistant {
     "🛒 Grocery Tracking\n"
     "'How much did I spend this week?'\n"
     "'Show my budget'\n"
+    "'My daily spending is 500'\n"
+    "'My monthly budget is 15000'\n"
     "'Show analytics'\n\n"
     "📋 Bills\n"
     "'Do I have upcoming bills?'\n"

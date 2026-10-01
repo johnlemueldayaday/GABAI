@@ -13,10 +13,15 @@ final GlobalKey<NavigatorState> baiBubbleNavigatorKey =
 class BaiBubbleRouteObserver extends NavigatorObserver {
   final ValueNotifier<bool> isBaiRouteActive = ValueNotifier(false);
   final ValueNotifier<String?> currentRouteName = ValueNotifier(null);
+  int _syncGeneration = 0;
 
   void _sync(Route<dynamic>? route) {
-    isBaiRouteActive.value = route?.settings.name == kBaiChatRouteName;
-    currentRouteName.value = route?.settings.name;
+    final generation = ++_syncGeneration;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (generation != _syncGeneration) return;
+      isBaiRouteActive.value = route?.settings.name == kBaiChatRouteName;
+      currentRouteName.value = route?.settings.name;
+    });
   }
 
   @override
@@ -56,7 +61,6 @@ class BaiFloatingBubbleHost extends StatefulWidget {
 class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
   static const double _bubbleSize = 58;
   static const double _screenMargin = 16;
-  static const double _restoreTabWidth = 44;
   static const Set<String> _excludedRouteNames = {
     kSplashRouteName,
     kCartRouteName,
@@ -65,32 +69,10 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
   };
 
   bool _isHidden = false;
+  bool _isDragging = false;
   Offset? _bubblePosition;
   Offset _panStartPosition = Offset.zero;
   Offset _panDelta = Offset.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    baiBubbleRouteObserver.isBaiRouteActive.addListener(_handleRouteChange);
-    baiBubbleRouteObserver.currentRouteName.addListener(_handleRouteChange);
-    SettingsService().addListener(_handleRouteChange);
-  }
-
-  @override
-  void dispose() {
-    baiBubbleRouteObserver.isBaiRouteActive.removeListener(_handleRouteChange);
-    baiBubbleRouteObserver.currentRouteName.removeListener(_handleRouteChange);
-    SettingsService().removeListener(_handleRouteChange);
-    super.dispose();
-  }
-
-  void _handleRouteChange() {
-    if (!mounted) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() {});
-    });
-  }
 
   void _openBai() {
     baiBubbleNavigatorKey.currentState?.push(
@@ -126,9 +108,18 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
     );
   }
 
-  void _handlePanStart(DragStartDetails details) {
-    _panStartPosition = _bubblePosition ?? Offset.zero;
+  void _handlePanStart(
+    DragStartDetails details,
+    BoxConstraints constraints,
+    EdgeInsets padding,
+  ) {
+    _panStartPosition = _clampPosition(
+      _bubblePosition ?? _defaultPosition(constraints, padding),
+      constraints,
+      padding,
+    );
     _panDelta = Offset.zero;
+    setState(() => _isDragging = true);
   }
 
   void _handlePanUpdate(
@@ -146,20 +137,35 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
     });
   }
 
-  void _handlePanEnd(DragEndDetails details) {
-    final shouldHide =
-        (_panDelta.dx > 92 && _panDelta.dx.abs() > _panDelta.dy.abs() * 1.4) ||
-        details.velocity.pixelsPerSecond.dx > 760;
+  void _handlePanEnd(
+    DragEndDetails details,
+    BoxConstraints constraints,
+    EdgeInsets padding,
+  ) {
+    final currentPosition = _bubblePosition ?? _panStartPosition;
+    final bubbleCenter =
+        currentPosition + const Offset(_bubbleSize / 2, _bubbleSize / 2);
+    final dismissCenter = Offset(
+      constraints.maxWidth / 2,
+      constraints.maxHeight - padding.bottom - 46,
+    );
+    final shouldHide = (bubbleCenter - dismissCenter).distance < 78;
 
-    if (!shouldHide) return;
     setState(() {
-      _isHidden = true;
-    });
-  }
-
-  void _restoreBubble() {
-    setState(() {
-      _isHidden = false;
+      _isDragging = false;
+      _isHidden = shouldHide;
+      if (!shouldHide) {
+        final snapLeft = bubbleCenter.dx < constraints.maxWidth / 2;
+        _bubblePosition = Offset(
+          snapLeft
+              ? padding.left + _screenMargin
+              : constraints.maxWidth -
+                    padding.right -
+                    _bubbleSize -
+                    _screenMargin,
+          currentPosition.dy,
+        );
+      }
     });
   }
 
@@ -169,66 +175,81 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final padding = MediaQuery.paddingOf(context);
-        _bubblePosition ??= _defaultPosition(constraints, padding);
-        final position = _clampPosition(
-          _bubblePosition!,
-          constraints,
-          padding,
-        );
-        if (position != _bubblePosition) {
-          _bubblePosition = position;
-        }
+    return AnimatedBuilder(
+      animation: SettingsService(),
+      builder: (context, _) => ValueListenableBuilder<String?>(
+        valueListenable: baiBubbleRouteObserver.currentRouteName,
+        builder: (context, currentRoute, _) {
+          final mediaQuery = MediaQuery.of(context);
+          final constraints = BoxConstraints.tight(mediaQuery.size);
+          final padding = mediaQuery.padding;
+          final position = _clampPosition(
+            _bubblePosition ?? _defaultPosition(constraints, padding),
+            constraints,
+            padding,
+          );
+          final excluded =
+              _isRouteExcluded(currentRoute) ||
+              !SettingsService().onboardingComplete;
 
-        final currentRoute = baiBubbleRouteObserver.currentRouteName.value;
-        final excluded = _isRouteExcluded(currentRoute) ||
-            baiBubbleRouteObserver.isBaiRouteActive.value ||
-            !SettingsService().onboardingComplete;
+          return Stack(
+            children: [
+              widget.child,
+              if (!excluded && _isDragging)
+                Positioned(
+                  left: (constraints.maxWidth - 48) / 2,
+                  bottom: padding.bottom + 22,
+                  child: const _DismissBubbleTarget(),
+                ),
+              if (!excluded && !_isHidden)
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeOutCubic,
+                  left: position.dx,
+                  top: position.dy,
+                  child: GestureDetector(
+                    onTap: _openBai,
+                    onPanStart: (details) =>
+                        _handlePanStart(details, constraints, padding),
+                    onPanUpdate: (details) =>
+                        _handlePanUpdate(details, constraints, padding),
+                    onPanEnd: (details) =>
+                        _handlePanEnd(details, constraints, padding),
+                    child: _BaiBubbleButton(),
+                  ),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
 
-        return Stack(
-          children: [
-            widget.child,
-            if (!excluded && !_isHidden)
-              Positioned(
-                left: position.dx,
-                top: position.dy,
-                child: GestureDetector(
-                  onTap: _openBai,
-                  onPanStart: _handlePanStart,
-                  onPanUpdate: (details) =>
-                      _handlePanUpdate(details, constraints, padding),
-                  onPanEnd: _handlePanEnd,
-                  child: _BaiBubbleButton(),
-                ),
-              ),
-            if (!excluded && _isHidden)
-              Positioned(
-                right: -6,
-                top: position.dy
-                    .clamp(
-                      padding.top + _screenMargin,
-                      constraints.maxHeight -
-                          padding.bottom -
-                          _restoreTabWidth -
-                          _screenMargin,
-                    )
-                    .toDouble(),
-                child: GestureDetector(
-                  onTap: _restoreBubble,
-                  onHorizontalDragEnd: (details) {
-                    if (details.primaryVelocity != null &&
-                        details.primaryVelocity! < -220) {
-                      _restoreBubble();
-                    }
-                  },
-                  child: const _BaiRestoreTab(),
-                ),
-              ),
+class _DismissBubbleTarget extends StatelessWidget {
+  const _DismissBubbleTarget();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Release to remove BAI bubble',
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          color: const Color(0xFFB84040),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 14,
+              offset: const Offset(0, 5),
+            ),
           ],
-        );
-      },
+        ),
+        alignment: Alignment.center,
+        child: const Icon(Icons.close_rounded, color: Colors.white, size: 24),
+      ),
     );
   }
 }
@@ -240,9 +261,7 @@ class _BaiBubbleButton extends StatelessWidget {
       width: _BaiFloatingBubbleHostState._bubbleSize,
       height: _BaiFloatingBubbleHostState._bubbleSize,
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [kPrimary, kPrimaryLight],
-        ),
+        gradient: LinearGradient(colors: [kPrimary, kPrimaryLight]),
         shape: BoxShape.circle,
         boxShadow: [
           BoxShadow(
@@ -260,55 +279,6 @@ class _BaiBubbleButton extends StatelessWidget {
           fontSize: 13,
           fontWeight: FontWeight.w900,
         ),
-      ),
-    );
-  }
-}
-
-class _BaiRestoreTab extends StatelessWidget {
-  const _BaiRestoreTab();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: _BaiFloatingBubbleHostState._restoreTabWidth,
-      height: 72,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [kPrimary, kPrimaryLight],
-        ),
-        borderRadius: const BorderRadius.horizontal(
-          left: Radius.circular(22),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.16),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.chevron_left_rounded,
-            color: Colors.white,
-            size: 20,
-          ),
-          RotatedBox(
-            quarterTurns: 3,
-            child: Text(
-              'BAI',
-              style: GoogleFonts.plusJakartaSans(
-                color: Colors.white,
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0,
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }

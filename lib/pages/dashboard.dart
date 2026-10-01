@@ -5,12 +5,16 @@ import 'package:gabay/models/bill_models.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/models/finance_models.dart';
 import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/navigation/app_routes.dart';
+import 'package:gabay/pages/bai_chat.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/services/safe_to_spend.dart';
 import 'package:gabay/widgets/account_icon.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
+import 'package:gabay/pages/wallet.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
@@ -26,13 +30,38 @@ class _DashboardPageState extends State<DashboardPage> {
   List<FinanceTransaction> _transactions = [];
   List<Account> _accounts = [];
   double _netWorth = 0.0;
+  double _dailyAllocation = 172.30;
+  PayFrequency _payFrequency = PayFrequency.twiceMonthly;
+  int _payday1 = 15;
+  int? _payday2 = 30;
+  int? _intervalDays;
+  DateTime? _anchorPayday;
+  bool _showWeeklySpending = false;
   String _currency = '₱';
-  String _timeFilter = 'Day';
 
   @override
   void initState() {
     super.initState();
+    SettingsService().dailySpendingAllocationNotifier.addListener(
+      _handleDailyAllocationChanged,
+    );
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    SettingsService().dailySpendingAllocationNotifier.removeListener(
+      _handleDailyAllocationChanged,
+    );
+    super.dispose();
+  }
+
+  void _handleDailyAllocationChanged() {
+    if (!mounted) return;
+    setState(
+      () => _dailyAllocation =
+          SettingsService().dailySpendingAllocationNotifier.value,
+    );
   }
 
   Future<void> _loadData() async {
@@ -48,6 +77,12 @@ class _DashboardPageState extends State<DashboardPage> {
       _accounts = accounts;
       _netWorth = netWorth;
       _currency = SettingsService().currency;
+      _dailyAllocation = SettingsService().dailySpendingAllocation;
+      _payFrequency = SettingsService().payFrequency;
+      _payday1 = SettingsService().payday1;
+      _payday2 = SettingsService().payday2;
+      _intervalDays = SettingsService().intervalDays;
+      _anchorPayday = SettingsService().anchorPayday;
     });
   }
 
@@ -531,51 +566,57 @@ class _DashboardPageState extends State<DashboardPage> {
     return 'Good evening';
   }
 
-  double _calculateSpent() {
-    final now = DateTime.now();
-    double total = 0;
+  Future<void> _editSpendingSchedule() async {
+    final result = await showDialog<_SpendingScheduleResult>(
+      context: context,
+      builder: (_) => _DailyAllocationDialog(
+        currency: _currency,
+        initialAmount: _dailyAllocation,
+        initialFrequency: _payFrequency,
+        initialPayday1: _payday1,
+        initialPayday2: _payday2,
+        initialIntervalDays: _intervalDays,
+        initialAnchorPayday: _anchorPayday,
+      ),
+    );
+    if (result == null || !mounted) return;
+    await SettingsService().setDailySpendingAllocation(result.dailyBudget);
+    await SettingsService().setPaySchedule(
+      frequency: result.frequency,
+      payday1: result.payday1,
+      payday2: result.payday2,
+      intervalDays: result.intervalDays,
+      anchorPayday: result.anchorPayday,
+    );
+    if (!mounted) return;
+    setState(() {
+      _dailyAllocation = result.dailyBudget;
+      _payFrequency = result.frequency;
+      _payday1 = result.payday1;
+      _payday2 = result.payday2;
+      _intervalDays = result.intervalDays;
+      _anchorPayday = result.anchorPayday;
+    });
+  }
 
-    // Calculate from finance transactions
-    final expenses = _transactions.where((t) => t.isExpense);
-    for (var t in expenses) {
-      if (_timeFilter == 'Day' &&
-          t.date.day == now.day &&
-          t.date.month == now.month &&
-          t.date.year == now.year) {
-        total += t.amount;
-      } else if (_timeFilter == 'Week' && now.difference(t.date).inDays <= 7) {
-        total += t.amount;
-      } else if (_timeFilter == 'Month' &&
-          t.date.month == now.month &&
-          t.date.year == now.year) {
-        total += t.amount;
+  double _calculateSpentBetween(DateTime start, DateTime end) {
+    var total = 0.0;
+    for (final transaction in _transactions) {
+      if (!transaction.isExpense ||
+          transaction.category.trim().toLowerCase() == 'transfer' ||
+          transaction.date.isBefore(start) ||
+          !transaction.date.isBefore(end)) {
+        continue;
       }
+      total += transaction.amount;
     }
 
-    // Calculate from grocery lists
-    for (var list in AppState.recentLists) {
-      if (_timeFilter == 'Day' &&
-          list.date.day == now.day &&
-          list.date.month == now.month &&
-          list.date.year == now.year) {
-        total += list.items.fold(
-          0.0,
-          (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
-        );
-      } else if (_timeFilter == 'Week' &&
-          now.difference(list.date).inDays <= 7) {
-        total += list.items.fold(
-          0.0,
-          (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
-        );
-      } else if (_timeFilter == 'Month' &&
-          list.date.month == now.month &&
-          list.date.year == now.year) {
-        total += list.items.fold(
-          0.0,
-          (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
-        );
-      }
+    for (final list in AppState.recentLists) {
+      if (list.date.isBefore(start) || !list.date.isBefore(end)) continue;
+      total += list.items.fold(
+        0.0,
+        (sum, item) => sum + getItemTotal(item.price, item.qty, item.unit),
+      );
     }
     return total;
   }
@@ -608,10 +649,37 @@ class _DashboardPageState extends State<DashboardPage> {
     final recentLists = AppState.recentLists;
     final userName = SettingsService().userName;
     final displayName = userName.isNotEmpty ? userName : 'User';
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final resolvedPayday = nextPayday(
+      today: today,
+      frequency: _payFrequency,
+      payday1: _payday1,
+      payday2: _payday2,
+      intervalDays: _intervalDays,
+      anchor: _anchorPayday,
+    );
+    final todaySpent = _calculateSpentBetween(today, tomorrow);
+    final daysLeft = calculateDaysLeft(today: today, payday: resolvedPayday);
+    final spendingPlan = SafeToSpend.calculate(
+      balance: _netWorth,
+      dailyBudget: _dailyAllocation,
+      daysLeft: daysLeft,
+      spentToday: todaySpent,
+    );
+    final weekStart = today.subtract(const Duration(days: 6));
+    final weekSpent = _calculateSpentBetween(weekStart, tomorrow);
+    final periodSpent = _showWeeklySpending ? weekSpent : todaySpent;
+    final periodBudget = _dailyAllocation * (_showWeeklySpending ? 7 : 1);
+    final spendProgress = periodBudget <= 0
+        ? 0.0
+        : (periodSpent / periodBudget).clamp(0.0, 1.0).toDouble();
 
     final sortedTxns = List<FinanceTransaction>.from(_transactions)
       ..sort((a, b) => b.date.compareTo(a.date));
-    final showExpenseFirst = sortedTxns.isNotEmpty && sortedTxns.first.isExpense;
+    final showExpenseFirst =
+        sortedTxns.isNotEmpty && sortedTxns.first.isExpense;
 
     Widget buildIncomeSection() {
       return Column(
@@ -649,41 +717,31 @@ class _DashboardPageState extends State<DashboardPage> {
 
     return Scaffold(
       backgroundColor: kBackground,
-      appBar: AppBar(toolbarHeight: 0, backgroundColor: kBackground),
+      appBar: AppBar(
+        backgroundColor: kBackground,
+        elevation: 0,
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: Icon(Icons.menu_rounded, color: kTextCharcoal, size: 28),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        title: Text(
+          DateFormat('EEEE, MMM d').format(DateTime.now()).toUpperCase(),
+          style: GoogleFonts.plusJakartaSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: kMuted,
+            letterSpacing: 1.5,
+          ),
+        ),
+        centerTitle: false,
+      ),
       drawer: const AppDrawer(currentPage: 'Dashboard'),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           children: [
-            // Top Bar: Menu + Date
-            Row(
-              children: [
-                Builder(
-                  builder: (context) => IconButton(
-                    icon: Icon(
-                      Icons.menu_rounded,
-                      color: kTextCharcoal,
-                      size: 28,
-                    ),
-                    onPressed: () => Scaffold.of(context).openDrawer(),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Text(
-                  DateFormat(
-                    'EEEE, MMM d',
-                  ).format(DateTime.now()).toUpperCase(),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: kMuted,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-              ],
-            ),
             const SizedBox(height: 20),
 
             // Greeting
@@ -698,8 +756,7 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
             const SizedBox(height: 16),
 
-            const _GreetingSection(),
-            const SizedBox(height: 24),
+            _GreetingSection(spentToday: spendingPlan.spentToday),
 
             // Total Balance Card
             Container(
@@ -723,22 +780,36 @@ class _DashboardPageState extends State<DashboardPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'TOTAL BALANCE',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      color: Colors.white.withValues(alpha: 0.8),
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '$_currency${_netWorth.toStringAsFixed(2)}',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
+                  InkWell(
+                    onTap: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(builder: (_) => const WalletPage()),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'TOTAL BALANCE',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white.withValues(alpha: 0.8),
+                            letterSpacing: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          formatPeso(_netWorth),
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 20),
@@ -820,8 +891,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 // Animated 3D Bar Chart
                 Expanded(
                   child: Container(
-                    height: 130,
-                    padding: const EdgeInsets.fromLTRB(8, 12, 8, 4),
+                    height: 205,
+                    padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: kCardBg,
                       borderRadius: BorderRadius.circular(20),
@@ -834,53 +905,143 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                // Spent Card — Glassmorphic Pill
+                // Daily spend and salary-cycle allowance.
                 Expanded(
-                  child: Container(
-                    height: 130,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                    decoration: BoxDecoration(
-                      color: kCardBg,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [kShadowSoft],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        _DynamicIslandFilter(
-                          selectedValue: _timeFilter,
-                          onChanged: (val) =>
-                              setState(() => _timeFilter = val),
-                        ),
-                        AnimatedSwitcher(
-                          duration: const Duration(milliseconds: 400),
-                          transitionBuilder: (child, animation) {
-                            return FadeTransition(
-                              opacity: animation,
-                              child: SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0, 0.15),
-                                  end: Offset.zero,
-                                ).animate(CurvedAnimation(
-                                  parent: animation,
-                                  curve: Curves.easeOut,
-                                )),
-                                child: child,
+                  child: GestureDetector(
+                    key: const ValueKey('safe_to_spend_card'),
+                    onTap: _editSpendingSchedule,
+                    onHorizontalDragEnd: (details) {
+                      if (details.primaryVelocity == null ||
+                          details.primaryVelocity == 0) {
+                        return;
+                      }
+                      setState(() {
+                        _showWeeklySpending = details.primaryVelocity! < 0;
+                      });
+                    },
+                    child: Container(
+                      height: 205,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: kCardBg,
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [kShadowSoft],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.shield_outlined,
+                                size: 15,
+                                color: kPrimary,
                               ),
-                            );
-                          },
-                          child: Text(
-                            '${SettingsService().currency}${_calculateSpent().toStringAsFixed(0)}',
-                            key: ValueKey<String>('spent_$_timeFilter'),
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w800,
-                              color: kTextCharcoal,
+                              const SizedBox(width: 5),
+                              Text(
+                                'SAFE TO SPEND',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: kMuted,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                            ],
+                          ),
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 250),
+                            child: Text(
+                              formatPeso(spendingPlan.safeToSpend),
+                              key: ValueKey<double>(spendingPlan.safeToSpend),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
+                                color: kTextCharcoal,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.chevron_left_rounded,
+                                size: 17,
+                                color: _showWeeklySpending ? kMuted : kPrimary,
+                              ),
+                              Text(
+                                _showWeeklySpending ? 'WEEK' : 'TODAY',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: kPrimary,
+                                ),
+                              ),
+                              Icon(
+                                Icons.chevron_right_rounded,
+                                size: 17,
+                                color: _showWeeklySpending ? kPrimary : kMuted,
+                              ),
+                            ],
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: LinearProgressIndicator(
+                                  value: spendProgress,
+                                  minHeight: 7,
+                                  backgroundColor: kPrimary.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    spendingPlan.safeToSpend <= 0
+                                        ? Colors.red
+                                        : kPrimary,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${NumberFormat('0.##').format(spendProgress * 100)}% of 100%',
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 9,
+                                  color: kMuted,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            '${formatPeso(_dailyAllocation)}/day',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: kMuted,
+                            ),
+                          ),
+                          Text(
+                            'Next payday: ${DateFormat('MMM d').format(resolvedPayday)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 9,
+                              color: kMuted,
+                            ),
+                          ),
+                          if (spendingPlan.extra < 0)
+                            Text(
+                              'Over plan by ${formatPeso(spendingPlan.extra.abs())}; revised ${formatPeso(spendingPlan.effectiveDailyBudget)}/day',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 8,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.red,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -907,6 +1068,343 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
+class _SpendingScheduleResult {
+  final double dailyBudget;
+  final PayFrequency frequency;
+  final int payday1;
+  final int? payday2;
+  final int? intervalDays;
+  final DateTime? anchorPayday;
+
+  const _SpendingScheduleResult({
+    required this.dailyBudget,
+    required this.frequency,
+    required this.payday1,
+    required this.payday2,
+    required this.intervalDays,
+    required this.anchorPayday,
+  });
+}
+
+class _DailyAllocationDialog extends StatefulWidget {
+  final String currency;
+  final double initialAmount;
+  final PayFrequency initialFrequency;
+  final int initialPayday1;
+  final int? initialPayday2;
+  final int? initialIntervalDays;
+  final DateTime? initialAnchorPayday;
+
+  const _DailyAllocationDialog({
+    required this.currency,
+    required this.initialAmount,
+    required this.initialFrequency,
+    required this.initialPayday1,
+    required this.initialPayday2,
+    required this.initialIntervalDays,
+    required this.initialAnchorPayday,
+  });
+
+  @override
+  State<_DailyAllocationDialog> createState() => _DailyAllocationDialogState();
+}
+
+class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
+  late final TextEditingController _dailyBudgetController;
+  late final TextEditingController _customIntervalController;
+  late PayFrequency _frequency;
+  late int _payday1;
+  late int _payday2;
+  late DateTime _anchorPayday;
+
+  @override
+  void initState() {
+    super.initState();
+    _dailyBudgetController = TextEditingController(
+      text: widget.initialAmount.toStringAsFixed(2),
+    );
+    _customIntervalController = TextEditingController(
+      text: (widget.initialIntervalDays ?? 10).toString(),
+    );
+    _frequency = widget.initialFrequency;
+    _payday1 = widget.initialPayday1;
+    _payday2 = widget.initialPayday2 ?? (widget.initialPayday1 == 15 ? 30 : 15);
+    final today = _today;
+    _anchorPayday =
+        widget.initialAnchorPayday ??
+        nextPayday(
+          today: today,
+          frequency: widget.initialFrequency,
+          payday1: widget.initialPayday1,
+          payday2: widget.initialPayday2,
+          intervalDays: widget.initialIntervalDays,
+        );
+  }
+
+  @override
+  void dispose() {
+    _dailyBudgetController.dispose();
+    _customIntervalController.dispose();
+    super.dispose();
+  }
+
+  DateTime get _today {
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  double? _parseAmount(String value) {
+    final parsed = double.tryParse(value.replaceAll(',', '').trim());
+    if (parsed == null || parsed <= 0 || !parsed.isFinite) return null;
+    return parsed;
+  }
+
+  int? get _customInterval {
+    final parsed = int.tryParse(_customIntervalController.text.trim());
+    return parsed != null && parsed >= 1 && parsed <= 90 ? parsed : null;
+  }
+
+  int? get _intervalForFrequency => switch (_frequency) {
+    PayFrequency.weekly => 7,
+    PayFrequency.everyTwoWeeks => 14,
+    PayFrequency.every15Days => 15,
+    PayFrequency.every30Days => 30,
+    PayFrequency.custom => _customInterval,
+    PayFrequency.monthly || PayFrequency.twiceMonthly => null,
+  };
+
+  bool get _isCalendarBased =>
+      _frequency == PayFrequency.monthly ||
+      _frequency == PayFrequency.twiceMonthly;
+
+  DateTime? get _resolvedPayday {
+    final interval = _intervalForFrequency;
+    if (!_isCalendarBased && interval == null) return null;
+    return nextPayday(
+      today: _today,
+      frequency: _frequency,
+      payday1: _payday1,
+      payday2: _payday2,
+      intervalDays: interval,
+      anchor: _anchorPayday,
+    );
+  }
+
+  bool get _valid {
+    if (_parseAmount(_dailyBudgetController.text) == null) return false;
+    if (_frequency == PayFrequency.twiceMonthly && _payday1 == _payday2) {
+      return false;
+    }
+    if (!_isCalendarBased && _intervalForFrequency == null) return false;
+    if (!_isCalendarBased && _resolvedPayday!.isBefore(_today)) return false;
+    return true;
+  }
+
+  void _save() {
+    if (!_valid) return;
+    final amount = _parseAmount(_dailyBudgetController.text)!;
+    Navigator.pop(
+      context,
+      _SpendingScheduleResult(
+        dailyBudget: amount,
+        frequency: _frequency,
+        payday1: _payday1,
+        payday2: _payday2,
+        intervalDays: _intervalForFrequency,
+        anchorPayday: _anchorPayday,
+      ),
+    );
+  }
+
+  Future<void> _pickAnchorPayday() async {
+    final resolved = _resolvedPayday ?? _today;
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: resolved.isBefore(_today) ? _today : resolved,
+      firstDate: _today,
+      lastDate: DateTime(_today.year + 20),
+    );
+    if (selected == null || !mounted) return;
+    setState(() {
+      _anchorPayday = DateTime(selected.year, selected.month, selected.day);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Spending schedule'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DropdownButtonFormField<PayFrequency>(
+            initialValue: _frequency,
+            decoration: const InputDecoration(labelText: 'Pay frequency'),
+            items: PayFrequency.values
+                .map(
+                  (frequency) => DropdownMenuItem(
+                    value: frequency,
+                    child: Text(_frequencyLabel(frequency)),
+                  ),
+                )
+                .toList(),
+            onChanged: (frequency) {
+              if (frequency != null) setState(() => _frequency = frequency);
+            },
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _dailyBudgetController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              labelText: 'Daily budget',
+              prefixText: '${widget.currency} ',
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_frequency == PayFrequency.monthly)
+            _paydayDropdown(
+              label: 'Payday',
+              value: _payday1,
+              onChanged: (day) => setState(() => _payday1 = day),
+            ),
+          if (_frequency == PayFrequency.twiceMonthly)
+            Row(
+              children: [
+                Expanded(
+                  child: _paydayDropdown(
+                    label: 'Payday 1',
+                    value: _payday1,
+                    onChanged: (day) => _updatePaydays(first: day),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _paydayDropdown(
+                    label: 'Payday 2',
+                    value: _payday2,
+                    onChanged: (day) => _updatePaydays(second: day),
+                  ),
+                ),
+              ],
+            ),
+          if (_isCalendarBased)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                'Dates after month-end use the last day of that month.',
+                style: TextStyle(fontSize: 11, color: kMuted),
+              ),
+            ),
+          if (!_isCalendarBased) ...[
+            if (_frequency == PayFrequency.custom)
+              TextField(
+                controller: _customIntervalController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Every N days',
+                  helperText: 'Enter a value from 1 to 90',
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+            OutlinedButton.icon(
+              onPressed: _pickAnchorPayday,
+              icon: const Icon(Icons.calendar_today_outlined),
+              label: Text(
+                'Next payday: ${DateFormat('MMM d').format(_resolvedPayday ?? _anchorPayday)}',
+              ),
+            ),
+          ],
+          if (_frequency == PayFrequency.twiceMonthly && _payday1 == _payday2)
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Choose two different payday dates.'),
+            ),
+          if (_resolvedPayday case final resolved?)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Next payday: ${DateFormat('MMM d').format(resolved)}',
+                  style: TextStyle(fontSize: 12, color: kMuted),
+                ),
+              ),
+            ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _valid ? _save : null,
+          child: const Text('Save'),
+        ),
+      ],
+    );
+  }
+
+  String _ordinalSuffix(int day) {
+    if (day % 100 >= 11 && day % 100 <= 13) return 'th';
+    switch (day % 10) {
+      case 1:
+        return 'st';
+      case 2:
+        return 'nd';
+      case 3:
+        return 'rd';
+      default:
+        return 'th';
+    }
+  }
+
+  DropdownButtonFormField<int> _paydayDropdown({
+    required String label,
+    required int value,
+    required ValueChanged<int> onChanged,
+  }) => DropdownButtonFormField<int>(
+    initialValue: value,
+    decoration: InputDecoration(labelText: label),
+    items: List.generate(31, (index) => index + 1)
+        .map(
+          (day) => DropdownMenuItem(
+            value: day,
+            child: Text('$day${_ordinalSuffix(day)}'),
+          ),
+        )
+        .toList(),
+    onChanged: (day) {
+      if (day != null) onChanged(day);
+    },
+  );
+
+  void _updatePaydays({int? first, int? second}) {
+    final firstValue = first ?? _payday1;
+    final secondValue = second ?? _payday2;
+    setState(() {
+      if (firstValue != secondValue) {
+        _payday1 = firstValue < secondValue ? firstValue : secondValue;
+        _payday2 = firstValue < secondValue ? secondValue : firstValue;
+      } else {
+        _payday1 = firstValue;
+        _payday2 = secondValue;
+      }
+    });
+  }
+
+  String _frequencyLabel(PayFrequency frequency) => switch (frequency) {
+    PayFrequency.monthly => 'Monthly',
+    PayFrequency.twiceMonthly => 'Twice a month',
+    PayFrequency.weekly => 'Weekly',
+    PayFrequency.everyTwoWeeks => 'Every 2 weeks',
+    PayFrequency.every15Days => 'Every 15 days',
+    PayFrequency.every30Days => 'Every 30 days',
+    PayFrequency.custom => 'Custom',
+  };
+}
+
 class _GlassTrendChart extends StatefulWidget {
   final List<GroceryList> recentLists;
   final List<FinanceTransaction> transactions;
@@ -931,10 +1429,7 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
       duration: const Duration(milliseconds: 1200),
       vsync: this,
     );
-    _barAnim = CurvedAnimation(
-      parent: _animCtrl,
-      curve: Curves.easeOutBack,
-    );
+    _barAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutBack);
     _animCtrl.forward();
   }
 
@@ -1035,8 +1530,9 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
                           dayLabels[i],
                           style: GoogleFonts.plusJakartaSans(
                             fontSize: 9,
-                            fontWeight:
-                                isToday ? FontWeight.w800 : FontWeight.w600,
+                            fontWeight: isToday
+                                ? FontWeight.w800
+                                : FontWeight.w600,
                             color: isToday
                                 ? kPrimary
                                 : kMuted.withValues(alpha: 0.5),
@@ -1058,14 +1554,19 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
                 x: i,
                 barRods: [
                   BarChartRodData(
-                    toY: (hasData ? weeklyData[i] : chartMax * 0.04) *
+                    toY:
+                        (hasData ? weeklyData[i] : chartMax * 0.04) *
                         _barAnim.value,
                     gradient: hasData
                         ? LinearGradient(
                             colors: isToday
                                 ? [
                                     kPrimaryLight,
-                                    Color.lerp(kPrimaryLight, Colors.white, 0.45)!,
+                                    Color.lerp(
+                                      kPrimaryLight,
+                                      Colors.white,
+                                      0.45,
+                                    )!,
                                     kPrimary,
                                     Color.lerp(kPrimary, Colors.black, 0.15)!,
                                   ]
@@ -1097,111 +1598,6 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
           duration: Duration.zero,
         );
       },
-    );
-  }
-}
-
-class _DynamicIslandFilter extends StatefulWidget {
-  final String selectedValue;
-  final ValueChanged<String> onChanged;
-
-  const _DynamicIslandFilter({
-    required this.selectedValue,
-    required this.onChanged,
-  });
-
-  @override
-  State<_DynamicIslandFilter> createState() => _DynamicIslandFilterState();
-}
-
-class _DynamicIslandFilterState extends State<_DynamicIslandFilter> {
-  bool _expanded = false;
-  double _scale = 1.0;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTapDown: (_) => setState(() => _scale = 0.95),
-      onTapUp: (_) => setState(() => _scale = 1.0),
-      onTapCancel: () => setState(() => _scale = 1.0),
-      onTap: () {
-        setState(() {
-          _expanded = !_expanded;
-        });
-      },
-      child: AnimatedScale(
-        scale: _scale,
-        duration: const Duration(milliseconds: 100),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 350),
-          curve: Curves.easeOutBack,
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-          decoration: BoxDecoration(
-            color: kPrimarySoft,
-            borderRadius: BorderRadius.circular(_expanded ? 12 : 20),
-            border: Border.all(
-              color: kPrimary.withValues(alpha: 0.15),
-            ),
-          ),
-          child: AnimatedSize(
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeInOut,
-            child: _expanded
-                ? Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: ['Day', 'Week', 'Month'].map((filter) {
-                      final isSelected = filter == widget.selectedValue;
-                      return GestureDetector(
-                        onTap: () {
-                          widget.onChanged(filter);
-                          setState(() {
-                            _expanded = false;
-                          });
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 2),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 3,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isSelected ? kPrimary : Colors.transparent,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            filter,
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: isSelected ? Colors.white : kPrimary,
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  )
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Spent ${widget.selectedValue}',
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: kPrimary,
-                        ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(
-                        Icons.keyboard_arrow_down_rounded,
-                        color: kPrimary,
-                        size: 14,
-                      ),
-                    ],
-                  ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -1304,7 +1700,7 @@ class _UpcomingEventsList extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${SettingsService().currency}${bill.amount.toStringAsFixed(0)}',
+                  formatPeso(bill.amount),
                   style: GoogleFonts.plusJakartaSans(
                     fontWeight: FontWeight.w800,
                     color: kTextCharcoal,
@@ -1331,10 +1727,7 @@ class _TransactionList extends StatelessWidget {
     required this.onUndo,
   });
 
-  String _money(double value, {bool decimals = false}) {
-    final pattern = decimals ? '#,##0.00' : '#,##0';
-    return '${SettingsService().currency}${NumberFormat(pattern).format(value)}';
-  }
+  String _money(double value) => formatPeso(value);
 
   String _displayTitle(FinanceTransaction transaction) {
     final description = transaction.description.trim();
@@ -1563,7 +1956,9 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _GreetingSection extends StatefulWidget {
-  const _GreetingSection();
+  final double spentToday;
+
+  const _GreetingSection({required this.spentToday});
 
   @override
   State<_GreetingSection> createState() => _GreetingSectionState();
@@ -1574,6 +1969,14 @@ class _GreetingSectionState extends State<_GreetingSection> {
   int _currentIndex = 0;
   Timer? _timer;
   bool _isLoading = true;
+
+  @override
+  void didUpdateWidget(covariant _GreetingSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.spentToday != widget.spentToday) {
+      _loadGreeting();
+    }
+  }
 
   @override
   void initState() {
@@ -1588,7 +1991,9 @@ class _GreetingSectionState extends State<_GreetingSection> {
   }
 
   Future<void> _loadGreeting() async {
+    _timer?.cancel();
     final bills = await BillStorage.loadBills();
+    if (!mounted) return;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
@@ -1614,25 +2019,13 @@ class _GreetingSectionState extends State<_GreetingSection> {
         'EEEE',
       ).format(firstBill.dueDate).toLowerCase();
       activeMessages.add(
-        'hey, you have upcoming ${firstBill.type.toLowerCase()} bill this $dateStr, worth ₱${firstBill.amount.toStringAsFixed(2)}.',
+        'hey, you have upcoming ${firstBill.type.toLowerCase()} bill this $dateStr, worth ${formatPeso(firstBill.amount)}.',
       );
     }
 
-    // 2. Check Today's Spending
-    double spentToday = 0.0;
-    for (var list in AppState.recentLists) {
-      final listDay = DateTime(list.date.year, list.date.month, list.date.day);
-      if (listDay.isAtSameMomentAs(today)) {
-        spentToday += list.items.fold(
-          0.0,
-          (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
-        );
-      }
-    }
-
-    if (spentToday > 0) {
+    if (widget.spentToday > 0) {
       activeMessages.add(
-        'your total spent for today is ₱${spentToday.toStringAsFixed(2)}.',
+        'your total spent for today is ${formatPeso(widget.spentToday)}.',
       );
     }
 
@@ -1659,78 +2052,110 @@ class _GreetingSectionState extends State<_GreetingSection> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Center(
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            // 3D Avatar Image
-            Transform.translate(
-              offset: Offset.zero,
-              child: Container(
-                width: 130,
-                height: 130,
-                decoration: const BoxDecoration(
-                  image: DecorationImage(
-                    image: AssetImage('assets/images/greeting_avatar.png'),
-                    fit: BoxFit.contain,
-                  ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        Navigator.push(
+          context,
+          PageRouteBuilder<void>(
+            settings: const RouteSettings(name: kBaiChatRouteName),
+            pageBuilder: (_, _, _) => const BaiChatPage(),
+            transitionDuration: const Duration(milliseconds: 280),
+            reverseTransitionDuration: const Duration(milliseconds: 220),
+            transitionsBuilder: (_, animation, _, child) {
+              final transition = CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeOutCubic,
+                reverseCurve: Curves.easeInCubic,
+              );
+              return FadeTransition(
+                opacity: transition,
+                child: SlideTransition(
+                  position: Tween<Offset>(
+                    begin: const Offset(0.035, 0),
+                    end: Offset.zero,
+                  ).animate(transition),
+                  child: child,
                 ),
-              ),
-            ),
-            // Chat Bubble with Tail
-            Flexible(
-              child: IntrinsicWidth(
-                child: CustomPaint(
-                  painter: _BubblePainter(kCardBg),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 8,
+              );
+            },
+          ),
+        );
+      },
+      child: Semantics(
+        button: true,
+        label: 'Open BAI chat',
+        child: Center(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // 3D Avatar Image
+              Transform.translate(
+                offset: Offset.zero,
+                child: Container(
+                  width: 130,
+                  height: 130,
+                  decoration: const BoxDecoration(
+                    image: DecorationImage(
+                      image: AssetImage('assets/images/greeting_avatar.png'),
+                      fit: BoxFit.contain,
                     ),
-                    margin: const EdgeInsets.only(left: 10, top: 0, right: 0),
-                    child: _isLoading
-                        ? SizedBox(
-                            width: 24,
-                            height: 24,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                kPrimary,
-                              ),
-                            ),
-                          )
-                        : AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 500),
-                            transitionBuilder: (child, animation) {
-                              return FadeTransition(
-                                opacity: animation,
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0, 0.2),
-                                    end: Offset.zero,
-                                  ).animate(animation),
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: Text(
-                              _messages[_currentIndex],
-                              key: ValueKey<int>(_currentIndex),
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w400,
-                                color: kTextCharcoal,
-                              ),
-                            ),
-                          ),
                   ),
                 ),
               ),
-            ),
-          ],
+              // Chat Bubble with Tail
+              Flexible(
+                child: IntrinsicWidth(
+                  child: CustomPaint(
+                    painter: _BubblePainter(kCardBg),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      margin: const EdgeInsets.only(left: 10, top: 0, right: 0),
+                      child: _isLoading
+                          ? SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  kPrimary,
+                                ),
+                              ),
+                            )
+                          : AnimatedSwitcher(
+                              duration: const Duration(milliseconds: 500),
+                              transitionBuilder: (child, animation) {
+                                return FadeTransition(
+                                  opacity: animation,
+                                  child: SlideTransition(
+                                    position: Tween<Offset>(
+                                      begin: const Offset(0, 0.2),
+                                      end: Offset.zero,
+                                    ).animate(animation),
+                                    child: child,
+                                  ),
+                                );
+                              },
+                              child: Text(
+                                _messages[_currentIndex],
+                                key: ValueKey<int>(_currentIndex),
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w400,
+                                  color: kTextCharcoal,
+                                ),
+                              ),
+                            ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
