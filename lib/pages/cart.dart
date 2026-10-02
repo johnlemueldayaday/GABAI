@@ -1309,100 +1309,20 @@ class _CartDetailPageState extends State<CartDetailPage>
     }
   }
 
+  /// Shows the cash top-up dialog and waits for its exit animation to
+  /// fully complete before returning, preventing Hero/layout assertion
+  /// errors when we subsequently pop the parent page.
   Future<double?> _promptCashTopUp(double minimumAmount) async {
-    final amountController = TextEditingController(
-      text: minimumAmount.toStringAsFixed(2),
-    );
-    String? errorMessage;
-
-    final amount = await showDialog<double>(
+    final result = await showDialog<double>(
       context: context,
-      builder: (dialogContext) => StatefulBuilder(
-        builder: (context, setDialogState) => Dialog(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: SingleChildScrollView(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Add Money to Cash',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w700,
-                        color: kTextCharcoal,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'Add at least ₱${minimumAmount.toStringAsFixed(2)} to cover this trip.',
-                      style: GoogleFonts.plusJakartaSans(
-                        color: kMuted,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextField(
-                      controller: amountController,
-                      autofocus: true,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: InputDecoration(
-                        labelText: 'Amount to add',
-                        prefixText: '₱',
-                        errorText: errorMessage,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext),
-                          child: const Text('Cancel'),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton(
-                          onPressed: () {
-                            final enteredAmount = double.tryParse(
-                              amountController.text.trim().replaceAll(',', ''),
-                            );
-                            if (enteredAmount == null ||
-                                enteredAmount < minimumAmount) {
-                              setDialogState(() {
-                                errorMessage =
-                                    'Enter at least ₱${minimumAmount.toStringAsFixed(2)}.';
-                              });
-                              return;
-                            }
-                            Navigator.pop(dialogContext, enteredAmount);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: kPrimary,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: const Text('Add Money'),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+      builder: (_) => _CashTopUpDialog(minimumAmount: minimumAmount),
     );
-
-    amountController.dispose();
-    return amount;
+    // Wait one frame so Flutter can finish the dialog's exit animation
+    // before any subsequent async work or navigation.
+    await Future.delayed(Duration.zero);
+    return result;
   }
+
 
   Future<void> _finishList() async {
     final checkedItems = _items.where((i) => i.isDone).toList();
@@ -1447,11 +1367,13 @@ class _CartDetailPageState extends State<CartDetailPage>
       if (!mounted) return;
       selectedAccount = await showDialog<Account>(
         context: context,
-        builder: (context) {
+        builder: (dialogContext) {
           final listHeight = (accounts.length * 72.0)
-              .clamp(72.0, MediaQuery.of(context).size.height * 0.5)
+              .clamp(72.0, MediaQuery.of(dialogContext).size.height * 0.5)
               .toDouble();
           return Dialog(
+            backgroundColor: kCardBg,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Padding(
@@ -1472,7 +1394,7 @@ class _CartDetailPageState extends State<CartDetailPage>
                       height: listHeight,
                       child: ListView.builder(
                         itemCount: accounts.length,
-                        itemBuilder: (context, index) {
+                        itemBuilder: (itemContext, index) {
                           final account = accounts[index];
                           return ListTile(
                             contentPadding: EdgeInsets.zero,
@@ -1495,7 +1417,7 @@ class _CartDetailPageState extends State<CartDetailPage>
                                 color: kMuted,
                               ),
                             ),
-                            onTap: () => Navigator.pop(context, account),
+                            onTap: () => Navigator.pop(dialogContext, account),
                           );
                         },
                       ),
@@ -1509,15 +1431,23 @@ class _CartDetailPageState extends State<CartDetailPage>
       );
     }
 
-    if (selectedAccount == null) {
+    if (selectedAccount == null || !mounted) {
       return; // User cancelled
     }
 
     if (selectedAccount.name.toLowerCase() == 'cash' &&
         totalSpent > selectedAccount.balance) {
+      // If there was a "Select Account" dialog, wait for its exit animation.
+      // (When there is only 1 account this is a no-op.)
+      if (accounts.length > 1) {
+        await Future.delayed(const Duration(milliseconds: 150));
+      }
+      if (!mounted) return;
+
       final minimumTopUp = totalSpent - selectedAccount.balance;
+      // _promptCashTopUp already waits one frame after the dialog exits.
       final amountToAdd = await _promptCashTopUp(minimumTopUp);
-      if (amountToAdd == null) return;
+      if (amountToAdd == null || !mounted) return;
 
       try {
         await FinanceStorage.addTransaction(
@@ -1572,47 +1502,52 @@ class _CartDetailPageState extends State<CartDetailPage>
       }
     }
 
-    setState(() {
-      final recent = GroceryList(
-        _listName,
-        budget: _budget,
-        store: AppState.currentList?.store ?? '',
-      );
-      recent.items = checkedItems
-          .map(
-            (e) => GroceryItem(
-              id: e.id,
-              name: e.name,
-              qty: e.qty,
-              unit: e.unit,
-              price: e.price,
-              isDone: true,
-              category: e.category,
-            ),
-          )
-          .toList();
+    final recent = GroceryList(
+      _listName,
+      budget: _budget,
+      store: AppState.currentList?.store ?? '',
+    );
+    recent.items = checkedItems
+        .map(
+          (e) => GroceryItem(
+            id: e.id,
+            name: e.name,
+            qty: e.qty,
+            unit: e.unit,
+            price: e.price,
+            isDone: true,
+            category: e.category,
+          ),
+        )
+        .toList();
 
-      AppState.recentLists.insert(0, recent);
+    AppState.recentLists.insert(0, recent);
 
-      // Record prices to history if store is provided
-      final store = recent.store.trim();
-      if (store.isNotEmpty) {
-        for (final item in recent.items) {
-          PriceStorage.recordPrice(item.name, store, item.price, item.unit);
-        }
+    // Record prices to history if store is provided
+    final store = recent.store.trim();
+    if (store.isNotEmpty) {
+      for (final item in recent.items) {
+        PriceStorage.recordPrice(item.name, store, item.price, item.unit);
       }
+    }
 
-      // Remove the entire list from "My Carts" since it's now in History
-      if (AppState.activeIndex >= 0 &&
-          AppState.activeIndex < AppState.lists.length) {
-        AppState.lists.removeAt(AppState.activeIndex);
-        AppState.activeIndex = -1;
-      }
+    // Remove the entire list from "My Carts" since it's now in History
+    if (AppState.activeIndex >= 0 &&
+        AppState.activeIndex < AppState.lists.length) {
+      AppState.lists.removeAt(AppState.activeIndex);
+      AppState.activeIndex = -1;
+    }
 
-      GroceryStorage.saveAll();
-    });
+    GroceryStorage.saveAll();
 
     if (!mounted) return;
+
+    // Allow any pending frame/animation to finish before popping the page.
+    // This is critical when the cash top-up dialog was shown: its Hero exit
+    // animation must complete before we remove the parent route.
+    await Future.delayed(Duration.zero);
+    if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
@@ -1956,6 +1891,129 @@ class _CartDetailPageState extends State<CartDetailPage>
       floatingActionButton: Column(
         mainAxisSize: MainAxisSize.min,
         children: [_BouncingFAB(onPressed: _showAddItemSheet, icon: Icons.add)],
+      ),
+    );
+  }
+}
+
+// ─── Cash Top-up Dialog ──────────────────────────────────────────────────────
+class _CashTopUpDialog extends StatefulWidget {
+  final double minimumAmount;
+
+  const _CashTopUpDialog({required this.minimumAmount});
+
+  @override
+  State<_CashTopUpDialog> createState() => _CashTopUpDialogState();
+}
+
+class _CashTopUpDialogState extends State<_CashTopUpDialog> {
+  late final TextEditingController _amountController;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _amountController = TextEditingController(
+      text: widget.minimumAmount.toStringAsFixed(2),
+    );
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final enteredAmount = double.tryParse(
+      _amountController.text.trim().replaceAll(',', ''),
+    );
+    if (enteredAmount == null || enteredAmount < widget.minimumAmount) {
+      setState(() {
+        _errorMessage =
+            'Enter at least ₱${widget.minimumAmount.toStringAsFixed(2)}.';
+      });
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    Navigator.of(context).pop(enteredAmount);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: kCardBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: SingleChildScrollView(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Add Money to Cash',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                    color: kTextCharcoal,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Add at least ₱${widget.minimumAmount.toStringAsFixed(2)} to cover this trip.',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: kMuted,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _amountController,
+                  autofocus: true,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _submit(),
+                  decoration: InputDecoration(
+                    labelText: 'Amount to add',
+                    prefixText: '₱',
+                    errorText: _errorMessage,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () {
+                        FocusScope.of(context).unfocus();
+                        Navigator.of(context).pop();
+                      },
+                      child: const Text('Cancel'),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton(
+                      onPressed: _submit,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: kPrimary,
+                        foregroundColor: Colors.white,
+                      ),
+                      child: const Text('Add Money'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

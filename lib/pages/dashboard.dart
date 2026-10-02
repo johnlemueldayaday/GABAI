@@ -38,6 +38,7 @@ class _DashboardPageState extends State<DashboardPage> {
   DateTime? _anchorPayday;
   bool _showWeeklySpending = false;
   String _currency = '₱';
+  late final PageController _safeToSpendPageController;
 
   @override
   void initState() {
@@ -46,6 +47,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _handleDailyAllocationChanged,
     );
     _loadData();
+    _safeToSpendPageController = PageController(initialPage: _showWeeklySpending ? 1 : 0);
   }
 
   @override
@@ -53,6 +55,7 @@ class _DashboardPageState extends State<DashboardPage> {
     SettingsService().dailySpendingAllocationNotifier.removeListener(
       _handleDailyAllocationChanged,
     );
+    _safeToSpendPageController.dispose();
     super.dispose();
   }
 
@@ -670,11 +673,12 @@ class _DashboardPageState extends State<DashboardPage> {
     );
     final weekStart = today.subtract(const Duration(days: 6));
     final weekSpent = _calculateSpentBetween(weekStart, tomorrow);
-    final periodSpent = _showWeeklySpending ? weekSpent : todaySpent;
-    final periodBudget = _dailyAllocation * (_showWeeklySpending ? 7 : 1);
-    final spendProgress = periodBudget <= 0
-        ? 0.0
-        : (periodSpent / periodBudget).clamp(0.0, 1.0).toDouble();
+    
+    final todayBudget = _dailyAllocation;
+    final todayProgress = todayBudget <= 0 ? 0.0 : (todaySpent / todayBudget).clamp(0.0, 1.0).toDouble();
+    
+    final weekBudget = _dailyAllocation * 7;
+    final weekProgress = weekBudget <= 0 ? 0.0 : (weekSpent / weekBudget).clamp(0.0, 1.0).toDouble();
 
     final sortedTxns = List<FinanceTransaction>.from(_transactions)
       ..sort((a, b) => b.date.compareTo(a.date));
@@ -910,15 +914,6 @@ class _DashboardPageState extends State<DashboardPage> {
                   child: GestureDetector(
                     key: const ValueKey('safe_to_spend_card'),
                     onTap: _editSpendingSchedule,
-                    onHorizontalDragEnd: (details) {
-                      if (details.primaryVelocity == null ||
-                          details.primaryVelocity == 0) {
-                        return;
-                      }
-                      setState(() {
-                        _showWeeklySpending = details.primaryVelocity! < 0;
-                      });
-                    },
                     child: Container(
                       height: 205,
                       padding: const EdgeInsets.all(12),
@@ -962,55 +957,21 @@ class _DashboardPageState extends State<DashboardPage> {
                               ),
                             ),
                           ),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.chevron_left_rounded,
-                                size: 17,
-                                color: _showWeeklySpending ? kMuted : kPrimary,
-                              ),
-                              Text(
-                                _showWeeklySpending ? 'WEEK' : 'TODAY',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: kPrimary,
-                                ),
-                              ),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                size: 17,
-                                color: _showWeeklySpending ? kPrimary : kMuted,
-                              ),
-                            ],
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(6),
-                                child: LinearProgressIndicator(
-                                  value: spendProgress,
-                                  minHeight: 7,
-                                  backgroundColor: kPrimary.withValues(
-                                    alpha: 0.1,
-                                  ),
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    spendingPlan.safeToSpend <= 0
-                                        ? Colors.red
-                                        : kPrimary,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                '${NumberFormat('0.##').format(spendProgress * 100)}% of 100%',
-                                style: GoogleFonts.plusJakartaSans(
-                                  fontSize: 9,
-                                  color: kMuted,
-                                ),
-                              ),
-                            ],
+                          SizedBox(
+                            height: 44,
+                            child: PageView(
+                              controller: _safeToSpendPageController,
+                              physics: const BouncingScrollPhysics(),
+                              onPageChanged: (index) {
+                                setState(() {
+                                  _showWeeklySpending = index == 1;
+                                });
+                              },
+                              children: [
+                                _buildPeriodPage(isWeek: false, progress: todayProgress, safeToSpend: spendingPlan.safeToSpend),
+                                _buildPeriodPage(isWeek: true, progress: weekProgress, safeToSpend: spendingPlan.safeToSpend),
+                              ],
+                            ),
                           ),
                           Text(
                             '${formatPeso(_dailyAllocation)}/day',
@@ -1064,6 +1025,69 @@ class _DashboardPageState extends State<DashboardPage> {
           ],
         ),
       ),
+    );
+  }
+  Widget _buildPeriodPage({
+    required bool isWeek,
+    required double progress,
+    required double safeToSpend,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () {
+            final next = isWeek ? 0 : 1;
+            _safeToSpendPageController.animateToPage(
+              next,
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+            );
+          },
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.chevron_left_rounded,
+                size: 17,
+                color: isWeek ? kMuted : kPrimary,
+              ),
+              Text(
+                isWeek ? 'WEEK' : 'TODAY',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: kPrimary,
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 17,
+                color: isWeek ? kPrimary : kMuted,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 7,
+            backgroundColor: kPrimary.withValues(alpha: 0.1),
+            valueColor: AlwaysStoppedAnimation<Color>(
+              safeToSpend <= 0 ? Colors.red : kPrimary,
+            ),
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '${NumberFormat('0.##').format(progress * 100)}% of 100%',
+          style: GoogleFonts.plusJakartaSans(fontSize: 9, color: kMuted),
+        ),
+      ],
     );
   }
 }
