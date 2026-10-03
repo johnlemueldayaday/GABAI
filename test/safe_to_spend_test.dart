@@ -253,4 +253,36 @@ void main() {
   test('formats pesos with separators and two decimals', () {
     expect(formatPeso(8000), '₱8,000.00');
   });
+
+  test('overspending adjusts daily budget per day and sets safe to spend to 0', () {
+    // Weekly budget: 7,000, 1,000/day. Day 1: spent 1,100.
+    final overspentCase = SafeToSpend.calculate(
+      balance: 5900,
+      dailyBudget: 1000,
+      daysLeft: 7,
+      spentToday: 1100,
+      totalCycleDays: 7,
+      cycleSpentBeforeToday: 0,
+    );
+
+    // 0 safe to spend for today because 1100 >= 1000
+    expect(overspentCase.safeToSpend, 0);
+    // Adjusted daily budget: (7000 - 1100) / 6 = 5900 / 6 = 983.33/day
+    expect(overspentCase.effectiveDailyBudget, closeTo(983.33, 0.01));
+  });
+
+  test('undoing recent overspent expense refreshes safe to spend and restored daily budget', () {
+    // Undoing the 1,100 expense restores spentToday to 0
+    final undoneCase = SafeToSpend.calculate(
+      balance: 7000,
+      dailyBudget: 1000,
+      daysLeft: 7,
+      spentToday: 0,
+      totalCycleDays: 7,
+      cycleSpentBeforeToday: 0,
+    );
+
+    expect(undoneCase.safeToSpend, 1000);
+    expect(undoneCase.effectiveDailyBudget, 1000);
+  });
 }

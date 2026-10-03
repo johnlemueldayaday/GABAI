@@ -125,6 +125,23 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
               const SizedBox(height: 24),
 
+              // ─── Widgets & Integrations ───────────────────────────────
+              _SectionHeader(title: 'Widgets', icon: Icons.widgets_outlined),
+              _SettingsCard(
+                children: [
+                  _ActionTile(
+                    icon: Icons.add_to_home_screen_outlined,
+                    label: 'Lock Screen Widgets',
+                    subtitle: 'Learn how to add widgets to your lock screen',
+                    iconColor: kPrimary,
+                    onTap: () {
+                      _showWidgetHowToDialog(context);
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
               // ─── Data & Privacy ───────────────────────────────────────
               _SectionHeader(title: 'Data', icon: Icons.storage_outlined),
               _SettingsCard(
@@ -223,6 +240,52 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         );
       },
+    );
+  }
+
+  void _showWidgetHowToDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: kCardBg,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Text(
+          'Lock Screen Widgets',
+          style: GoogleFonts.plusJakartaSans(
+            fontWeight: FontWeight.w800,
+            color: kTextCharcoal,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'To add widgets to your Lock Screen:',
+              style: TextStyle(color: kTextCharcoal, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '1. Long-press on your Lock Screen\n'
+              '2. Tap "Customize" then "Lock Screen"\n'
+              '3. Tap "Add Widgets"\n'
+              '4. Find GABAY and select your desired widget',
+              style: TextStyle(color: kMuted, height: 1.5),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Got it',
+              style: TextStyle(color: kPrimary, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

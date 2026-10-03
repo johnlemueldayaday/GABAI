@@ -239,6 +239,10 @@ class BaiAssistant {
     final incomeResult = await _tryLogIncome(n);
     if (incomeResult != null) return incomeResult;
 
+    // ─── 5.5. AMBIGUOUS AMOUNT CHECK ───
+    final ambiguousResult = _tryAmbiguousAmount(n);
+    if (ambiguousResult != null) return ambiguousResult;
+
     // ─── 6. FINANCE: total balance / balance checks ───
     final balanceResult = await _tryBalanceCheck(n);
     if (balanceResult != null) return balanceResult;
@@ -1625,53 +1629,80 @@ class BaiAssistant {
   // ═══════════════════════════════════════════════
 
   Future<BaiReply?> _trySetDailyAllocation(String input) async {
-    var normalized = input
-        .replaceAll(RegExp(r'\b(?:daliy|dayly|dailly)\b'), 'daily')
-        .replaceAll(RegExp(r'\b(?:montly|monthy|mothly|monhtly)\b'), 'monthly')
-        .replaceAll(RegExp(r'\b(?:budjet|budgt|budged)\b'), 'budget')
-        .replaceAll(
-          RegExp(r'\b(?:alocation|allocaton|allcation|allocashun|alokasyon)\b'),
-          'allocation',
-        )
-        .replaceAll(RegExp(r'\b(?:spendng|spendin|spendign)\b'), 'spending')
-        .replaceAll(RegExp(r'\b(?:gastos|gastusin|gagastusin)\b'), 'spending')
-        .replaceAll(
-          RegExp(r'\b(?:araw[- ]araw|kada araw|bawat araw)\b'),
-          'daily',
-        )
-        .replaceAll(
-          RegExp(r'\b(?:kada buwan|bawat buwan|buwanang)\b'),
-          'monthly',
-        );
-    normalized = normalized.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final normalized = input.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
 
-    final hasDailyPeriod = RegExp(
-      r'\b(?:daily|every\s*day|each\s*day|per\s*day|everyday)\b',
-    ).hasMatch(normalized);
-    final hasMonthlyPeriod = RegExp(
-      r'\b(?:monthly|every\s*month|each\s*month|per\s*month)\b',
-    ).hasMatch(normalized);
-    final hasBudgetTerm = RegExp(
-      r'\b(?:budget|allocation|spending|spend|allowance|limit)\b',
-    ).hasMatch(normalized);
-    if (!hasDailyPeriod && !hasMonthlyPeriod && !hasBudgetTerm) return null;
+    final updateWords = [
+      'update', 'change', 'set', 'adjust', 'edit', 'revise',
+      'make', 'modify', 'reset', 'raise', 'lower', 'increase', 'decrease'
+    ];
+    final budgetWords = [
+      'budget', 'allocation', 'allowance', 'daily allocation',
+      'spending limit', 'spending cap'
+    ];
+    final myAllocationPhrases = [
+      'my daily allocation', 'my allocation', 'my daily budget', 'my allowance',
+      'my weekly budget', 'my budget', 'my monthly budget'
+    ];
+    final timeWords = [
+      'day', 'daily', 'week', 'weekly', 'this week', 'month', 'monthly', 'this month'
+    ];
+
+    bool hasUpdateWord = updateWords.any((w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized));
+    bool hasBudgetWord = budgetWords.any((w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized));
+    bool hasMyAllocationPhrase = myAllocationPhrases.any((w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized));
+    bool hasTimeWord = timeWords.any((w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized));
+
+    bool ruleA = hasUpdateWord && hasBudgetWord;
+    bool ruleB = hasMyAllocationPhrase && hasTimeWord;
+
+    // Rule 1: Does it match Rule A or Rule B?
+    if (!ruleA && !ruleB) {
+      // If it has budget/allocation word but no update word, or just an amount.
+      // E.g. "Budget 500" or "Update my budget" without amount is tricky.
+      // Wait, "Update my budget" matches Rule A (update + budget).
+      // "Budget 500" matches budget but not update. We return null so it can be handled as ambiguous later.
+      return null; 
+    }
 
     final amount = _extractAmountWithSlang(normalized);
-    if (amount == null || !amount.isFinite || amount <= 0) return null;
+    if (amount == null || !amount.isFinite || amount <= 0) {
+      return const BaiReply("Please specify the amount you want to set your budget to.");
+    }
 
-    final dailyAmount = hasMonthlyPeriod ? amount / 30 : amount;
+    bool isWeek = normalized.contains('week');
+    bool isMonth = normalized.contains('month');
+    
+    double dailyAmount = amount;
+    String periodStr = 'daily';
+    if (isWeek) {
+      dailyAmount = amount / 7;
+      periodStr = 'weekly';
+    } else if (isMonth) {
+      dailyAmount = amount / 30;
+      periodStr = 'monthly';
+    }
+
     await SettingsService().setDailySpendingAllocation(dailyAmount);
 
-    final formattedDaily = _formatNumberWithCommas(
-      dailyAmount.toStringAsFixed(2),
-    );
-    final monthlyNote = hasMonthlyPeriod
-        ? ' That is ${SettingsService().currency}${_formatNumberWithCommas(amount.toStringAsFixed(2))} per month divided across 30 days.'
-        : '';
+    final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
+    
     return BaiReply(
-      'Updated your daily spending allocation to ${SettingsService().currency}$formattedDaily per day.$monthlyNote',
-      quickReplies: const ['Set my daily budget to 500', 'Show my budget'],
+      'Updated your $periodStr budget to $formattedAmount.',
+      quickReplies: const ['Show my budget', 'What is my total balance?'],
     );
+  }
+
+  BaiReply? _tryAmbiguousAmount(String n) {
+    // If the message has an amount but slipped past expense, income, and allocation rules,
+    // we should explicitly ask the user rather than guessing or letting the fallback catch it.
+    final amount = _extractAmountWithSlang(n);
+    if (amount != null && amount > 0) {
+      return const BaiReply(
+        "Do you want to log this as an expense, or update your daily allocation?",
+        quickReplies: ["Log as expense", "Update allocation"],
+      );
+    }
+    return null;
   }
 
   bool _isWeeklyBillAsk(String n) =>
@@ -2207,34 +2238,27 @@ class BaiAssistant {
   bool _isExpenseIntent(String text) {
     // If it's classified as income, it's not expense
     if (_isIncomeIntent(text)) return false;
-    if (_looksLikeExpenseFragment(text)) return true;
 
     final l = text.toLowerCase();
     final List<String> expenseKeywords = [
-      'spent',
-      'paid',
-      'cost',
-      'buy',
-      'bought',
-      'gastos',
-      'expense',
-      'bumili',
-      'add',
-      'log',
-      'logged',
-      'minus',
-      'deduct',
-      'spending',
-      'donated',
-      'gave',
-      'give',
-      'pay',
-      'sent',
-      'lost',
-      'given',
+      'spend', 'spent', 'paid', 'cost', 'buy', 'bought', 'gastos', 'expense',
+      'bumili', 'add', 'log', 'logged', 'minus', 'deduct', 'spending',
+      'donated', 'gave', 'give', 'pay', 'sent', 'lost', 'given',
+      'purchase', 'got', 'charged', 'for '
     ];
 
-    return expenseKeywords.any((k) => l.contains(k));
+    if (expenseKeywords.any((k) => l.contains(k))) return true;
+
+    // If it lacks explicit expense keywords but looks like an amount + item
+    if (_looksLikeExpenseFragment(text)) {
+      final item = _extractExpenseItemFragment(text, null).toLowerCase();
+      // Ensure we don't accidentally treat "Budget 500" as an expense item "budget"
+      final budgetWords = ['budget', 'allocation', 'allowance', 'limit', 'cap'];
+      if (budgetWords.contains(item)) return false;
+      return true;
+    }
+
+    return false;
   }
 
   // ═══════════════════════════════════════════════

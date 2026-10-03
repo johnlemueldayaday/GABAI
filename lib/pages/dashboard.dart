@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:gabay/models/bill_models.dart';
@@ -7,10 +8,12 @@ import 'package:gabay/models/finance_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/navigation/app_routes.dart';
 import 'package:gabay/pages/bai_chat.dart';
+import 'package:gabay/pages/bills.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/safe_to_spend.dart';
+import 'package:gabay/services/widget_service.dart';
 import 'package:gabay/widgets/account_icon.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
@@ -25,7 +28,8 @@ class DashboardPage extends StatefulWidget {
   State<DashboardPage> createState() => _DashboardPageState();
 }
 
-class _DashboardPageState extends State<DashboardPage> {
+class _DashboardPageState extends State<DashboardPage>
+  with WidgetsBindingObserver {
   List<Bill> _bills = [];
   List<FinanceTransaction> _transactions = [];
   List<Account> _accounts = [];
@@ -40,9 +44,19 @@ class _DashboardPageState extends State<DashboardPage> {
   String _currency = '₱';
   late final PageController _safeToSpendPageController;
 
+  Future<void> _openBillDetails(Bill bill) async {
+    await Navigator.of(context).push(
+      CupertinoPageRoute(
+        builder: (_) => BillsPage(initialSelectedBillId: bill.id),
+      ),
+    );
+    await _loadData();
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     SettingsService().dailySpendingAllocationNotifier.addListener(
       _handleDailyAllocationChanged,
     );
@@ -52,6 +66,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     SettingsService().dailySpendingAllocationNotifier.removeListener(
       _handleDailyAllocationChanged,
     );
@@ -65,6 +80,14 @@ class _DashboardPageState extends State<DashboardPage> {
       () => _dailyAllocation =
           SettingsService().dailySpendingAllocationNotifier.value,
     );
+    unawaited(_updateWidgetData());
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_loadData());
+    }
   }
 
   Future<void> _loadData() async {
@@ -87,6 +110,56 @@ class _DashboardPageState extends State<DashboardPage> {
       _intervalDays = SettingsService().intervalDays;
       _anchorPayday = SettingsService().anchorPayday;
     });
+
+    unawaited(_updateWidgetData());
+  }
+
+  Future<void> _updateWidgetData() async {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = today.add(const Duration(days: 1));
+    final resolvedPayday = nextPayday(
+      today: today,
+      frequency: _payFrequency,
+      payday1: _payday1,
+      payday2: _payday2,
+      intervalDays: _intervalDays,
+      anchor: _anchorPayday,
+    );
+    final totalCycleDays = getCycleLength(
+      frequency: _payFrequency,
+      intervalDays: _intervalDays,
+      payday1: _payday1,
+      payday2: _payday2,
+    );
+    final cycleStart =
+        resolvedPayday.subtract(Duration(days: totalCycleDays - 1));
+    final effectiveCycleStart =
+        cycleStart.isAfter(today) ? today : cycleStart;
+    final cycleSpentBeforeToday =
+        _calculateSpentBetween(effectiveCycleStart, today);
+    final todaySpent = _calculateSpentBetween(today, tomorrow);
+    final daysLeft = calculateDaysLeft(today: today, payday: resolvedPayday);
+    final spendingPlan = SafeToSpend.calculate(
+      balance: _netWorth,
+      dailyBudget: _dailyAllocation,
+      daysLeft: daysLeft,
+      spentToday: todaySpent,
+      totalCycleDays: totalCycleDays,
+      cycleSpentBeforeToday: cycleSpentBeforeToday,
+    );
+    final weekStart = today.subtract(const Duration(days: 6));
+    final weekSpent = _calculateSpentBetween(weekStart, tomorrow);
+    final weekBudget = _dailyAllocation * 7;
+    
+    final updated = await WidgetService.updateSafeToSpendWidget(
+      safeToSpend: spendingPlan.safeToSpend,
+      weekSpent: weekSpent,
+      weekBudget: weekBudget,
+    );
+    if (!updated) {
+      debugPrint('GABAY widget data was not updated. Check App Group signing.');
+    }
   }
 
   void _showAddTransactionSheet() {
@@ -600,6 +673,7 @@ class _DashboardPageState extends State<DashboardPage> {
       _intervalDays = result.intervalDays;
       _anchorPayday = result.anchorPayday;
     });
+    unawaited(_updateWidgetData());
   }
 
   double _calculateSpentBetween(DateTime start, DateTime end) {
@@ -973,12 +1047,16 @@ class _DashboardPageState extends State<DashboardPage> {
                               ],
                             ),
                           ),
-                          Text(
-                            '${formatPeso(_dailyAllocation)}/day',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: kMuted,
+                          AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 300),
+                            child: Text(
+                              key: ValueKey<double>(spendingPlan.effectiveDailyBudget),
+                              '${formatPeso(spendingPlan.effectiveDailyBudget)}/day',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: spendingPlan.extra < 0 ? Colors.orange : kMuted,
+                              ),
                             ),
                           ),
                           Text(
@@ -990,17 +1068,6 @@ class _DashboardPageState extends State<DashboardPage> {
                               color: kMuted,
                             ),
                           ),
-                          if (spendingPlan.extra < 0)
-                            Text(
-                              'Over plan by ${formatPeso(spendingPlan.extra.abs())}; revised ${formatPeso(spendingPlan.effectiveDailyBudget)}/day',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.plusJakartaSans(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.red,
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -1011,7 +1078,7 @@ class _DashboardPageState extends State<DashboardPage> {
             const SizedBox(height: 24),
 
             _SectionHeader(title: 'Upcoming Events'),
-            _UpcomingEventsList(bills: _bills),
+            _UpcomingEventsList(bills: _bills, onBillTapped: _openBillDetails),
 
             if (showExpenseFirst) ...[
               buildExpenseSection(),
@@ -1515,120 +1582,148 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
       );
     }
 
-    return AnimatedBuilder(
-      animation: _barAnim,
-      builder: (context, _) {
-        return BarChart(
-          BarChartData(
-            maxY: chartMax > 0 ? chartMax : 100,
-            titlesData: FlTitlesData(
-              show: true,
-              topTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false),
-              ),
-              rightTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false),
-              ),
-              leftTitles: const AxisTitles(
-                sideTitles: SideTitles(showTitles: false),
-              ),
-              bottomTitles: AxisTitles(
-                sideTitles: SideTitles(
-                  showTitles: true,
-                  reservedSize: 24,
-                  getTitlesWidget: (value, meta) {
-                    final i = value.toInt();
-                    if (i < 0 || i >= 7) return const SizedBox.shrink();
-                    final isToday = i == todayIndex;
-                    return Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: isToday
-                            ? BoxDecoration(
-                                color: kPrimarySoft,
-                                shape: BoxShape.circle,
-                              )
-                            : null,
-                        child: Text(
-                          dayLabels[i],
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 9,
-                            fontWeight: isToday
-                                ? FontWeight.w800
-                                : FontWeight.w600,
-                            color: isToday
-                                ? kPrimary
-                                : kMuted.withValues(alpha: 0.5),
-                          ),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(
+              Icons.payments_outlined,
+              size: 15,
+              color: kPrimary,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              'WEEKLY SPENDING',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: kMuted,
+                letterSpacing: 0.5,
               ),
             ),
-            borderData: FlBorderData(show: false),
-            gridData: const FlGridData(show: false),
-            barTouchData: BarTouchData(enabled: false),
-            barGroups: List.generate(7, (i) {
-              final isToday = i == todayIndex;
-              final hasData = weeklyData[i] > 0;
-              return BarChartGroupData(
-                x: i,
-                barRods: [
-                  BarChartRodData(
-                    toY:
-                        (hasData ? weeklyData[i] : chartMax * 0.04) *
-                        _barAnim.value,
-                    gradient: hasData
-                        ? LinearGradient(
-                            colors: isToday
-                                ? [
-                                    kPrimaryLight,
-                                    Color.lerp(
-                                      kPrimaryLight,
-                                      Colors.white,
-                                      0.45,
-                                    )!,
-                                    kPrimary,
-                                    Color.lerp(kPrimary, Colors.black, 0.15)!,
-                                  ]
-                                : [
-                                    kPrimary.withValues(alpha: 0.35),
-                                    kPrimary.withValues(alpha: 0.15),
-                                    kPrimary.withValues(alpha: 0.25),
-                                  ],
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            stops: isToday
-                                ? const [0.0, 0.25, 0.75, 1.0]
-                                : const [0.0, 0.5, 1.0],
-                          )
-                        : null,
-                    color: hasData ? null : kMuted.withValues(alpha: 0.08),
-                    width: 10,
-                    borderRadius: BorderRadius.circular(5),
-                    backDrawRodData: BackgroundBarChartRodData(
-                      show: true,
-                      toY: chartMax,
-                      color: kMuted.withValues(alpha: 0.05),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: AnimatedBuilder(
+            animation: _barAnim,
+            builder: (context, _) {
+              return BarChart(
+                BarChartData(
+                  maxY: chartMax > 0 ? chartMax : 100,
+                  titlesData: FlTitlesData(
+                    show: true,
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    leftTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 24,
+                        getTitlesWidget: (value, meta) {
+                          final i = value.toInt();
+                          if (i < 0 || i >= 7) return const SizedBox.shrink();
+                          final isToday = i == todayIndex;
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: isToday
+                                  ? BoxDecoration(
+                                      color: kPrimarySoft,
+                                      shape: BoxShape.circle,
+                                    )
+                                  : null,
+                              child: Text(
+                                dayLabels[i],
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 9,
+                                  fontWeight: isToday
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                  color: isToday
+                                      ? kPrimary
+                                      : kMuted.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                     ),
                   ),
-                ],
+                  borderData: FlBorderData(show: false),
+                  gridData: const FlGridData(show: false),
+                  barTouchData: BarTouchData(enabled: false),
+                  barGroups: List.generate(7, (i) {
+                    final isToday = i == todayIndex;
+                    final hasData = weeklyData[i] > 0;
+                    return BarChartGroupData(
+                      x: i,
+                      barRods: [
+                        BarChartRodData(
+                          toY:
+                              (hasData ? weeklyData[i] : chartMax * 0.04) *
+                              _barAnim.value,
+                          gradient: hasData
+                              ? LinearGradient(
+                                  colors: isToday
+                                      ? [
+                                          kPrimaryLight,
+                                          Color.lerp(
+                                            kPrimaryLight,
+                                            Colors.white,
+                                            0.45,
+                                          )!,
+                                          kPrimary,
+                                          Color.lerp(kPrimary, Colors.black, 0.15)!,
+                                        ]
+                                      : [
+                                          kPrimary.withValues(alpha: 0.35),
+                                          kPrimary.withValues(alpha: 0.15),
+                                          kPrimary.withValues(alpha: 0.25),
+                                        ],
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  stops: isToday
+                                      ? const [0.0, 0.25, 0.75, 1.0]
+                                      : const [0.0, 0.5, 1.0],
+                                )
+                              : null,
+                          color: hasData ? null : kMuted.withValues(alpha: 0.08),
+                          width: 10,
+                          borderRadius: BorderRadius.circular(5),
+                          backDrawRodData: BackgroundBarChartRodData(
+                            show: true,
+                            toY: chartMax,
+                            color: kMuted.withValues(alpha: 0.05),
+                          ),
+                        ),
+                      ],
+                    );
+                  }),
+                ),
+                duration: Duration.zero,
               );
-            }),
+            },
           ),
-          duration: Duration.zero,
-        );
-      },
+        ),
+      ],
     );
   }
 }
 
 class _UpcomingEventsList extends StatelessWidget {
   final List<Bill> bills;
-  const _UpcomingEventsList({required this.bills});
+  final Future<void> Function(Bill) onBillTapped;
+  const _UpcomingEventsList({required this.bills, required this.onBillTapped});
 
   @override
   Widget build(BuildContext context) {
@@ -1673,64 +1768,77 @@ class _UpcomingEventsList extends StatelessWidget {
               ? 'Tomorrow'
               : 'In $days days';
 
-          return Container(
-            width: MediaQuery.of(context).size.width * 0.75,
-            margin: EdgeInsets.only(right: index == items.length - 1 ? 0 : 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: kCardBg,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: kBorder.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.1),
-                    shape: BoxShape.circle,
+          return GestureDetector(
+            onTap: () => onBillTapped(bill),
+            child: Container(
+              width: MediaQuery.of(context).size.width * 0.75,
+              margin: EdgeInsets.only(right: index == items.length - 1 ? 0 : 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: kCardBg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: kBorder.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.event_note_rounded,
+                      color: Colors.orange,
+                      size: 20,
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.event_note_rounded,
-                    color: Colors.orange,
-                    size: 20,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          bill.type,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.w700,
+                            color: kTextCharcoal,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          dayStr,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: kMuted,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
+                  Row(
                     children: [
                       Text(
-                        bill.type,
+                        formatPeso(bill.amount),
                         style: GoogleFonts.plusJakartaSans(
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w800,
                           color: kTextCharcoal,
                         ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        dayStr,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: kMuted,
-                        ),
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: Colors.orange,
+                        size: 18,
                       ),
                     ],
                   ),
-                ),
-                Text(
-                  formatPeso(bill.amount),
-                  style: GoogleFonts.plusJakartaSans(
-                    fontWeight: FontWeight.w800,
-                    color: kTextCharcoal,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           );
         },
@@ -2135,8 +2243,8 @@ class _GreetingSectionState extends State<_GreetingSection> {
                     painter: _BubblePainter(kCardBg),
                     child: Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
+                        horizontal: 20,
+                        vertical: 14,
                       ),
                       margin: const EdgeInsets.only(left: 10, top: 0, right: 0),
                       child: _isLoading
@@ -2192,10 +2300,6 @@ class _BubblePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-
     final path = Path();
     const r = 24.0; // corner radius
     const tw = 10.0; // tail width
@@ -2222,15 +2326,31 @@ class _BubblePainter extends CustomPainter {
     path.quadraticBezierTo(tw, 0, tw + r, 0);
     path.close();
 
-    // Draw a soft shadow first
+    // 1. Draw soft 3D shadow (more pronounced)
     canvas.drawShadow(
-      path.shift(const Offset(0, 4)),
-      Colors.black.withValues(alpha: 0.05),
-      12,
-      true,
+      path.shift(const Offset(0, 3)),
+      Colors.black.withValues(alpha: 0.15),
+      8,
+      false,
     );
 
-    canvas.drawPath(path, paint);
+    // 2. Draw 3D gradient fill
+    final gradient = LinearGradient(
+      begin: Alignment.topCenter,
+      end: Alignment.bottomCenter,
+      colors: [
+        Colors.white,
+        Color.lerp(Colors.white, color, 0.6)!,
+        Color.lerp(color, Colors.black, 0.05)!,
+      ],
+      stops: const [0.0, 0.7, 1.0],
+    );
+    
+    final fillPaint = Paint()
+      ..shader = gradient.createShader(Offset.zero & size)
+      ..style = PaintingStyle.fill;
+      
+    canvas.drawPath(path, fillPaint);
   }
 
   @override

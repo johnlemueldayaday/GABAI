@@ -127,6 +127,24 @@ DateTime calculateNextPayday({
   );
 }
 
+int getCycleLength({
+  required PayFrequency frequency,
+  int? intervalDays,
+  int payday1 = 15,
+  int? payday2,
+}) {
+  return switch (frequency) {
+    PayFrequency.weekly => 7,
+    PayFrequency.everyTwoWeeks => 14,
+    PayFrequency.every15Days => 15,
+    PayFrequency.every30Days => 30,
+    PayFrequency.custom =>
+      (intervalDays != null && intervalDays > 0) ? intervalDays : 10,
+    PayFrequency.monthly => 30,
+    PayFrequency.twiceMonthly => 15,
+  };
+}
+
 class SafeToSpend {
   final double balance;
   final double dailyBudget;
@@ -157,26 +175,54 @@ class SafeToSpend {
     required double dailyBudget,
     required int daysLeft,
     required double spentToday,
+    int? totalCycleDays,           // kept for API compatibility, unused
+    double cycleSpentBeforeToday = 0.0, // kept for API compatibility, unused
   }) {
     final validBalance = balance.isFinite ? balance : 0.0;
     final validBudget = dailyBudget.isFinite ? math.max(0.0, dailyBudget) : 0.0;
-    final validSpentToday = spentToday.isFinite
-        ? math.max(0.0, spentToday)
-        : 0.0;
+    final validSpentToday =
+        spentToday.isFinite ? math.max(0.0, spentToday) : 0.0;
+
     final remainingDays = math.max(0, daysLeft);
-    final reservedFuture = validBudget * math.max(0, remainingDays - 1);
-    final availableToday = validBalance - reservedFuture;
-    final extra = validBalance - validBudget * remainingDays;
-    final hasShortfall = extra < 0;
-    final effectiveDailyBudget = hasShortfall
-        ? (remainingDays > 0
-              ? math.max(0.0, validBalance / remainingDays)
-              : 0.0)
+
+    // Days after today (payday period minus today)
+    final futureDays = math.max(0, remainingDays - 1);
+
+    // Money that must be kept for future days
+    final reservedFuture = validBudget * futureDays;
+
+    // Surplus above what's needed for future days.
+    // NOTE: validBalance is already the current balance AFTER today's spending
+    // (FinanceStorage updates the account balance on every transaction), so we
+    // do NOT subtract spentToday again here — that would double-count it.
+    //
+    // Logic (user example):
+    //   balance=6940, dailyBudget=400, daysLeft=13
+    //   futureDays=12, reservedFuture=4800
+    //   extra = 6940 - 4800 = 2140  → safe to spend
+    //
+    //   If 500 spent today → balance becomes 6440
+    //   extra = 6440 - 4800 = 1640  → safe to spend
+    //
+    //   If 2240 spent today → balance becomes 4700
+    //   extra = 4700 - 4800 = -100  → safe to spend = 0
+    //   effectiveDailyBudget = 4700 / 12 = 391.67
+    final extra = validBalance - reservedFuture;
+    final safeToSpend = math.max(0.0, extra);
+
+    // When we've dipped into the future reserve (extra < 0), recalculate the
+    // daily budget across remaining future days so the user knows their new cap.
+    final effectiveDailyBudget = (extra < 0 && futureDays > 0)
+        ? math.max(0.0, validBalance / futureDays)
         : validBudget;
-    final isSevereShortfall =
-        hasShortfall &&
+
+    final isSevereShortfall = extra < 0 &&
         validBudget > 0 &&
         effectiveDailyBudget < validBudget * 0.4;
+
+    // availableToday: today's daily cap minus what's already been spent today.
+    // Used for the daily progress bar (can be negative if overspent today's cap).
+    final availableToday = validBudget - validSpentToday;
 
     return SafeToSpend(
       balance: validBalance,
@@ -186,9 +232,10 @@ class SafeToSpend {
       reservedFuture: reservedFuture,
       availableToday: availableToday,
       extra: extra,
-      safeToSpend: math.max(extra, 0.0),
+      safeToSpend: safeToSpend,
       effectiveDailyBudget: effectiveDailyBudget,
       isSevereShortfall: isSevereShortfall,
     );
   }
 }
+

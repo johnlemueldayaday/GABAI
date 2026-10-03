@@ -9,7 +9,6 @@ import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/account_icon.dart';
 import 'package:gabay/widgets/app_drawer.dart';
-import 'package:gabay/widgets/bai_floating_bubble.dart';
 import 'package:gabay/navigation/app_routes.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/price_storage.dart';
@@ -53,13 +52,6 @@ class GroceryApp extends StatelessWidget {
             ),
             useMaterial3: true,
           ),
-          navigatorKey: baiBubbleNavigatorKey,
-          navigatorObservers: [baiBubbleRouteObserver],
-          builder: (context, child) {
-            return BaiFloatingBubbleHost(
-              child: child ?? const SizedBox.shrink(),
-            );
-          },
           initialRoute: kSplashRouteName,
           routes: {kSplashRouteName: (_) => const SplashScreen()},
         );

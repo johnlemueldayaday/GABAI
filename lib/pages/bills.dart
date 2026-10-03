@@ -1,4 +1,6 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:gabay/widgets/account_icon.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -8,9 +10,12 @@ import '../models/bill_models.dart';
 import '../models/finance_models.dart';
 import '../services/bill_storage.dart';
 import '../services/finance_storage.dart';
+import '../services/notification_service.dart';
+import '../services/safe_to_spend.dart';
 
 class BillsPage extends StatefulWidget {
-  const BillsPage({super.key});
+  final String? initialSelectedBillId;
+  const BillsPage({super.key, this.initialSelectedBillId});
 
   @override
   State<BillsPage> createState() => _BillsPageState();
@@ -36,10 +41,34 @@ class _BillsPageState extends State<BillsPage> {
 
   Future<void> _loadData() async {
     final bills = await BillStorage.loadBills();
+    if (!mounted) return;
     setState(() {
       _allBills = bills;
       _isLoading = false;
     });
+
+    if (widget.initialSelectedBillId != null) {
+      final bill = bills.firstWhere(
+        (b) => b.id == widget.initialSelectedBillId,
+        orElse: () => Bill(
+          id: '',
+          type: '',
+          amount: 0,
+          dueDate: DateTime.now(),
+        ),
+      );
+      if (bill.id.isNotEmpty) {
+        setState(() {
+          _focusedDay = bill.dueDate;
+          _selectedDay = bill.dueDate;
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showBillActionSheet(bill);
+          }
+        });
+      }
+    }
   }
 
   Future<void> _saveData() async {
@@ -48,6 +77,169 @@ class _BillsPageState extends State<BillsPage> {
 
   List<Bill> _getEventsForDay(DateTime day) {
     return _allBills.where((b) => isSameDay(b.dueDate, day)).toList();
+  }
+
+  Future<void> _markBillAsPaid(Bill bill, [Account? chosenAccount]) async {
+    final accounts = await FinanceStorage.loadAccounts();
+    Account? targetAccount = chosenAccount;
+
+    if (targetAccount == null && accounts.isNotEmpty) {
+      if (accounts.length > 1 && mounted) {
+        targetAccount = await showModalBottomSheet<Account>(
+          context: context,
+          backgroundColor: Colors.transparent,
+          isScrollControlled: true,
+          builder: (ctx) => _SelectAccountSheet(
+            accounts: accounts,
+            amount: bill.amount,
+            isIncome: bill.isIncome,
+          ),
+        );
+        if (targetAccount == null) return;
+      } else {
+        targetAccount = accounts.first;
+      }
+    }
+
+    if (targetAccount != null) {
+      final txn = FinanceTransaction(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        amount: bill.amount,
+        accountId: targetAccount.id,
+        accountName: targetAccount.name,
+        type: bill.isIncome ? 'INCOME' : 'EXPENSE',
+        category: bill.type,
+        description: bill.isIncome ? 'Received: ${bill.type}' : 'Bill Paid: ${bill.type}',
+        date: DateTime.now(),
+      );
+      try {
+        await FinanceStorage.addTransaction(txn);
+      } catch (e) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not deduct balance: $e')),
+        );
+        return;
+      }
+    }
+
+    final idx = _allBills.indexWhere((b) => b.id == bill.id);
+    if (idx != -1) {
+      setState(() {
+        _allBills[idx] = _allBills[idx].copyWith(isPaid: true);
+      });
+      await _saveData();
+    }
+    await NotificationService().cancelBillNotification(bill.id);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          targetAccount != null
+              ? bill.isIncome
+                  ? '${bill.type} received! ${formatPeso(bill.amount)} added to ${targetAccount.name}.'
+                  : 'Bill paid! ${formatPeso(bill.amount)} deducted from ${targetAccount.name}.'
+              : bill.isIncome
+                  ? '${bill.type} marked as received.'
+                  : 'Bill marked as paid.',
+        ),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Future<void> _confirmCancelBill(Bill bill) async {
+    final confirmed = await showCupertinoDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => CupertinoAlertDialog(
+        title: Text('Cancel ${bill.type}?'),
+        content: const Text(
+          'This will cancel this bill and remove it from upcoming events and calendar.',
+        ),
+        actions: [
+          CupertinoDialogAction(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Keep Bill'),
+          ),
+          CupertinoDialogAction(
+            isDestructiveAction: true,
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            child: const Text('Cancel Bill'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      setState(() {
+        _allBills.removeWhere((b) => b.id == bill.id);
+      });
+      await _saveData();
+      await NotificationService().cancelBillNotification(bill.id);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('${bill.type} canceled.'),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    }
+  }
+
+  void _showEditBillSheet(Bill bill) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _EditBillSheet(
+        bill: bill,
+        onSave: (updatedBill) async {
+          final idx = _allBills.indexWhere((b) => b.id == bill.id);
+          if (idx != -1) {
+            setState(() {
+              _allBills[idx] = updatedBill;
+            });
+            await _saveData();
+            await NotificationService().scheduleBillNotification(updatedBill);
+          }
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${updatedBill.type} updated.'),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  void _showBillActionSheet(Bill bill) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => _BillDetailActionSheet(
+        bill: bill,
+        onPaid: (account) async {
+          Navigator.pop(sheetContext);
+          await _markBillAsPaid(bill, account);
+        },
+        onEdit: () {
+          Navigator.pop(sheetContext);
+          _showEditBillSheet(bill);
+        },
+        onCancel: () async {
+          Navigator.pop(sheetContext);
+          await _confirmCancelBill(bill);
+        },
+      ),
+    );
   }
 
   void _showAddEventSheet() {
@@ -65,6 +257,7 @@ class _BillsPageState extends State<BillsPage> {
             _allBills.add(newBill);
             _saveData();
           });
+          await NotificationService().scheduleBillNotification(newBill);
 
           // Only add to FinanceStorage automatically if date is today or in the past
           final now = DateTime.now();
@@ -89,22 +282,31 @@ class _BillsPageState extends State<BillsPage> {
             }
           }
         },
-        onDelete: (id) {
+        onDelete: (id) async {
           setState(() {
             _allBills.removeWhere((b) => b.id == id);
             _saveData();
           });
+          await NotificationService().cancelBillNotification(id);
         },
-        onTogglePaid: (id) {
-          setState(() {
-            final idx = _allBills.indexWhere((b) => b.id == id);
-            if (idx != -1) {
-              _allBills[idx] = _allBills[idx].copyWith(
-                isPaid: !_allBills[idx].isPaid,
-              );
-              _saveData();
+        onTogglePaid: (id) async {
+          final idx = _allBills.indexWhere((b) => b.id == id);
+          if (idx != -1) {
+            final bill = _allBills[idx];
+            if (!bill.isPaid) {
+              await _markBillAsPaid(bill, null);
+            } else {
+              setState(() {
+                _allBills[idx] = bill.copyWith(isPaid: false);
+                _saveData();
+              });
+              await NotificationService().scheduleBillNotification(_allBills[idx]);
             }
-          });
+          }
+        },
+        onTapBill: (bill) {
+          Navigator.pop(context);
+          _showBillActionSheet(bill);
         },
       ),
     );
@@ -256,78 +458,90 @@ class _BillsPageState extends State<BillsPage> {
       itemBuilder: (context, i) {
         final b = upcoming[i];
         final isIncome = b.isIncome;
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: kBackground,
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
             borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: isIncome
-                      ? kPrimary.withValues(alpha: 0.1)
-                      : Colors.red.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  isIncome
-                      ? Icons.south_west_rounded
-                      : Icons.arrow_outward_rounded,
-                  color: isIncome ? kPrimary : Colors.red,
-                  size: 18,
-                ),
+            onTap: () => _showBillActionSheet(b),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: kBackground,
+                borderRadius: BorderRadius.circular(16),
               ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      b.type,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w700,
-                        color: kTextCharcoal,
-                      ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: isIncome
+                          ? kPrimary.withValues(alpha: 0.1)
+                          : Colors.red.withValues(alpha: 0.1),
+                      shape: BoxShape.circle,
                     ),
-                    Row(
+                    child: Icon(
+                      isIncome
+                          ? Icons.south_west_rounded
+                          : Icons.arrow_outward_rounded,
+                      color: isIncome ? kPrimary : Colors.red,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          _formatSignedBillAmount(b),
+                          b.type,
                           style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            color: isIncome ? kPrimary : Colors.red,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
+                            color: kTextCharcoal,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: kPrimary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            DateFormat('MMM d, yyyy').format(b.dueDate),
-                            style: GoogleFonts.plusJakartaSans(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              color: kPrimary,
+                        Row(
+                          children: [
+                            Text(
+                              _formatSignedBillAmount(b),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 12,
+                                color: isIncome ? kPrimary : Colors.red,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: kPrimary.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                DateFormat('MMM d, yyyy').format(b.dueDate),
+                                style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w700,
+                                  color: kPrimary,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: kMuted,
+                    size: 20,
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         );
       },
@@ -341,6 +555,7 @@ class _DayBillsSheet extends StatefulWidget {
   final Function(Bill) onAdd;
   final Function(String) onDelete;
   final Function(String) onTogglePaid;
+  final void Function(Bill)? onTapBill;
 
   const _DayBillsSheet({
     required this.day,
@@ -348,6 +563,7 @@ class _DayBillsSheet extends StatefulWidget {
     required this.onAdd,
     required this.onDelete,
     required this.onTogglePaid,
+    this.onTapBill,
   });
 
   @override
@@ -400,14 +616,16 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
       ),
       child: FadeTransition(
         opacity: animation,
-        child: Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: kBackground,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
+        child: GestureDetector(
+          onTap: widget.onTapBill != null ? () => widget.onTapBill!(b) : null,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: kBackground,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
             children: [
               Checkbox(
                 value: b.isPaid,
@@ -506,10 +724,11 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                 },
               ),
             ],
-          ),
-        ),
-      ),
-    );
+            ),   // Row
+          ),     // Container
+        ),       // GestureDetector
+      ),         // FadeTransition
+    );           // SlideTransition
   }
 
   @override
@@ -969,6 +1188,647 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                   ),
                 ),
               ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SelectAccountSheet extends StatelessWidget {
+  final List<Account> accounts;
+  final double amount;
+  final bool isIncome;
+
+  const _SelectAccountSheet({
+    required this.accounts,
+    required this.amount,
+    this.isIncome = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+      decoration: BoxDecoration(
+        color: kCardBg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 36,
+              height: 5,
+              decoration: BoxDecoration(
+                color: kMuted.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            isIncome ? 'Select Wallet to Transfer To' : 'Select Account to Pay From',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              color: kTextCharcoal,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            isIncome 
+                ? 'Amount to add: ${formatPeso(amount)}'
+                : 'Amount to deduct: ${formatPeso(amount)}',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: kMuted,
+            ),
+          ),
+          const SizedBox(height: 16),
+          ...accounts.map(
+            (acc) => Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              decoration: BoxDecoration(
+                color: kBackground,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: kBorder.withValues(alpha: 0.4)),
+              ),
+              child: ListTile(
+                leading: AccountIconImage(
+                  name: acc.name,
+                  icon: acc.icon,
+                  size: 28,
+                ),
+                title: Text(
+                  acc.name,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontWeight: FontWeight.w700,
+                    color: kTextCharcoal,
+                  ),
+                ),
+                subtitle: Text(
+                  'Balance: ${formatPeso(acc.balance)}',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 12,
+                    color: kMuted,
+                  ),
+                ),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14),
+                onTap: () => Navigator.pop(context, acc),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BillDetailActionSheet extends StatelessWidget {
+  final Bill bill;
+  final Function(Account?) onPaid;
+  final VoidCallback onEdit;
+  final VoidCallback onCancel;
+
+  const _BillDetailActionSheet({
+    required this.bill,
+    required this.onPaid,
+    required this.onEdit,
+    required this.onCancel,
+  });
+
+  IconData _iconForType(String type) {
+    final lower = type.toLowerCase();
+    if (lower.contains('car') || lower.contains('vehicle') || lower.contains('loan')) {
+      return Icons.directions_car_rounded;
+    }
+    if (lower.contains('electric') || lower.contains('power')) {
+      return Icons.bolt_rounded;
+    }
+    if (lower.contains('water')) {
+      return Icons.water_drop_rounded;
+    }
+    if (lower.contains('internet') || lower.contains('wifi')) {
+      return Icons.wifi_rounded;
+    }
+    if (lower.contains('phone')) {
+      return Icons.phone_iphone_rounded;
+    }
+    if (lower.contains('rent') || lower.contains('house') || lower.contains('home')) {
+      return Icons.home_rounded;
+    }
+    if (lower.contains('salary') || lower.contains('income')) {
+      return Icons.attach_money_rounded;
+    }
+    return Icons.receipt_long_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final billDue = DateTime(bill.dueDate.year, bill.dueDate.month, bill.dueDate.day);
+    final days = billDue.difference(today).inDays;
+
+    final daysStr = days == 0
+        ? 'Due Today'
+        : days == 1
+            ? 'Due Tomorrow'
+            : days < 0
+                ? 'Overdue by ${days.abs()} day${days.abs() > 1 ? 's' : ''}'
+                : 'Due in $days days';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: kCardBg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.15),
+            blurRadius: 25,
+            offset: const Offset(0, -5),
+          ),
+        ],
+      ),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        16,
+        24,
+        24 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // iOS grab bar
+          Container(
+            width: 40,
+            height: 5,
+            decoration: BoxDecoration(
+              color: kMuted.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2.5),
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Icon badge
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: (bill.isPaid
+                      ? Colors.green
+                      : bill.isIncome
+                          ? kPrimary
+                          : Colors.orange)
+                  .withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              _iconForType(bill.type),
+              color: bill.isPaid
+                  ? Colors.green
+                  : bill.isIncome
+                      ? kPrimary
+                      : Colors.orange,
+              size: 32,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            bill.type,
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: kTextCharcoal,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (bill.isPaid ? Colors.green : Colors.orange)
+                      .withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  bill.isPaid ? 'PAID' : daysStr.toUpperCase(),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: bill.isPaid ? Colors.green : Colors.orange,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: kPrimary.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  bill.frequency.toUpperCase(),
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: kPrimary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            formatPeso(bill.amount),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 32,
+              fontWeight: FontWeight.w900,
+              color: kTextCharcoal,
+            ),
+          ),
+          Text(
+            DateFormat('EEEE, MMMM d, yyyy').format(bill.dueDate),
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: kMuted,
+            ),
+          ),
+          const SizedBox(height: 28),
+
+          // Actions
+          if (!bill.isPaid) ...[
+            SizedBox(
+              width: double.infinity,
+              height: 44,
+              child: ElevatedButton.icon(
+                onPressed: () => onPaid(null),
+                icon: Icon(
+                  bill.isIncome ? Icons.south_west_rounded : Icons.check_circle_rounded,
+                  size: 18,
+                ),
+                label: Text(
+                  bill.isIncome ? 'Received' : 'Bill Paid',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: bill.isIncome ? kPrimary : Colors.green.shade600,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+          ],
+
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: OutlinedButton.icon(
+              onPressed: onEdit,
+              icon: const Icon(Icons.edit_rounded, size: 17),
+              label: Text(
+                'Edit Bill',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kPrimary,
+                side: BorderSide(color: kPrimary.withValues(alpha: 0.5)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+
+          SizedBox(
+            width: double.infinity,
+            height: 38,
+            child: TextButton.icon(
+              onPressed: onCancel,
+              icon: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 16),
+              label: Text(
+                bill.isIncome ? 'Remove' : 'Cancel Bill',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.red,
+                ),
+              ),
+              style: TextButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EditBillSheet extends StatefulWidget {
+  final Bill bill;
+  final Function(Bill) onSave;
+
+  const _EditBillSheet({
+    required this.bill,
+    required this.onSave,
+  });
+
+  @override
+  State<_EditBillSheet> createState() => _EditBillSheetState();
+}
+
+class _EditBillSheetState extends State<_EditBillSheet> {
+  late final TextEditingController _typeCtrl;
+  late final TextEditingController _amountCtrl;
+  late DateTime _selectedDueDate;
+  late String _selectedFrequency;
+  late bool _isIncome;
+
+  final List<String> _frequencies = [
+    'Once',
+    'Everyday',
+    'Weekly',
+    'Monthly',
+    'Quarterly',
+    'Bi-monthly',
+    'Annually',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _typeCtrl = TextEditingController(text: widget.bill.type);
+    _amountCtrl = TextEditingController(text: widget.bill.amount.toStringAsFixed(2));
+    _selectedDueDate = widget.bill.dueDate;
+    _selectedFrequency = widget.bill.frequency;
+    _isIncome = widget.bill.isIncome;
+  }
+
+  @override
+  void dispose() {
+    _typeCtrl.dispose();
+    _amountCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: kCardBg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        24,
+        16,
+        24,
+        24 + MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 5,
+              decoration: BoxDecoration(
+                color: kMuted.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2.5),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Edit Bill / Loan',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  color: kTextCharcoal,
+                ),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: Icon(Icons.close, color: kMuted),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Name / Type',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: kMuted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _typeCtrl,
+            decoration: InputDecoration(
+              hintText: 'e.g. Car Loan, Electric Bill',
+              filled: true,
+              fillColor: kBackground,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: kBorder),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Amount',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: kMuted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _amountCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(
+              prefixText: '₱ ',
+              hintText: '0.00',
+              filled: true,
+              fillColor: kBackground,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: kBorder),
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Due Date',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: kMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    GestureDetector(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _selectedDueDate,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime(2035),
+                        );
+                        if (picked != null) {
+                          setState(() {
+                            _selectedDueDate = picked;
+                          });
+                        }
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        decoration: BoxDecoration(
+                          color: kBackground,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: kBorder),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              DateFormat('MMM d, yyyy').format(_selectedDueDate),
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w600,
+                                color: kTextCharcoal,
+                              ),
+                            ),
+                            Icon(Icons.calendar_today_rounded, size: 16, color: kPrimary),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Frequency',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: kMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: kBackground,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: kBorder),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedFrequency,
+                          isExpanded: true,
+                          items: _frequencies
+                              .map(
+                                (f) => DropdownMenuItem(
+                                  value: f,
+                                  child: Text(
+                                    f,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() {
+                                _selectedFrequency = val;
+                              });
+                            }
+                          },
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: () {
+                final amt = double.tryParse(_amountCtrl.text.replaceAll(',', '').trim());
+                final type = _typeCtrl.text.trim();
+                if (amt != null && amt > 0 && type.isNotEmpty) {
+                  final updated = widget.bill.copyWith(
+                    type: type,
+                    amount: amt,
+                    dueDate: _selectedDueDate,
+                    frequency: _selectedFrequency,
+                    isIncome: _isIncome,
+                  );
+                  widget.onSave(updated);
+                  Navigator.pop(context);
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kPrimary,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: Text(
+                'Save Changes',
+                style: GoogleFonts.plusJakartaSans(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 15,
+                ),
+              ),
             ),
           ),
         ],

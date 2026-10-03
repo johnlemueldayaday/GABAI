@@ -4,6 +4,7 @@ import 'package:gabay/pages/cart.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/services/notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -16,6 +17,9 @@ void main() async {
   await GroceryStorage.loadAll();
   await PriceStorage.load();
   await SettingsService().load();
+  
+  // Initialize notification service
+  await NotificationService().init();
 
   runApp(const GroceryApp());
 }
