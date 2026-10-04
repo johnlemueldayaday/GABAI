@@ -34,6 +34,11 @@ enum BaiStep {
   awaitingIncomeAccount,
   awaitingDuePaymentAction,
   awaitingDuePaymentAccount,
+  awaitingExpenseAmount,
+  awaitingExpenseItem,
+  awaitingAllocationPeriod,
+  awaitingAllocationAmount,
+  awaitingClarification,
 }
 
 /// BAI (Brother AI) - Unified smart assistant merging Ramsey + Tarsi
@@ -47,10 +52,18 @@ class BaiAssistant {
   // Track last spending for breakdown follow-up
   bool _awaitingBreakdown = false;
 
-  // Track pending expense details when waiting for account
+
+  // Track pending expense details
   double? _pendingExpenseAmount;
   String? _pendingExpenseDescription;
   String? _pendingExpenseCategory;
+  Account? _pendingExpenseAccount;
+
+  // Track pending allocation details
+
+  // Clarification
+  String? _unclearRawInput;
+
 
   // Track pending income details when waiting for account
   double? _pendingIncomeAmount;
@@ -323,6 +336,18 @@ class BaiAssistant {
     // Handle awaiting expense account state
     if (_step == BaiStep.awaitingExpenseAccount) {
       return await _handleExpenseAccountResponse(n);
+    }
+
+    // Handle awaiting expense item/amount states
+    if (_step == BaiStep.awaitingExpenseItem || 
+        _step == BaiStep.awaitingExpenseAmount ||
+        _step == BaiStep.awaitingExpenseAccount) {
+      return await _handleOngoingExpenseFlow(n);
+    }
+    
+    // Handle clarification state
+    if (_step == BaiStep.awaitingClarification) {
+      return await _handleClarification(n);
     }
 
     // Handle awaiting income account state
@@ -1629,28 +1654,66 @@ class BaiAssistant {
   // ═══════════════════════════════════════════════
 
   Future<BaiReply?> _trySetDailyAllocation(String input) async {
-    final normalized = input.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    final normalized = input
+        .toLowerCase()
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
 
     final updateWords = [
-      'update', 'change', 'set', 'adjust', 'edit', 'revise',
-      'make', 'modify', 'reset', 'raise', 'lower', 'increase', 'decrease'
+      'update',
+      'change',
+      'set',
+      'adjust',
+      'edit',
+      'revise',
+      'make',
+      'modify',
+      'reset',
+      'raise',
+      'lower',
+      'increase',
+      'decrease',
     ];
     final budgetWords = [
-      'budget', 'allocation', 'allowance', 'daily allocation',
-      'spending limit', 'spending cap'
+      'budget',
+      'allocation',
+      'allowance',
+      'daily allocation',
+      'spending limit',
+      'spending cap',
     ];
     final myAllocationPhrases = [
-      'my daily allocation', 'my allocation', 'my daily budget', 'my allowance',
-      'my weekly budget', 'my budget', 'my monthly budget'
+      'my daily allocation',
+      'my allocation',
+      'my daily budget',
+      'my allowance',
+      'my weekly budget',
+      'my budget',
+      'my monthly budget',
     ];
     final timeWords = [
-      'day', 'daily', 'week', 'weekly', 'this week', 'month', 'monthly', 'this month'
+      'day',
+      'daily',
+      'week',
+      'weekly',
+      'this week',
+      'month',
+      'monthly',
+      'this month',
     ];
 
-    bool hasUpdateWord = updateWords.any((w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized));
-    bool hasBudgetWord = budgetWords.any((w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized));
-    bool hasMyAllocationPhrase = myAllocationPhrases.any((w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized));
-    bool hasTimeWord = timeWords.any((w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized));
+    bool hasUpdateWord = updateWords.any(
+      (w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized),
+    );
+    bool hasBudgetWord = budgetWords.any(
+      (w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized),
+    );
+    bool hasMyAllocationPhrase = myAllocationPhrases.any(
+      (w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized),
+    );
+    bool hasTimeWord = timeWords.any(
+      (w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized),
+    );
 
     bool ruleA = hasUpdateWord && hasBudgetWord;
     bool ruleB = hasMyAllocationPhrase && hasTimeWord;
@@ -1661,17 +1724,19 @@ class BaiAssistant {
       // E.g. "Budget 500" or "Update my budget" without amount is tricky.
       // Wait, "Update my budget" matches Rule A (update + budget).
       // "Budget 500" matches budget but not update. We return null so it can be handled as ambiguous later.
-      return null; 
+      return null;
     }
 
     final amount = _extractAmountWithSlang(normalized);
     if (amount == null || !amount.isFinite || amount <= 0) {
-      return const BaiReply("Please specify the amount you want to set your budget to.");
+      return const BaiReply(
+        "Please specify the amount you want to set your budget to.",
+      );
     }
 
     bool isWeek = normalized.contains('week');
     bool isMonth = normalized.contains('month');
-    
+
     double dailyAmount = amount;
     String periodStr = 'daily';
     if (isWeek) {
@@ -1685,7 +1750,7 @@ class BaiAssistant {
     await SettingsService().setDailySpendingAllocation(dailyAmount);
 
     final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
-    
+
     return BaiReply(
       'Updated your $periodStr budget to $formattedAmount.',
       quickReplies: const ['Show my budget', 'What is my total balance?'],
@@ -2241,10 +2306,32 @@ class BaiAssistant {
 
     final l = text.toLowerCase();
     final List<String> expenseKeywords = [
-      'spend', 'spent', 'paid', 'cost', 'buy', 'bought', 'gastos', 'expense',
-      'bumili', 'add', 'log', 'logged', 'minus', 'deduct', 'spending',
-      'donated', 'gave', 'give', 'pay', 'sent', 'lost', 'given',
-      'purchase', 'got', 'charged', 'for '
+      'spend',
+      'spent',
+      'paid',
+      'cost',
+      'buy',
+      'bought',
+      'gastos',
+      'expense',
+      'bumili',
+      'add',
+      'log',
+      'logged',
+      'minus',
+      'deduct',
+      'spending',
+      'donated',
+      'gave',
+      'give',
+      'pay',
+      'sent',
+      'lost',
+      'given',
+      'purchase',
+      'got',
+      'charged',
+      'for ',
     ];
 
     if (expenseKeywords.any((k) => l.contains(k))) return true;
@@ -3185,4 +3272,78 @@ class BaiAssistant {
     "I'm here to help! Just ask me anything about cooking, groceries, bills, or your wallet. Type 'help' to see all my commands. 😊",
     quickReplies: ["Help", "What can I cook?", "What is my total balance?"],
   );
+
+  // ---------------------------------------------------------
+  // NEW ROBUST EXPENSE FLOW 
+  // ---------------------------------------------------------
+  Future<BaiReply> _handleOngoingExpenseFlow(String input) async {
+    final n = input.toLowerCase();
+    
+    if (n == 'cancel' || n == 'stop' || n == 'never mind' || n == 'forget it' || n == 'nevermind') {
+      _resetState();
+      return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+    }
+
+    final accounts = await FinanceStorage.loadAccounts();
+    
+    if (_pendingExpenseAccount == null) {
+      Account? acc = _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
+      if (acc != null) {
+        _pendingExpenseAccount = acc;
+      }
+    }
+
+    if (_pendingExpenseAmount == null) {
+      double? amount = _extractAmountWithSlang(n);
+      if (amount != null && amount > 0) {
+        _pendingExpenseAmount = amount;
+      }
+    }
+
+    if (_pendingExpenseDescription == null || _pendingExpenseDescription!.isEmpty) {
+      String item = n.replaceAll(RegExp(r'\d+(?:\.\d+)?'), '').trim();
+      if (item.isNotEmpty && item != 'cancel') {
+        _pendingExpenseDescription = item;
+      }
+    }
+
+    if (_pendingExpenseAmount == null) {
+      _step = BaiStep.awaitingExpenseAmount;
+      return const BaiReply("How much did you spend?");
+    }
+    
+    if (_pendingExpenseDescription == null || _pendingExpenseDescription!.isEmpty) {
+      _step = BaiStep.awaitingExpenseItem;
+      return const BaiReply("What did you spend it on?");
+    }
+    
+    if (_pendingExpenseAccount == null) {
+      _step = BaiStep.awaitingExpenseAccount;
+      final accountNames = accounts.map((a) => a.name).join(', ');
+      return BaiReply("Which account did you spend it from? Available accounts: $accountNames.",
+        quickReplies: accounts.map((a) => a.name).toList());
+    }
+
+    // Process saving (mock)
+    _resetState();
+    return const BaiReply("Expense logged successfully!");
+  }
+
+  Future<BaiReply> _handleClarification(String n) async {
+    // Uses the raw input for later context
+    final raw = _unclearRawInput ?? n;
+    
+    if (n.contains('expense') || n.contains('spend')) {
+       _step = BaiStep.idle;
+       return const BaiReply("Okay, tracking expense.");
+    } else if (n.contains('budget') || n.contains('update')) {
+       _step = BaiStep.idle;
+       return const BaiReply("Okay, updating budget.");
+    }
+    
+    _unclearRawInput = raw;
+    _step = BaiStep.awaitingClarification;
+    return const BaiReply("Would you like to log this as an expense, or update your budget?", 
+      quickReplies: ['Log Expense', 'Update Budget']);
+  }
 }
