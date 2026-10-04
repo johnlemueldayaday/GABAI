@@ -39,6 +39,9 @@ enum BaiStep {
   awaitingAllocationPeriod,
   awaitingAllocationAmount,
   awaitingClarification,
+  awaitingScheduledName,
+  awaitingScheduledAmount,
+  awaitingScheduledDate,
 }
 
 /// BAI (Brother AI) - Unified smart assistant merging Ramsey + Tarsi
@@ -61,8 +64,16 @@ class BaiAssistant {
 
   // Track pending allocation details
 
+
   // Clarification
   String? _unclearRawInput;
+
+  // Track pending scheduled entries
+  String? _pendingScheduledName;
+  double? _pendingScheduledAmount;
+  String? _pendingScheduledDate;
+  String? _pendingScheduledType; // "bill" or "income"
+
 
 
   // Track pending income details when waiting for account
@@ -236,7 +247,9 @@ class BaiAssistant {
       return await _handleStateMachine(n);
     }
 
-    // ─── 2. FUTURE INCOMING EVENTS ───
+
+    final scheduledResult = await _tryScheduledEntry(n);
+    if (scheduledResult != null) return scheduledResult;
     final futureEventResult = await _tryFutureEvent(n);
     if (futureEventResult != null) return futureEventResult;
 
@@ -338,6 +351,13 @@ class BaiAssistant {
       return await _handleExpenseAccountResponse(n);
     }
 
+
+    if (_step == BaiStep.awaitingScheduledName || 
+        _step == BaiStep.awaitingScheduledAmount ||
+        _step == BaiStep.awaitingScheduledDate) {
+      return await _handleScheduledEntryFlow(n);
+    }
+    
     // Handle awaiting expense item/amount states
     if (_step == BaiStep.awaitingExpenseItem || 
         _step == BaiStep.awaitingExpenseAmount ||
@@ -3346,4 +3366,91 @@ class BaiAssistant {
     return const BaiReply("Would you like to log this as an expense, or update your budget?", 
       quickReplies: ['Log Expense', 'Update Budget']);
   }
+
+  // ---------------------------------------------------------
+  // SCHEDULED ENTRIES FLOW (BILLS & FUTURE INCOME)
+  // ---------------------------------------------------------
+  Future<BaiReply> _handleScheduledEntryFlow(String input) async {
+    final n = input.toLowerCase();
+    
+    // 1. CANCEL OR NEW COMMAND
+    if (n == 'cancel' || n == 'stop' || n == 'never mind' || n == 'forget it' || n == 'nevermind') {
+      _resetState();
+      return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+    }
+    
+    if (n.contains('update') && n.contains('budget') || n.contains('spent')) {
+       _resetState();
+       return handle(input); // Reroute as a fresh command
+    }
+
+    // 2. PARSE MISSING FIELDS
+    String nWithoutDate = n;
+    
+    if (_pendingScheduledDate == null || _pendingScheduledDate!.isEmpty) {
+      final dateMatch = RegExp(r'(?:on|due|this|by)\s+([a-z]+\s+\d+|\d{1,2}/\d{1,2}|\d{1,2}(?:th|st|nd|rd)?|\d{1,2}|tomorrow|next\s+[a-z]+)').firstMatch(n);
+      if (dateMatch != null) {
+        _pendingScheduledDate = dateMatch.group(1);
+        nWithoutDate = n.replaceFirst(dateMatch.group(0)!, '');
+      } else {
+        // Fallback for just typing a date like "October 15"
+        final rawDateMatch = RegExp(r'([a-z]+\s+\d+|\d{1,2}/\d{1,2}|tomorrow|next\s+[a-z]+)').firstMatch(n);
+        if (rawDateMatch != null) {
+           _pendingScheduledDate = rawDateMatch.group(1);
+           nWithoutDate = n.replaceFirst(rawDateMatch.group(0)!, '');
+        }
+      }
+    }
+
+    if (_pendingScheduledAmount == null) {
+      double? amount = _extractAmountWithSlang(nWithoutDate);
+      if (amount != null && amount > 0) _pendingScheduledAmount = amount;
+    }
+
+    if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
+      String item = nWithoutDate.replaceAll(RegExp(r'\d+(?:\.\d+)?'), '').replaceAll(RegExp(r'october|oct|november|nov|december|dec'), '');
+      item = item.replaceAll(RegExp(r'\b(will have|will receive|will get|will be|am getting|expecting|incoming|due|coming|need to pay|have to pay|on|this|by|remind me|i have|my|the|is|a)\b'), '').trim();
+      if (item.isNotEmpty) _pendingScheduledName = item;
+    }
+
+    // 3. ASK FOR MISSING FIELDS
+    if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
+      _step = BaiStep.awaitingScheduledName;
+      return BaiReply(_pendingScheduledType == 'bill' ? "What bill is this?" : "What kind of incoming money is this?");
+    }
+    
+    if (_pendingScheduledAmount == null) {
+      _step = BaiStep.awaitingScheduledAmount;
+      return BaiReply(_pendingScheduledType == 'bill' ? "How much is the $_pendingScheduledName?" : "How much is your $_pendingScheduledName?");
+    }
+    
+    if (_pendingScheduledDate == null || _pendingScheduledDate!.isEmpty) {
+      _step = BaiStep.awaitingScheduledDate;
+      return BaiReply(_pendingScheduledType == 'bill' ? "When is the $_pendingScheduledName due?" : "On what date will you receive your $_pendingScheduledName?");
+    }
+
+    // 4. CONFIRMATION
+    final title = _pendingScheduledType == 'bill' ? '📅 Bill Added to Calendar!' : '💰 Incoming Transaction Added to Calendar!';
+    final footer = _pendingScheduledType == 'bill' ? 'I will remind you on the due date.' : 'I will remind you on the day it arrives.';
+    final sign = _pendingScheduledType == 'bill' ? 'P-' : 'P ';
+    
+    _resetState();
+    return BaiReply("$title\n$_pendingScheduledName\t\t$sign${_pendingScheduledAmount!.toStringAsFixed(2)}\nDate:\t\t\t$_pendingScheduledDate\n\n$footer",
+      highlightColor: _pendingScheduledType == 'bill' ? 'red' : 'green');
+  }
+
+  Future<BaiReply?> _tryScheduledEntry(String n) async {
+    final futureSignals = RegExp(r'(will have|will receive|will get|will be|am getting|expecting|incoming|due|coming on|need to pay|have to pay|on \d+|this \w+|by \d+|remind me|i have)', caseSensitive: false);
+    final pastSignals = RegExp(r'(spent|bought|paid|received|got|earned)');
+    
+    // DECISION ORDER 2: Future signals 
+    if (futureSignals.hasMatch(n) && !pastSignals.hasMatch(n)) {
+       final isBill = RegExp(r'(bill|rent|utilities|electricity|water|internet|wifi|phone|loan|credit card|subscription)').hasMatch(n);
+       _pendingScheduledType = isBill ? 'bill' : 'income';
+       _step = BaiStep.awaitingScheduledName;
+       return await _handleScheduledEntryFlow(n);
+    }
+    return null;
+  }
+
 }
