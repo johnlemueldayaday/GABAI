@@ -5,7 +5,6 @@ import 'package:gabay/services/ramsey_cooking_assistant.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/future_event_storage.dart';
 import 'package:gabay/models/bill_models.dart';
-import 'package:gabay/services/price_storage.dart';
 
 /// Unified reply object for BAI
 class BaiReply {
@@ -36,6 +35,8 @@ enum BaiStep {
   awaitingDuePaymentAccount,
   awaitingExpenseAmount,
   awaitingExpenseItem,
+  awaitingIncomeAmount,
+  awaitingIncomeSource,
   awaitingAllocationPeriod,
   awaitingAllocationAmount,
   awaitingClarification,
@@ -47,6 +48,10 @@ enum BaiStep {
 /// BAI (Brother AI) - Unified smart assistant merging Ramsey + Tarsi
 class BaiAssistant {
   final String _currency = SettingsService().currency;
+  static const _expenseWalletNames = ['Cash', 'BDO'];
+  static const _expenseWalletList = 'Cash, BDO';
+  static const _incomeWalletNames = ['Cash', 'BDO'];
+  static const _incomeWalletList = 'Cash, BDO';
 
   // Cooking state (from Ramsey)
   final RamseyCookingAssistant _cookingEngine = RamseyCookingAssistant();
@@ -54,7 +59,6 @@ class BaiAssistant {
 
   // Track last spending for breakdown follow-up
   bool _awaitingBreakdown = false;
-
 
   // Track pending expense details
   double? _pendingExpenseAmount;
@@ -64,7 +68,6 @@ class BaiAssistant {
 
   // Track pending allocation details
 
-
   // Clarification
   String? _unclearRawInput;
 
@@ -73,13 +76,15 @@ class BaiAssistant {
   double? _pendingScheduledAmount;
   String? _pendingScheduledDate;
   String? _pendingScheduledType; // "bill" or "income"
-
-
+  String? _pendingAllocationPeriod;
+  DateTime? _pendingScheduledDateTime;
+  bool _pendingBillDateNeedsConfirmation = false;
 
   // Track pending income details when waiting for account
   double? _pendingIncomeAmount;
   String? _pendingIncomeDescription;
   String? _pendingIncomeCategory;
+  Account? _pendingIncomeAccount;
 
   // Track pending due event when processing past-due events
   FutureEvent? _pendingDueEvent;
@@ -231,8 +236,70 @@ class BaiAssistant {
       return greeting;
     }
 
+    if (_isExpenseFlowActive) {
+      if (_isCancellation(n)) {
+        _resetState();
+        return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+      }
+      if (!_isNewCommandDuringExpense(n)) {
+        return await _handleOngoingExpenseFlow(input);
+      }
+      _resetState();
+    }
+    if (_isIncomeFlowActive) {
+      if (_isCancellation(n)) {
+        _resetState();
+        return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+      }
+      if (!_isNewCommandDuringIncome(n)) {
+        return await _handleOngoingIncomeFlow(input);
+      }
+      _resetState();
+    }
+    if (_isAllocationFlowActive) {
+      if (_isCancellation(n)) {
+        _resetState();
+        return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+      }
+      if (!_isNewCommandDuringAllocation(n)) {
+        return await _handleAllocationFlow(input);
+      }
+      _resetState();
+    }
+    if (_pendingScheduledType == 'bill' &&
+        (_step == BaiStep.awaitingScheduledName ||
+            _step == BaiStep.awaitingScheduledAmount ||
+            _step == BaiStep.awaitingScheduledDate)) {
+      if (_isCancellation(n)) {
+        _resetState();
+        return const BaiReply('Okay, I cancelled that. Nothing was saved.');
+      }
+      if (RegExp(
+            r'\b(?:spent|spend|bought|paid|purchase|purchased|cost\s+me|charged)\b',
+          ).hasMatch(n) ||
+          _isIncomeIntent(n) ||
+          (_hasAllocationUpdateWord(n) && _hasAllocationBudgetWord(n))) {
+        _resetState();
+      } else {
+        return await _handleUpcomingBillFlow(input);
+      }
+    }
+
+    final budgetAsk = _tryBudgetValueAsk(n);
+    if (budgetAsk != null) return budgetAsk;
+    final budgetConcern = _tryBudgetConcernReply(n);
+    if (budgetConcern != null) return budgetConcern;
+
     final allocationReply = await _trySetDailyAllocation(n);
     if (allocationReply != null) return allocationReply;
+
+    final scheduledResult = await _tryScheduledEntry(n);
+    if (scheduledResult != null) return scheduledResult;
+    final futureEventResult = await _tryFutureEvent(n);
+    if (futureEventResult != null) return futureEventResult;
+
+    final expenseResult = await _tryLogExpense(n);
+    if (expenseResult != null) return expenseResult;
 
     // ─── 1. STATE MACHINE (mid-conversation flows take priority) ───
     final undoResult = await _tryUndo(n);
@@ -247,19 +314,9 @@ class BaiAssistant {
       return await _handleStateMachine(n);
     }
 
-
-    final scheduledResult = await _tryScheduledEntry(n);
-    if (scheduledResult != null) return scheduledResult;
-    final futureEventResult = await _tryFutureEvent(n);
-    if (futureEventResult != null) return futureEventResult;
-
     // ─── 3. FINANCE: transfers (highest specificity regex) ───
     final transferResult = await _tryTransfer(n);
     if (transferResult != null) return transferResult;
-
-    // ─── 4. FINANCE: expense logging ───
-    final expenseResult = await _tryLogExpense(n);
-    if (expenseResult != null) return expenseResult;
 
     // ─── 5. FINANCE: income logging ───
     final incomeResult = await _tryLogIncome(n);
@@ -346,33 +403,28 @@ class BaiAssistant {
       }
     }
 
-    // Handle awaiting expense account state
-    if (_step == BaiStep.awaitingExpenseAccount) {
-      return await _handleExpenseAccountResponse(n);
-    }
-
-
-    if (_step == BaiStep.awaitingScheduledName || 
+    if (_step == BaiStep.awaitingScheduledName ||
         _step == BaiStep.awaitingScheduledAmount ||
         _step == BaiStep.awaitingScheduledDate) {
       return await _handleScheduledEntryFlow(n);
     }
-    
+
     // Handle awaiting expense item/amount states
-    if (_step == BaiStep.awaitingExpenseItem || 
+    if (_step == BaiStep.awaitingExpenseItem ||
         _step == BaiStep.awaitingExpenseAmount ||
         _step == BaiStep.awaitingExpenseAccount) {
       return await _handleOngoingExpenseFlow(n);
     }
-    
+
     // Handle clarification state
     if (_step == BaiStep.awaitingClarification) {
       return await _handleClarification(n);
     }
 
-    // Handle awaiting income account state
-    if (_step == BaiStep.awaitingIncomeAccount) {
-      return await _handleIncomeAccountResponse(n);
+    if (_step == BaiStep.awaitingIncomeAmount ||
+        _step == BaiStep.awaitingIncomeSource ||
+        _step == BaiStep.awaitingIncomeAccount) {
+      return await _handleOngoingIncomeFlow(n);
     }
 
     if (_step == BaiStep.awaitingDuePaymentAction) {
@@ -456,201 +508,320 @@ class BaiAssistant {
     _pendingExpenseAmount = null;
     _pendingExpenseDescription = null;
     _pendingExpenseCategory = null;
-    _pendingExpenseCategory = null;
+    _pendingExpenseAccount = null;
     _pendingIncomeAmount = null;
     _pendingIncomeDescription = null;
     _pendingIncomeCategory = null;
+    _pendingIncomeAccount = null;
     _pendingDueEvent = null;
+    _pendingScheduledName = null;
+    _pendingScheduledAmount = null;
+    _pendingScheduledDate = null;
+    _pendingScheduledType = null;
+    _pendingAllocationPeriod = null;
+    _pendingScheduledDateTime = null;
+    _pendingBillDateNeedsConfirmation = false;
   }
 
-  Future<BaiReply> _handleExpenseAccountResponse(String n) async {
-    // Allow user to cancel the pending transaction
-    if (n == 'cancel' ||
-        n == 'cancel transaction' ||
-        n == 'nevermind' ||
-        n == 'never mind') {
-      _resetState();
-      return const BaiReply(
-        "Transaction cancelled. What else can I help you with?",
+  bool get _isExpenseFlowActive =>
+      _step == BaiStep.awaitingExpenseAmount ||
+      _step == BaiStep.awaitingExpenseItem ||
+      _step == BaiStep.awaitingExpenseAccount;
+
+  bool get _isIncomeFlowActive =>
+      _step == BaiStep.awaitingIncomeAmount ||
+      _step == BaiStep.awaitingIncomeSource ||
+      _step == BaiStep.awaitingIncomeAccount;
+
+  bool get _isAllocationFlowActive =>
+      _step == BaiStep.awaitingAllocationPeriod ||
+      _step == BaiStep.awaitingAllocationAmount;
+
+  bool _isCancellation(String input) => const {
+    'cancel',
+    'stop',
+    'never mind',
+    'nevermind',
+    'forget it',
+  }.contains(input.trim().toLowerCase());
+
+  bool _isNewCommandDuringExpense(String input) {
+    final n = input.toLowerCase().trim();
+    if (_hasFutureExpenseSignal(n) ||
+        _isExpenseIntent(n) ||
+        _isIncomeIntent(n)) {
+      return true;
+    }
+    final hasBudgetWord = RegExp(
+      r'\b(?:budget|allocation|allowance|limit|cap)\b',
+    ).hasMatch(n);
+    final hasUpdateWord = RegExp(
+      r'\b(?:update|change|set|adjust|edit|revise|modify|reset|raise|lower|increase|decrease)\b',
+    ).hasMatch(n);
+    return (hasBudgetWord && hasUpdateWord) ||
+        RegExp(
+          r'\bmy\s+(?:daily|weekly|monthly)\s+(?:allocation|budget|spending|spend)\b',
+        ).hasMatch(n) ||
+        RegExp(r'\btransfer\b').hasMatch(n);
+  }
+
+  bool _isNewCommandDuringIncome(String input) {
+    final n = input.toLowerCase().trim();
+    return _isExpenseIntent(n) ||
+        _hasFutureExpenseSignal(n) ||
+        (_parseExpenseAmount(n) != null && _isIncomeIntent(n)) ||
+        RegExp(
+          r'\b(?:received|got paid|earned|just got|was paid)\b',
+        ).hasMatch(n) ||
+        RegExp(
+          r'\b(?:update|change|set|adjust|edit|revise|modify|reset|raise|lower|increase|decrease)\b.*\b(?:budget|allocation|allowance|limit|cap)\b',
+        ).hasMatch(n) ||
+        RegExp(r'\btransfer\b').hasMatch(n);
+  }
+
+  bool _isNewCommandDuringAllocation(String input) {
+    final n = input.toLowerCase().trim();
+    if (_isExpenseIntent(n) ||
+        _isIncomeIntent(n) ||
+        _hasFutureExpenseSignal(n) ||
+        RegExp(r'\btransfer\b').hasMatch(n)) {
+      return true;
+    }
+    final period = _allocationPeriodFromText(n);
+    final isAcceptedBudgetStatement =
+        _hasAllocationBudgetWord(n) &&
+        period != null &&
+        _parseExpenseAmount(n) != null &&
+        RegExp(r'\b(?:is|will\s+be)\b').hasMatch(n);
+    final isRuleB =
+        RegExp(
+          r'\bmy\s+(?:(?:daily|weekly|monthly)\s+)?(?:allocation|budget|allowance)\b',
+        ).hasMatch(n) &&
+        period != null;
+    return (_hasAllocationUpdateWord(n) && _hasAllocationBudgetWord(n)) ||
+        isAcceptedBudgetStatement ||
+        isRuleB ||
+        _tryBudgetValueAsk(n) != null ||
+        _tryBudgetConcernReply(n) != null;
+  }
+
+  bool _hasFutureExpenseSignal(String input) => RegExp(
+    r'\b(?:will|due|due on|is due|expecting|incoming|tomorrow|next week|next month|by\s+\d{1,2}|on\s+(?:the\s+)?\d{1,2}|this\s+(?:month|the\s+\d{1,2}))\b',
+  ).hasMatch(input);
+
+  double? _parseExpenseAmount(String input) {
+    final match = RegExp(
+      r'(?<![\w/])-?\d+(?:,\d{3})*(?:\.\d+)?\s*[km]?\b',
+      caseSensitive: false,
+    ).firstMatch(input);
+    if (match == null) return null;
+
+    final value = match
+        .group(0)!
+        .replaceAll(',', '')
+        .replaceAll(RegExp(r'\s+'), '');
+    final suffix = value[value.length - 1].toLowerCase();
+    final hasSuffix = suffix == 'k' || suffix == 'm';
+    final parsed = double.tryParse(
+      hasSuffix ? value.substring(0, value.length - 1) : value,
+    );
+    if (parsed == null) return null;
+    return switch (suffix) {
+      'k' => parsed * 1000,
+      'm' => parsed * 1000000,
+      _ => parsed,
+    };
+  }
+
+  Account? _findExpenseWallet(String text, List<Account> accounts) {
+    final normalized = text.trim().toLowerCase();
+    for (final walletName in _expenseWalletNames) {
+      if (RegExp(
+        r'\b' + RegExp.escape(walletName.toLowerCase()) + r'\b',
+      ).hasMatch(normalized)) {
+        for (final account in accounts) {
+          if (account.name.trim().toLowerCase() == walletName.toLowerCase()) {
+            return account;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  Account? _findMentionedAccount(String text, List<Account> accounts) {
+    for (final account in accounts) {
+      if (RegExp(
+        r'\b' + RegExp.escape(account.name.trim().toLowerCase()) + r'\b',
+      ).hasMatch(text.toLowerCase())) {
+        return account;
+      }
+    }
+    return null;
+  }
+
+  String _formatExpenseAmount(double amount) {
+    final formatted = _formatNumberWithCommas(amount.abs().toStringAsFixed(2));
+    return amount < 0 ? '-$formatted' : formatted;
+  }
+
+  String _extractIncomeSource(String input) {
+    var source = input.toLowerCase();
+    source = source.replaceAll(
+      RegExp(r'(?<![\w/])-?\d+(?:,\d{3})*(?:\.\d+)?\s*[km]?\b'),
+      ' ',
+    );
+    for (final wallet in _incomeWalletNames) {
+      source = source.replaceAll(
+        RegExp(r'\b' + RegExp.escape(wallet.toLowerCase()) + r'\b'),
+        ' ',
       );
     }
+    source = source.replaceAll(
+      RegExp(
+        r'\b(?:received|recieved|got\s+paid|earned|just\s+got|was\s+paid|got|paid|income|money|from|to|in|into|through|with|via|my|me|i|as|the|a|an|deposit(?:ed)?)\b',
+      ),
+      ' ',
+    );
+    source = source.replaceAll(RegExp(r'[^\w\s-]'), ' ');
+    source = source.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return _titleCase(source);
+  }
+
+  Future<BaiReply?> _tryLogIncome(String n) async {
+    if (_hasFutureExpenseSignal(n) || !_isIncomeIntent(n)) return null;
+
+    _pendingIncomeAmount = _parseExpenseAmount(n);
+    _pendingIncomeDescription = _extractIncomeSource(n);
+    _pendingIncomeCategory = _categorizeIncome(_pendingIncomeDescription ?? '');
 
     final accounts = await FinanceStorage.loadAccounts();
-    if (accounts.isEmpty) return _noAccountsReply();
+    final mentionedAccount = _findMentionedAccount(n, accounts);
+    _pendingIncomeAccount = _findIncomeWallet(n, accounts);
 
-    // Find the account from user input — try exact first, then fuzzy
-    Account? acc =
-        _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
-    if (acc == null) {
-      final accountNames = accounts.map((a) => a.name).join(', ');
-      return BaiReply(
-        "I couldn't find that account. Available accounts: $accountNames\n\nWhich account did you spend from?",
-        quickReplies: accounts.map((a) => a.name).toList(),
+    if (_pendingIncomeAmount != null &&
+        (!_pendingIncomeAmount!.isFinite || _pendingIncomeAmount! <= 0)) {
+      _step = BaiStep.awaitingIncomeAmount;
+      return const BaiReply(
+        'Please enter a valid amount, for example 8,000.00.',
+      );
+    }
+    if (_pendingIncomeAmount == null) {
+      _step = BaiStep.awaitingIncomeAmount;
+      return const BaiReply('How much did you receive?');
+    }
+    if (_pendingIncomeDescription == null ||
+        _pendingIncomeDescription!.isEmpty) {
+      _step = BaiStep.awaitingIncomeSource;
+      return const BaiReply('What was this income from?');
+    }
+    if (mentionedAccount != null &&
+        !_incomeWalletNames.any(
+          (wallet) =>
+              wallet.toLowerCase() == mentionedAccount.name.toLowerCase(),
+        )) {
+      _step = BaiStep.awaitingIncomeAccount;
+      return const BaiReply(
+        "I couldn't find that wallet. Available wallets: $_incomeWalletList. Which one would you like to use?",
       );
     }
 
-    // Log the expense with the provided account
-    final amount = _pendingExpenseAmount!;
-    final desc = _pendingExpenseDescription!;
-    final category = _pendingExpenseCategory!;
-    final cleanTitle = _cleanTransactionTitle(desc, amount: amount);
+    return await _continueIncomeFlow();
+  }
 
-    // Pre-flight: check if account has sufficient balance
-    if (acc.balance < amount) {
-      final accounts = await FinanceStorage.loadAccounts();
-      final otherAccounts = accounts
-          .where((a) => a.id != acc.id && a.balance >= amount)
-          .toList();
-      final allOthers = accounts.where((a) => a.id != acc.id).toList();
-      final listToShow = otherAccounts.isNotEmpty ? otherAccounts : allOthers;
-      final alternativeNames = listToShow.map((a) => a.name).join(', ');
-      // DO NOT reset state — keep transaction pending
-      return BaiReply(
-        "⚠️ Insufficient funds. ${_accountLabel(acc)} only has $_currency${_formatNumberWithCommas(acc.balance.toStringAsFixed(2))} but the transaction requires -$_currency${_formatNumberWithCommas(amount.toStringAsFixed(2))}.\n\nWhich alternative account would you like to use?\nAvailable: $alternativeNames",
-        quickReplies: listToShow.map((a) => a.name).toList(),
-      );
+  Account? _findIncomeWallet(String text, List<Account> accounts) {
+    final normalized = text.toLowerCase();
+    for (final wallet in _incomeWalletNames) {
+      if (!RegExp(
+        r'\b' + RegExp.escape(wallet.toLowerCase()) + r'\b',
+      ).hasMatch(normalized)) {
+        continue;
+      }
+      for (final account in accounts) {
+        if (account.name.trim().toLowerCase() == wallet.toLowerCase()) {
+          return account;
+        }
+      }
     }
+    return null;
+  }
 
-    try {
-      final txn = FinanceTransaction(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        amount: amount,
-        accountId: acc.id,
-        accountName: acc.name,
-        type: 'EXPENSE',
-        category: category,
-        description: cleanTitle,
-      );
-      await FinanceStorage.addTransaction(txn);
-
-      final prevBalanceStr = _formatNumberWithCommas(
-        acc.balance.toStringAsFixed(2),
-      );
-      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalanceStr = _formatNumberWithCommas(
-        (acc.balance - amount).toStringAsFixed(2),
-      );
-
-      _resetState();
-      return BaiReply(
-        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
-        quickReplies: const [
-          "What is my total balance?",
-          "Check account balances",
-        ],
-        highlightColor: 'red',
-      );
-    } catch (e) {
-      final errMsg = e.toString();
-      // Check for insufficient funds — retain state and ask for alternative account
-      final isInsufficientFunds =
-          errMsg.toLowerCase().contains('insufficient') ||
-          errMsg.toLowerCase().contains('negative balance');
-      if (isInsufficientFunds) {
-        final accounts = await FinanceStorage.loadAccounts();
-        final otherAccounts = accounts
-            .where((a) => a.id != acc.id && a.balance >= _pendingExpenseAmount!)
-            .toList();
-        final alternativeNames = otherAccounts.isNotEmpty
-            ? otherAccounts.map((a) => a.name).join(', ')
-            : accounts
-                  .where((a) => a.id != acc.id)
-                  .map((a) => a.name)
-                  .join(', ');
-        // DO NOT reset state — keep transaction pending
-        return BaiReply(
-          "⚠️ Insufficient funds. ${_accountLabel(acc)} doesn't have enough balance for -$_currency${_formatNumberWithCommas(_pendingExpenseAmount!.toStringAsFixed(2))}.\n\nWhich alternative account would you like to use?\nAvailable: $alternativeNames",
-          quickReplies: otherAccounts.map((a) => a.name).toList(),
+  Future<BaiReply> _handleOngoingIncomeFlow(String input) async {
+    if (_step == BaiStep.awaitingIncomeAmount) {
+      final amount = _parseExpenseAmount(input);
+      if (amount == null || !amount.isFinite || amount <= 0) {
+        return const BaiReply(
+          'Please enter a valid amount, for example 8,000.00.',
         );
       }
-      // For other errors, also retain state so user can retry
-      return BaiReply(
-        "⚠️ $errMsg\n\nThe transaction is still open. You can try a different account or type 'cancel'.",
-        quickReplies: const ["Cancel"],
-      );
+      _pendingIncomeAmount = amount;
+    } else if (_step == BaiStep.awaitingIncomeSource) {
+      final source = _extractIncomeSource(input);
+      if (source.isNotEmpty) {
+        _pendingIncomeDescription = source;
+        _pendingIncomeCategory = _categorizeIncome(source);
+      }
+    } else if (_step == BaiStep.awaitingIncomeAccount) {
+      final accounts = await FinanceStorage.loadAccounts();
+      final wallet = _findIncomeWallet(input, accounts);
+      if (wallet == null) {
+        return const BaiReply(
+          "I couldn't find that wallet. Available wallets: $_incomeWalletList. Which one would you like to use?",
+        );
+      }
+      _pendingIncomeAccount = wallet;
     }
+
+    return await _continueIncomeFlow();
   }
 
-  Future<BaiReply> _handleIncomeAccountResponse(String n) async {
-    // Allow user to cancel the pending transaction
-    if (n == 'cancel' ||
-        n == 'cancel transaction' ||
-        n == 'nevermind' ||
-        n == 'never mind') {
-      _resetState();
+  Future<BaiReply> _continueIncomeFlow() async {
+    if (_pendingIncomeAmount == null) {
+      _step = BaiStep.awaitingIncomeAmount;
+      return const BaiReply('How much did you receive?');
+    }
+    if (_pendingIncomeDescription == null ||
+        _pendingIncomeDescription!.isEmpty) {
+      _step = BaiStep.awaitingIncomeSource;
+      return const BaiReply('What was this income from?');
+    }
+    if (_pendingIncomeAccount == null) {
+      _step = BaiStep.awaitingIncomeAccount;
       return const BaiReply(
-        "Transaction cancelled. What else can I help you with?",
+        'Which wallet did you deposit it to? Available wallets: $_incomeWalletList.',
       );
     }
 
-    final accounts = await FinanceStorage.loadAccounts();
-    if (accounts.isEmpty) return _noAccountsReply();
-
-    // Find the account from user input — try exact first, then fuzzy
-    Account? acc =
-        _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
-    if (acc == null) {
-      final accountNames = accounts.map((a) => a.name).join(', ');
-      return BaiReply(
-        "I couldn't find that account. Available accounts: $accountNames\n\nWhich account did you receive it in?",
-        quickReplies: accounts.map((a) => a.name).toList(),
-      );
-    }
-
-    // Log the income with the provided account
     final amount = _pendingIncomeAmount!;
-    final desc = _pendingIncomeDescription!;
-    final category = _pendingIncomeCategory!;
-    final cleanTitle = _cleanTransactionTitle(desc, amount: amount);
+    final source = _pendingIncomeDescription!;
+    final wallet = _pendingIncomeAccount!;
+    final transaction = FinanceTransaction(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      amount: amount,
+      accountId: wallet.id,
+      accountName: wallet.name,
+      type: 'INCOME',
+      category: _pendingIncomeCategory ?? _categorizeIncome(source),
+      description: source,
+      date: DateTime.now(),
+    );
 
     try {
-      final txn = FinanceTransaction(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        amount: amount,
-        accountId: acc.id,
-        accountName: acc.name,
-        type: 'INCOME',
-        category: category,
-        description: cleanTitle,
-      );
-      await FinanceStorage.addTransaction(txn);
-
-      final prevBalanceStr = _formatNumberWithCommas(
-        acc.balance.toStringAsFixed(2),
-      );
-      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalanceStr = _formatNumberWithCommas(
-        (acc.balance + amount).toStringAsFixed(2),
-      );
-
+      await FinanceStorage.addTransaction(transaction);
+      final amountText = _formatExpenseAmount(amount);
       _resetState();
       return BaiReply(
-        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
+        '✅ Income logged!\n$source  P +$amountText\nWallet: ${wallet.name}',
         quickReplies: const [
-          "What is my total balance?",
-          "Check account balances",
+          'What is my total balance?',
+          'Check account balances',
         ],
         highlightColor: 'green',
       );
-    } catch (e) {
-      final errMsg = e.toString();
-      // Check for insufficient funds — retain state and ask for alternative account
-      final isInsufficientFunds =
-          errMsg.toLowerCase().contains('insufficient') ||
-          errMsg.toLowerCase().contains('negative balance');
-      if (isInsufficientFunds) {
-        final accounts = await FinanceStorage.loadAccounts();
-        final otherAccounts = accounts.where((a) => a.id != acc.id).toList();
-        final alternativeNames = otherAccounts.map((a) => a.name).join(', ');
-        // DO NOT reset state — keep transaction pending
-        return BaiReply(
-          "⚠️ Something went wrong with ${_accountLabel(acc)}.\n\nThe transaction is still open. Try another account: $alternativeNames",
-          quickReplies: otherAccounts.map((a) => a.name).toList(),
-        );
-      }
+    } catch (error) {
       return BaiReply(
-        "⚠️ $errMsg\n\nThe transaction is still open. You can try a different account or type 'cancel'.",
-        quickReplies: const ["Cancel"],
+        '⚠️ Failed to log income: $error',
+        quickReplies: const ['Cancel'],
       );
     }
   }
@@ -962,186 +1133,39 @@ class BaiAssistant {
   }
 
   Future<BaiReply?> _tryLogExpense(String n) async {
-    // 1. Differentiate intent
-    if (!_isExpenseIntent(n)) return null;
+    if (_hasFutureExpenseSignal(n) || !_isExpenseIntent(n)) return null;
 
-    // 2. Extract amount using slang-aware extractor (handles k/m suffixes)
     final accounts = await FinanceStorage.loadAccounts();
-    if (accounts.isEmpty) return _noAccountsReply();
-
-    // 3. Try to detect account from text
-    Account? acc = _detectAccountFromText(n, accounts);
-    bool accountProvided = (acc != null);
-    final fragmentItem = _extractExpenseItemFragment(n, acc);
-
-    double? amount = _extractAmountWithSlang(n);
-    if (amount == null || amount <= 0) {
-      if (fragmentItem.isEmpty || !accountProvided) return null;
-
-      final rememberedPrice = PriceStorage.getLastPriceAny(fragmentItem);
-      if (rememberedPrice == null || rememberedPrice <= 0) {
-        final category = _categorizeExpense(fragmentItem);
-        return BaiReply(
-          "How much was ${_titleCase(fragmentItem)}?\n\n"
-          "${_accountLabel(acc)}\n"
-          "Category: $category",
-          quickReplies: const ["Cancel"],
-        );
-      }
-      amount = rememberedPrice;
+    final detectedAccount = _findMentionedAccount(n, accounts);
+    _pendingExpenseAccount = _findExpenseWallet(n, accounts);
+    final item = _extractExpenseItemFragment(n, _pendingExpenseAccount);
+    if (item.isNotEmpty) {
+      _pendingExpenseDescription = _titleCase(item);
+      _pendingExpenseCategory = _categorizeExpense(item);
     }
+    _pendingExpenseAmount = _parseExpenseAmount(n);
 
-    // Capture the raw amount string matched from text for description cleaning
-    final amountStr =
-        RegExp(
-          r'(\d+(?:,\d{3})*(?:\.\d+)?)\s*[km]?\b',
-        ).firstMatch(n)?.group(0) ??
-        amount.toStringAsFixed(2);
-
-    // Clean description using _cleanDescription
-    String matchedAccSuffix = '';
-    if (acc != null) {
-      final nameIdx = n.toLowerCase().indexOf(acc.name.toLowerCase());
-      if (nameIdx != -1) {
-        final precedingText = n.substring(0, nameIdx).toLowerCase();
-        final viaIdx = precedingText.lastIndexOf(
-          RegExp(r'\b(?:from|using|in|through|with|via)\b'),
-        );
-        if (viaIdx != -1) {
-          matchedAccSuffix = n.substring(viaIdx);
-        } else {
-          matchedAccSuffix = n.substring(nameIdx);
-        }
-      }
+    if (_pendingExpenseAmount != null &&
+        (!_pendingExpenseAmount!.isFinite || _pendingExpenseAmount! <= 0)) {
+      _step = BaiStep.awaitingExpenseAmount;
+      return const BaiReply('Please enter a valid amount, for example 250.00.');
     }
-
-    String descStr = fragmentItem.isNotEmpty
-        ? fragmentItem
-        : _cleanDescription(n, amountStr, matchedAccSuffix);
-
-    // Clean up expense keywords from description to keep it clean
-    final List<String> stripKeywords = [
-      'spent',
-      'paid',
-      'cost',
-      'buy',
-      'bought',
-      'gastos',
-      'expense',
-      'bumili',
-      'add',
-      'log',
-      'logged',
-      'minus',
-      'deduct',
-      'spending',
-      'give',
-      'gave',
-      'pay',
-      'sent',
-      'lost',
-      'given',
-    ];
-    String cleanedDesc = descStr;
-    for (var k in stripKeywords) {
-      cleanedDesc = cleanedDesc.replaceAll(
-        RegExp(r'\b' + k + r'\b', caseSensitive: false),
-        '',
-      );
+    if (_pendingExpenseAmount == null ||
+        _pendingExpenseDescription == null ||
+        _pendingExpenseDescription!.isEmpty) {
+      return await _continueExpenseFlow();
     }
-    if (acc != null) {
-      cleanedDesc = cleanedDesc.replaceAll(
-        RegExp(RegExp.escape(acc.name), caseSensitive: false),
-        '',
-      );
-    }
-    cleanedDesc = cleanedDesc.replaceAll(
-      RegExp(
-        r'\b(?:gcash|maya|paymaya|cash|bdo|landbank|psbank|bank|wallet|account)\b',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    // Clean double spaces and dangling prepositions
-    cleanedDesc = cleanedDesc.replaceAll(RegExp(r'\s+'), ' ').trim();
-    cleanedDesc = cleanedDesc.replaceFirst(
-      RegExp(
-        r'^(?:for|to|from|via|in|on|with|using|my|me)\s+',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    cleanedDesc = cleanedDesc.replaceFirst(
-      RegExp(
-        r'\s+(?:for|to|from|via|in|on|with|using|my|me)$',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    if (cleanedDesc.isEmpty || cleanedDesc.toLowerCase() == 'i') {
-      cleanedDesc = 'General Expense';
-    } else {
-      // Strip dangling k/m suffix tokens left from shorthand amounts
-      cleanedDesc = cleanedDesc.replaceAll(
-        RegExp(r'\b[km]\b', caseSensitive: false),
-        '',
-      );
-      cleanedDesc = cleanedDesc.replaceAll(RegExp(r'\s+'), ' ').trim();
-      cleanedDesc = cleanedDesc[0].toUpperCase() + cleanedDesc.substring(1);
-    }
-
-    // If no account was detected, ask the user!
-    if (acc == null) {
-      _pendingExpenseAmount = amount;
-      _pendingExpenseDescription = cleanedDesc;
-      _pendingExpenseCategory = _categorizeExpense(cleanedDesc);
+    if (detectedAccount != null &&
+        !_expenseWalletNames.any(
+          (name) => name.toLowerCase() == detectedAccount.name.toLowerCase(),
+        )) {
       _step = BaiStep.awaitingExpenseAccount;
-
-      final accountNames = accounts.map((a) => a.name).join(', ');
-      return BaiReply(
-        "Where did you spend it from?\n\nAvailable accounts: $accountNames",
+      return const BaiReply(
+        "I couldn't find that wallet. Available wallets: $_expenseWalletList. Which one would you like to use?",
       );
     }
 
-    final category = _categorizeExpense(cleanedDesc);
-
-    // Clean the transaction title
-    final cleanTitle = _cleanTransactionTitle(cleanedDesc, amount: amount);
-
-    final txn = FinanceTransaction(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      amount: amount,
-      accountId: acc.id,
-      accountName: acc.name,
-      type: 'EXPENSE',
-      category: category,
-      description: cleanTitle,
-    );
-
-    try {
-      await FinanceStorage.addTransaction(txn);
-      final prevBalanceStr = _formatNumberWithCommas(
-        acc.balance.toStringAsFixed(2),
-      );
-      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalanceStr = _formatNumberWithCommas(
-        (acc.balance - amount).toStringAsFixed(2),
-      );
-
-      return BaiReply(
-        "💸 Expense logged!\n\n$cleanTitle                                      -$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
-        quickReplies: const [
-          "What is my total balance?",
-          "Check account balances",
-        ],
-        highlightColor: 'red',
-      );
-    } catch (e) {
-      return BaiReply(
-        "⚠️ ${e.toString()}",
-        quickReplies: const ["What is my total balance?"],
-      );
-    }
+    return await _continueExpenseFlow();
   }
 
   Future<BaiReply?> _tryMultiTransaction(String n) async {
@@ -1255,204 +1279,6 @@ class BaiAssistant {
       }
     }
     return double.tryParse(amountStr);
-  }
-
-  Future<BaiReply?> _tryLogIncome(String n) async {
-    // 1. Differentiate intent
-    if (!_isIncomeIntent(n)) return null;
-
-    // 2. Extract amount with slang support (k for thousands)
-    final amount = _extractAmountWithSlang(n);
-    if (amount == null || amount <= 0) return null;
-
-    final accounts = await FinanceStorage.loadAccounts();
-    if (accounts.isEmpty) return _noAccountsReply();
-
-    // 3. Try to detect account from text
-    Account? acc = _detectAccountFromText(n, accounts);
-
-    // Clean description using _cleanDescription
-    String matchedAccSuffix = '';
-    if (acc != null) {
-      final nameIdx = n.toLowerCase().indexOf(acc.name.toLowerCase());
-      if (nameIdx != -1) {
-        final precedingText = n.substring(0, nameIdx).toLowerCase();
-        final viaIdx = precedingText.lastIndexOf(
-          RegExp(r'\b(?:to|in|into|through|with|via)\b'),
-        );
-        if (viaIdx != -1) {
-          matchedAccSuffix = n.substring(viaIdx);
-        } else {
-          matchedAccSuffix = n.substring(nameIdx);
-        }
-      }
-    }
-
-    String descStr = _cleanDescription(n, amount.toString(), matchedAccSuffix);
-
-    // Clean up income keywords from description to keep it clean
-    final List<String> stripKeywords = [
-      'received',
-      'recieved',
-      'got paid',
-      'get paid',
-      'allowance',
-      'salary',
-      'sweldo',
-      'sahod',
-      'payroll',
-      'bonus',
-      'refund',
-      'tax refund',
-      'sold',
-      'sale',
-      'preloved',
-      'inflow',
-      'interest',
-      'deposit',
-      'deposits',
-      'freelance',
-      'sideline',
-      'gig',
-      'gave me',
-      'handed me',
-      'donated to me',
-      'sent me',
-      'paid me',
-      'paid his',
-      'paid her',
-      'paid their',
-      'paid back',
-      'pay back',
-      'na-receive',
-      'pumasok',
-      'dumating',
-      'pax me',
-      'debt',
-      'utang',
-      'got',
-      'i',
-    ];
-    String cleanedDesc = descStr;
-    for (var k in stripKeywords) {
-      cleanedDesc = cleanedDesc.replaceAll(
-        RegExp(r'\b' + k + r'\b', caseSensitive: false),
-        '',
-      );
-    }
-    // Clean double spaces and dangling prepositions
-    cleanedDesc = cleanedDesc.replaceAll(RegExp(r'\s+'), ' ').trim();
-    cleanedDesc = cleanedDesc.replaceFirst(
-      RegExp(
-        r'^(?:for|to|from|via|in|on|with|using|my|me)\s+',
-        caseSensitive: false,
-      ),
-      '',
-    );
-    cleanedDesc = cleanedDesc.replaceFirst(
-      RegExp(
-        r'\s+(?:for|to|from|via|in|on|with|using|my|me)$',
-        caseSensitive: false,
-      ),
-      '',
-    );
-
-    if (cleanedDesc.isEmpty) {
-      if (n.contains('salary') || n.contains('sweldo') || n.contains('sahod')) {
-        cleanedDesc = 'Salary';
-      } else if (n.contains('freelance') || n.contains('gig')) {
-        cleanedDesc = 'Freelance Income';
-      } else if (n.contains('allowance')) {
-        cleanedDesc = 'Allowance';
-      } else if (n.contains('debt') ||
-          n.contains('utang') ||
-          n.contains('paid back') ||
-          n.contains('pay back')) {
-        cleanedDesc = 'Debt Payment';
-      } else {
-        cleanedDesc = 'General Income';
-      }
-    } else {
-      cleanedDesc = cleanedDesc[0].toUpperCase() + cleanedDesc.substring(1);
-    }
-
-    final pendingCategory = _categorizeIncome('$n $cleanedDesc');
-    final pendingEntity = _extractEntity(n);
-
-    // If no account was detected, ask the user!
-    if (acc == null) {
-      _pendingIncomeAmount = amount;
-      _pendingIncomeDescription =
-          pendingCategory == 'Gift' && pendingEntity.isNotEmpty
-          ? '$pendingEntity $pendingCategory'
-          : cleanedDesc;
-      _pendingIncomeCategory = pendingCategory;
-      _step = BaiStep.awaitingIncomeAccount;
-
-      final accountNames = accounts.map((a) => a.name).join(', ');
-      return BaiReply(
-        "Where did you receive it?\n\nAvailable accounts: $accountNames",
-      );
-    }
-
-    final category = pendingCategory;
-    final entity = pendingEntity;
-
-    // Format description with entity if detected
-    String formattedDesc = cleanedDesc;
-    if (entity.isNotEmpty) {
-      if (_isReimbursement(n)) {
-        formattedDesc = '$entity ($category)';
-      } else if (_isAllowance(n)) {
-        formattedDesc = '$entity ($category)';
-      } else if (_isPassiveIncome(n)) {
-        formattedDesc = '$entity $category';
-      } else if (category == 'Gift') {
-        formattedDesc = '$entity $category';
-      } else {
-        formattedDesc = entity.isNotEmpty
-            ? '$entity ($cleanedDesc)'
-            : cleanedDesc;
-      }
-    }
-
-    // Clean the transaction title
-    final cleanTitle = _cleanTransactionTitle(formattedDesc, amount: amount);
-
-    final txn = FinanceTransaction(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      amount: amount,
-      accountId: acc.id,
-      accountName: acc.name,
-      type: 'INCOME',
-      category: category,
-      description: cleanTitle,
-    );
-
-    try {
-      await FinanceStorage.addTransaction(txn);
-      final prevBalanceStr = _formatNumberWithCommas(
-        acc.balance.toStringAsFixed(2),
-      );
-      final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalanceStr = _formatNumberWithCommas(
-        (acc.balance + amount).toStringAsFixed(2),
-      );
-
-      return BaiReply(
-        "💵 Income logged!\n\n$cleanTitle                                      +$_currency$amountStr\n${_accountLabel(acc)} (prev bal: $_currency$prevBalanceStr)\n\nNew Balance: $_currency$newBalanceStr",
-        quickReplies: const [
-          "What is my total balance?",
-          "Check account balances",
-        ],
-        highlightColor: 'green',
-      );
-    } catch (e) {
-      return BaiReply(
-        "⚠️ ${e.toString()}",
-        quickReplies: const ["What is my total balance?"],
-      );
-    }
   }
 
   Future<BaiReply?> _tryBalanceCheck(String n) async {
@@ -1673,108 +1499,130 @@ class BaiAssistant {
   //  INTENT DETECTION HELPERS
   // ═══════════════════════════════════════════════
 
+  bool _hasAllocationUpdateWord(String text) => RegExp(
+    r'\b(?:update|change|set|adjust|edit|revise|make|modify|reset|raise|lower|increase|decrease)\b',
+  ).hasMatch(text);
+
+  bool _hasAllocationBudgetWord(String text) => RegExp(
+    r'\b(?:budget|allocation|allowance)\b|\bspending\s+(?:limit|cap)\b',
+  ).hasMatch(text);
+
+  String? _allocationPeriodFromText(String text) {
+    if (RegExp(r'\b(?:week|weekly)\b').hasMatch(text)) return 'weekly';
+    if (RegExp(r'\b(?:month|monthly)\b').hasMatch(text)) return 'monthly';
+    if (RegExp(r'\b(?:day|daily)\b').hasMatch(text)) return 'daily';
+    return null;
+  }
+
   Future<BaiReply?> _trySetDailyAllocation(String input) async {
     final normalized = input
         .toLowerCase()
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-
-    final updateWords = [
-      'update',
-      'change',
-      'set',
-      'adjust',
-      'edit',
-      'revise',
-      'make',
-      'modify',
-      'reset',
-      'raise',
-      'lower',
-      'increase',
-      'decrease',
-    ];
-    final budgetWords = [
-      'budget',
-      'allocation',
-      'allowance',
-      'daily allocation',
-      'spending limit',
-      'spending cap',
-    ];
-    final myAllocationPhrases = [
-      'my daily allocation',
-      'my allocation',
-      'my daily budget',
-      'my allowance',
-      'my weekly budget',
-      'my budget',
-      'my monthly budget',
-    ];
-    final timeWords = [
-      'day',
-      'daily',
-      'week',
-      'weekly',
-      'this week',
-      'month',
-      'monthly',
-      'this month',
-    ];
-
-    bool hasUpdateWord = updateWords.any(
-      (w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized),
-    );
-    bool hasBudgetWord = budgetWords.any(
-      (w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized),
-    );
-    bool hasMyAllocationPhrase = myAllocationPhrases.any(
-      (w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized),
-    );
-    bool hasTimeWord = timeWords.any(
-      (w) => RegExp(r'\b' + w + r'\b').hasMatch(normalized),
-    );
-
-    bool ruleA = hasUpdateWord && hasBudgetWord;
-    bool ruleB = hasMyAllocationPhrase && hasTimeWord;
-
-    // Rule 1: Does it match Rule A or Rule B?
-    if (!ruleA && !ruleB) {
-      // If it has budget/allocation word but no update word, or just an amount.
-      // E.g. "Budget 500" or "Update my budget" without amount is tricky.
-      // Wait, "Update my budget" matches Rule A (update + budget).
-      // "Budget 500" matches budget but not update. We return null so it can be handled as ambiguous later.
+    if (RegExp(
+      r'\b(?:spent|spend|bought|paid|purchased|charged)\b',
+      caseSensitive: false,
+    ).hasMatch(normalized)) {
       return null;
     }
 
-    final amount = _extractAmountWithSlang(normalized);
-    if (amount == null || !amount.isFinite || amount <= 0) {
+    final period = _allocationPeriodFromText(normalized);
+    final amount = _parseExpenseAmount(normalized);
+    final matchesRuleA =
+        _hasAllocationUpdateWord(normalized) &&
+        _hasAllocationBudgetWord(normalized);
+    final matchesRuleB =
+        RegExp(
+          r'\bmy\s+(?:(?:daily|weekly|monthly)\s+)?(?:allocation|budget|allowance)\b',
+        ).hasMatch(normalized) &&
+        period != null;
+    final acceptedBudgetStatement =
+        _hasAllocationBudgetWord(normalized) &&
+        period != null &&
+        amount != null &&
+        RegExp(r'\b(?:is|will\s+be)\b').hasMatch(normalized);
+
+    if (!matchesRuleA && !matchesRuleB && !acceptedBudgetStatement) {
+      return null;
+    }
+
+    if (period == null) {
+      _pendingAllocationPeriod = null;
+      _step = BaiStep.awaitingAllocationPeriod;
       return const BaiReply(
-        "Please specify the amount you want to set your budget to.",
+        'Which budget would you like to update: daily, weekly, or monthly?',
       );
     }
-
-    bool isWeek = normalized.contains('week');
-    bool isMonth = normalized.contains('month');
-
-    double dailyAmount = amount;
-    String periodStr = 'daily';
-    if (isWeek) {
-      dailyAmount = amount / 7;
-      periodStr = 'weekly';
-    } else if (isMonth) {
-      dailyAmount = amount / 30;
-      periodStr = 'monthly';
+    _pendingAllocationPeriod = period;
+    if (amount == null || !amount.isFinite || amount <= 0) {
+      _step = BaiStep.awaitingAllocationAmount;
+      return const BaiReply('What amount would you like to set?');
     }
 
+    return await _saveAllocation(period, amount);
+  }
+
+  Future<BaiReply> _handleAllocationFlow(String input) async {
+    if (_step == BaiStep.awaitingAllocationPeriod) {
+      final period = _allocationPeriodFromText(input.toLowerCase().trim());
+      if (period == null) {
+        return const BaiReply(
+          'Which budget would you like to update: daily, weekly, or monthly?',
+        );
+      }
+      _pendingAllocationPeriod = period;
+      _step = BaiStep.awaitingAllocationAmount;
+      return const BaiReply('What amount would you like to set?');
+    }
+
+    final amount = _parseExpenseAmount(input);
+    if (amount == null || !amount.isFinite || amount <= 0) {
+      return const BaiReply('What amount would you like to set?');
+    }
+    return await _saveAllocation(_pendingAllocationPeriod ?? 'daily', amount);
+  }
+
+  Future<BaiReply> _saveAllocation(String period, double amount) async {
+    final dailyAmount = switch (period) {
+      'weekly' => amount / 7,
+      'monthly' => amount / 30,
+      _ => amount,
+    };
     await SettingsService().setDailySpendingAllocation(dailyAmount);
-
+    _resetState();
     final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
-
     return BaiReply(
-      'Updated your $periodStr budget to $formattedAmount.',
+      '✅ Done! Your $period budget is now P $formattedAmount.',
       quickReplies: const ['Show my budget', 'What is my total balance?'],
     );
+  }
+
+  BaiReply? _tryBudgetValueAsk(String input) {
+    final n = input.toLowerCase();
+    if (_hasAllocationUpdateWord(n) ||
+        !_hasAllocationBudgetWord(n) ||
+        !RegExp(r'\b(?:what|how\s+much|show|tell\s+me)\b').hasMatch(n)) {
+      return null;
+    }
+    final period = _allocationPeriodFromText(n) ?? 'daily';
+    final dailyAmount = SettingsService().dailySpendingAllocation;
+    final amount = switch (period) {
+      'weekly' => dailyAmount * 7,
+      'monthly' => dailyAmount * 30,
+      _ => dailyAmount,
+    };
+    final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
+    return BaiReply('Your $period budget is P $formattedAmount.');
+  }
+
+  BaiReply? _tryBudgetConcernReply(String input) {
+    final n = input.toLowerCase();
+    if (_hasAllocationBudgetWord(n) &&
+        RegExp(r'\b(?:too\s+small|too\s+low|not\s+enough)\b').hasMatch(n) &&
+        !_hasAllocationUpdateWord(n)) {
+      return const BaiReply('I hear you. Would you like to update it?');
+    }
+    return null;
   }
 
   BaiReply? _tryAmbiguousAmount(String n) {
@@ -2117,76 +1965,6 @@ class BaiAssistant {
     return '';
   }
 
-  bool _isReimbursement(String text) {
-    final l = text.toLowerCase();
-    return l.contains('paid back') ||
-        l.contains('reimburse') ||
-        l.contains('reimbursement') ||
-        l.contains('refund') ||
-        l.contains('share') ||
-        l.contains('split');
-  }
-
-  bool _isAllowance(String text) {
-    final l = text.toLowerCase();
-    return l.contains('baon') ||
-        l.contains('allowance') ||
-        l.contains('padala') ||
-        l.contains('sent') && (l.contains('money') || l.contains('cash'));
-  }
-
-  bool _isPassiveIncome(String text) {
-    final l = text.toLowerCase();
-    return l.contains('dividend') ||
-        l.contains('interest') ||
-        l.contains('payout') ||
-        l.contains('auto') ||
-        l.contains('automatic') ||
-        l.contains('credit');
-  }
-
-  String _cleanDescription(
-    String text,
-    String amountStr,
-    String? accMatchText,
-  ) {
-    String desc = text;
-    // Remove the amount
-    desc = desc.replaceFirst(amountStr, '');
-    desc = desc.replaceFirst(
-      RegExp(
-        r'\b' +
-            RegExp.escape(amountStr.replaceFirst(RegExp(r'\.0$'), '')) +
-            r'\b',
-      ),
-      '',
-    );
-    // Remove the account match suffix if provided
-    if (accMatchText != null && accMatchText.isNotEmpty) {
-      desc = desc.replaceFirst(accMatchText, '');
-    }
-    // Remove clean currency words/symbols
-    desc = desc.replaceAll(
-      RegExp(r'\b(?:pesos|php|₱|bucks|dollar|dollars)\b', caseSensitive: false),
-      '',
-    );
-    // Remove leading/trailing punctuation and double spaces
-    desc = desc.replaceAll(RegExp(r'\s+'), ' ').trim();
-    // Remove trailing/leading "for", "to", "from", "via", "in" if they are left dangling
-    desc = desc.replaceFirst(
-      RegExp(r'^(?:for|to|from|via|in|on|with|using)\s+', caseSensitive: false),
-      '',
-    );
-    desc = desc.replaceFirst(
-      RegExp(r'\s+(?:for|to|from|via|in|on|with|using)$', caseSensitive: false),
-      '',
-    );
-
-    // Capitalize first letter
-    if (desc.isEmpty) return 'Transaction';
-    return desc[0].toUpperCase() + desc.substring(1);
-  }
-
   String _extractExpenseItemFragment(String text, Account? account) {
     var item = text.toLowerCase();
 
@@ -2228,7 +2006,7 @@ class BaiAssistant {
 
     item = item.replaceAll(
       RegExp(
-        r'\b(?:spent|paid|cost|buy|bought|gastos|expense|bumili|add|log|logged|minus|deduct|spending|from|using|in|through|with|via|on|for|my|me|i)\b',
+        r'\b(?:spend|spent|paid|cost|buy|bought|purchase|purchased|charge|charged|gastos|expense|bumili|add|log|logged|minus|deduct|spending|from|using|in|through|with|via|on|for|my|me|i|today|yesterday|budget|allocation)\b',
         caseSensitive: false,
       ),
       ' ',
@@ -2269,6 +2047,9 @@ class BaiAssistant {
       'recieved',
       'got paid',
       'get paid',
+      'earned',
+      'just got',
+      'was paid',
       'allowance',
       'salary',
       'sweldo',
@@ -2325,6 +2106,19 @@ class BaiAssistant {
     if (_isIncomeIntent(text)) return false;
 
     final l = text.toLowerCase();
+    final hasTransactionVerb = RegExp(
+      r'\b(?:spent|bought|paid|purchase|purchased|charged|cost\s+me)\b',
+    ).hasMatch(l);
+    if (RegExp(r'\b(?:budget|allocation|allowance|limit|cap)\b').hasMatch(l) &&
+        !hasTransactionVerb) {
+      return false;
+    }
+    if (RegExp(
+          r'\b(?:daily|weekly|monthly)\s+(?:spend|spending|budget|allocation)\b',
+        ).hasMatch(l) &&
+        !hasTransactionVerb) {
+      return false;
+    }
     final List<String> expenseKeywords = [
       'spend',
       'spent',
@@ -2340,7 +2134,6 @@ class BaiAssistant {
       'logged',
       'minus',
       'deduct',
-      'spending',
       'donated',
       'gave',
       'give',
@@ -2351,10 +2144,19 @@ class BaiAssistant {
       'purchase',
       'got',
       'charged',
-      'for ',
     ];
 
-    if (expenseKeywords.any((k) => l.contains(k))) return true;
+    if (expenseKeywords.any(
+      (keyword) => RegExp(r'\b' + RegExp.escape(keyword) + r'\b').hasMatch(l),
+    )) {
+      return true;
+    }
+    if (RegExp(r'\bcost\s+me\b').hasMatch(l) ||
+        (RegExp(r'\bfor\s+\w+').hasMatch(l) &&
+            (_parseExpenseAmount(l) != null ||
+                RegExp(r'^\s*for\s+\w+').hasMatch(l)))) {
+      return true;
+    }
 
     // If it lacks explicit expense keywords but looks like an amount + item
     if (_looksLikeExpenseFragment(text)) {
@@ -3294,110 +3096,169 @@ class BaiAssistant {
   );
 
   // ---------------------------------------------------------
-  // NEW ROBUST EXPENSE FLOW 
+  // NEW ROBUST EXPENSE FLOW
   // ---------------------------------------------------------
   Future<BaiReply> _handleOngoingExpenseFlow(String input) async {
     final n = input.toLowerCase();
-    
-    if (n == 'cancel' || n == 'stop' || n == 'never mind' || n == 'forget it' || n == 'nevermind') {
+
+    if (_isCancellation(n)) {
       _resetState();
       return const BaiReply("Okay, I cancelled that. Nothing was saved.");
     }
 
     final accounts = await FinanceStorage.loadAccounts();
-    
-    if (_pendingExpenseAccount == null) {
-      Account? acc = _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
-      if (acc != null) {
-        _pendingExpenseAccount = acc;
+    if (_step == BaiStep.awaitingExpenseAmount) {
+      final amount = _parseExpenseAmount(input);
+      if (amount == null || !amount.isFinite || amount <= 0) {
+        return const BaiReply(
+          'Please enter a valid amount, for example 250.00.',
+        );
       }
+      _pendingExpenseAmount = amount;
+    } else if (_step == BaiStep.awaitingExpenseItem) {
+      final item = _extractExpenseItemFragment(input, null);
+      if (item.isNotEmpty) {
+        _pendingExpenseDescription = _titleCase(item);
+        _pendingExpenseCategory = _categorizeExpense(item);
+      }
+    } else if (_step == BaiStep.awaitingExpenseAccount) {
+      final wallet = _findExpenseWallet(input, accounts);
+      if (wallet == null) {
+        return const BaiReply(
+          "I couldn't find that wallet. Available wallets: $_expenseWalletList. Which one would you like to use?",
+        );
+      }
+      _pendingExpenseAccount = wallet;
     }
 
-    if (_pendingExpenseAmount == null) {
-      double? amount = _extractAmountWithSlang(n);
-      if (amount != null && amount > 0) {
-        _pendingExpenseAmount = amount;
-      }
-    }
+    return await _continueExpenseFlow();
+  }
 
-    if (_pendingExpenseDescription == null || _pendingExpenseDescription!.isEmpty) {
-      String item = n.replaceAll(RegExp(r'\d+(?:\.\d+)?'), '').trim();
-      if (item.isNotEmpty && item != 'cancel') {
-        _pendingExpenseDescription = item;
-      }
-    }
-
+  Future<BaiReply> _continueExpenseFlow() async {
     if (_pendingExpenseAmount == null) {
       _step = BaiStep.awaitingExpenseAmount;
-      return const BaiReply("How much did you spend?");
+      return const BaiReply('How much did you spend from your wallet?');
     }
-    
-    if (_pendingExpenseDescription == null || _pendingExpenseDescription!.isEmpty) {
+    if (_pendingExpenseDescription == null ||
+        _pendingExpenseDescription!.trim().isEmpty) {
       _step = BaiStep.awaitingExpenseItem;
-      return const BaiReply("What did you spend it on?");
+      return const BaiReply('What did you spend from your wallet?');
     }
-    
     if (_pendingExpenseAccount == null) {
       _step = BaiStep.awaitingExpenseAccount;
-      final accountNames = accounts.map((a) => a.name).join(', ');
-      return BaiReply("Which account did you spend it from? Available accounts: $accountNames.",
-        quickReplies: accounts.map((a) => a.name).toList());
+      return const BaiReply(
+        'Which wallet did you spend it from? Available wallets: $_expenseWalletList.',
+      );
     }
 
-    // Process saving (mock)
-    _resetState();
-    return const BaiReply("Expense logged successfully!");
+    final amount = _pendingExpenseAmount!;
+    final item = _pendingExpenseDescription!;
+    final wallet = _pendingExpenseAccount!;
+    final transaction = FinanceTransaction(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      amount: amount,
+      accountId: wallet.id,
+      accountName: wallet.name,
+      type: 'EXPENSE',
+      category: _pendingExpenseCategory ?? _categorizeExpense(item),
+      description: item,
+    );
+
+    _step = BaiStep.awaitingExpenseAccount;
+    try {
+      await FinanceStorage.addTransaction(transaction);
+      final transactions = await FinanceStorage.loadTransactions();
+      final now = DateTime.now();
+      final spentToday = transactions
+          .where(
+            (entry) =>
+                entry.type == 'EXPENSE' &&
+                entry.date.year == now.year &&
+                entry.date.month == now.month &&
+                entry.date.day == now.day,
+          )
+          .fold<double>(0, (total, entry) => total + entry.amount);
+      final remaining = SettingsService().dailySpendingAllocation - spentToday;
+      final amountText = _formatExpenseAmount(amount);
+      final remainingText = _formatExpenseAmount(remaining);
+
+      _resetState();
+      return BaiReply(
+        '✅ Expense logged!\n$item  P-$amountText\nWallet: ${wallet.name}\nRemaining today: P $remainingText',
+        quickReplies: const [
+          'What is my total balance?',
+          'Check account balances',
+        ],
+        highlightColor: 'red',
+      );
+    } catch (error) {
+      return BaiReply("⚠️ ${error.toString()}", quickReplies: const ['Cancel']);
+    }
   }
 
   Future<BaiReply> _handleClarification(String n) async {
     // Uses the raw input for later context
     final raw = _unclearRawInput ?? n;
-    
+
     if (n.contains('expense') || n.contains('spend')) {
-       _step = BaiStep.idle;
-       return const BaiReply("Okay, tracking expense.");
+      _step = BaiStep.idle;
+      return const BaiReply("Okay, tracking expense.");
     } else if (n.contains('budget') || n.contains('update')) {
-       _step = BaiStep.idle;
-       return const BaiReply("Okay, updating budget.");
+      _step = BaiStep.idle;
+      return const BaiReply("Okay, updating budget.");
     }
-    
+
     _unclearRawInput = raw;
     _step = BaiStep.awaitingClarification;
-    return const BaiReply("Would you like to log this as an expense, or update your budget?", 
-      quickReplies: ['Log Expense', 'Update Budget']);
+    return const BaiReply(
+      "Would you like to log this as an expense, or update your budget?",
+      quickReplies: ['Log Expense', 'Update Budget'],
+    );
   }
 
   // ---------------------------------------------------------
   // SCHEDULED ENTRIES FLOW (BILLS & FUTURE INCOME)
   // ---------------------------------------------------------
   Future<BaiReply> _handleScheduledEntryFlow(String input) async {
+    if (_pendingScheduledType == 'bill') {
+      return await _handleUpcomingBillFlow(input);
+    }
+
     final n = input.toLowerCase();
-    
+
     // 1. CANCEL OR NEW COMMAND
-    if (n == 'cancel' || n == 'stop' || n == 'never mind' || n == 'forget it' || n == 'nevermind') {
+    if (n == 'cancel' ||
+        n == 'stop' ||
+        n == 'never mind' ||
+        n == 'forget it' ||
+        n == 'nevermind') {
       _resetState();
       return const BaiReply("Okay, I cancelled that. Nothing was saved.");
     }
-    
+
     if (n.contains('update') && n.contains('budget') || n.contains('spent')) {
-       _resetState();
-       return handle(input); // Reroute as a fresh command
+      _resetState();
+      return handle(input); // Reroute as a fresh command
     }
 
     // 2. PARSE MISSING FIELDS
     String nWithoutDate = n;
-    
+
     if (_pendingScheduledDate == null || _pendingScheduledDate!.isEmpty) {
-      final dateMatch = RegExp(r'(?:on|due|this|by)\s+([a-z]+\s+\d+|\d{1,2}/\d{1,2}|\d{1,2}(?:th|st|nd|rd)?|\d{1,2}|tomorrow|next\s+[a-z]+)').firstMatch(n);
+      final dateMatch = RegExp(
+        r'(?:on|due|this|by)\s+([a-z]+\s+\d+|\d{1,2}/\d{1,2}|\d{1,2}(?:th|st|nd|rd)?|\d{1,2}|tomorrow|next\s+[a-z]+)',
+      ).firstMatch(n);
       if (dateMatch != null) {
         _pendingScheduledDate = dateMatch.group(1);
         nWithoutDate = n.replaceFirst(dateMatch.group(0)!, '');
       } else {
         // Fallback for just typing a date like "October 15"
-        final rawDateMatch = RegExp(r'([a-z]+\s+\d+|\d{1,2}/\d{1,2}|tomorrow|next\s+[a-z]+)').firstMatch(n);
+        final rawDateMatch = RegExp(
+          r'([a-z]+\s+\d+|\d{1,2}/\d{1,2}|tomorrow|next\s+[a-z]+)',
+        ).firstMatch(n);
         if (rawDateMatch != null) {
-           _pendingScheduledDate = rawDateMatch.group(1);
-           nWithoutDate = n.replaceFirst(rawDateMatch.group(0)!, '');
+          _pendingScheduledDate = rawDateMatch.group(1);
+          nWithoutDate = n.replaceFirst(rawDateMatch.group(0)!, '');
         }
       }
     }
@@ -3408,49 +3269,435 @@ class BaiAssistant {
     }
 
     if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
-      String item = nWithoutDate.replaceAll(RegExp(r'\d+(?:\.\d+)?'), '').replaceAll(RegExp(r'october|oct|november|nov|december|dec'), '');
-      item = item.replaceAll(RegExp(r'\b(will have|will receive|will get|will be|am getting|expecting|incoming|due|coming|need to pay|have to pay|on|this|by|remind me|i have|my|the|is|a)\b'), '').trim();
+      String item = nWithoutDate
+          .replaceAll(RegExp(r'\d+(?:\.\d+)?'), '')
+          .replaceAll(RegExp(r'october|oct|november|nov|december|dec'), '');
+      item = item
+          .replaceAll(
+            RegExp(
+              r'\b(will have|will receive|will get|will be|am getting|expecting|incoming|due|coming|need to pay|have to pay|on|this|by|remind me|i have|my|the|is|a)\b',
+            ),
+            '',
+          )
+          .trim();
       if (item.isNotEmpty) _pendingScheduledName = item;
     }
 
     // 3. ASK FOR MISSING FIELDS
     if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
       _step = BaiStep.awaitingScheduledName;
-      return BaiReply(_pendingScheduledType == 'bill' ? "What bill is this?" : "What kind of incoming money is this?");
+      return BaiReply(
+        _pendingScheduledType == 'bill'
+            ? "What bill is this?"
+            : "What kind of incoming money is this?",
+      );
     }
-    
+
     if (_pendingScheduledAmount == null) {
       _step = BaiStep.awaitingScheduledAmount;
-      return BaiReply(_pendingScheduledType == 'bill' ? "How much is the $_pendingScheduledName?" : "How much is your $_pendingScheduledName?");
+      return BaiReply(
+        _pendingScheduledType == 'bill'
+            ? "How much is the $_pendingScheduledName?"
+            : "How much is your $_pendingScheduledName?",
+      );
     }
-    
+
     if (_pendingScheduledDate == null || _pendingScheduledDate!.isEmpty) {
       _step = BaiStep.awaitingScheduledDate;
-      return BaiReply(_pendingScheduledType == 'bill' ? "When is the $_pendingScheduledName due?" : "On what date will you receive your $_pendingScheduledName?");
+      return BaiReply(
+        _pendingScheduledType == 'bill'
+            ? "When is the $_pendingScheduledName due?"
+            : "On what date will you receive your $_pendingScheduledName?",
+      );
     }
 
     // 4. CONFIRMATION
-    final title = _pendingScheduledType == 'bill' ? '📅 Bill Added to Calendar!' : '💰 Incoming Transaction Added to Calendar!';
-    final footer = _pendingScheduledType == 'bill' ? 'I will remind you on the due date.' : 'I will remind you on the day it arrives.';
+    final title = _pendingScheduledType == 'bill'
+        ? '📅 Bill Added to Calendar!'
+        : '💰 Incoming Transaction Added to Calendar!';
+    final footer = _pendingScheduledType == 'bill'
+        ? 'I will remind you on the due date.'
+        : 'I will remind you on the day it arrives.';
     final sign = _pendingScheduledType == 'bill' ? 'P-' : 'P ';
-    
+
     _resetState();
-    return BaiReply("$title\n$_pendingScheduledName\t\t$sign${_pendingScheduledAmount!.toStringAsFixed(2)}\nDate:\t\t\t$_pendingScheduledDate\n\n$footer",
-      highlightColor: _pendingScheduledType == 'bill' ? 'red' : 'green');
+    return BaiReply(
+      "$title\n$_pendingScheduledName\t\t$sign${_pendingScheduledAmount!.toStringAsFixed(2)}\nDate:\t\t\t$_pendingScheduledDate\n\n$footer",
+      highlightColor: _pendingScheduledType == 'bill' ? 'red' : 'green',
+    );
   }
 
-  Future<BaiReply?> _tryScheduledEntry(String n) async {
-    final futureSignals = RegExp(r'(will have|will receive|will get|will be|am getting|expecting|incoming|due|coming on|need to pay|have to pay|on \d+|this \w+|by \d+|remind me|i have)', caseSensitive: false);
-    final pastSignals = RegExp(r'(spent|bought|paid|received|got|earned)');
-    
-    // DECISION ORDER 2: Future signals 
-    if (futureSignals.hasMatch(n) && !pastSignals.hasMatch(n)) {
-       final isBill = RegExp(r'(bill|rent|utilities|electricity|water|internet|wifi|phone|loan|credit card|subscription)').hasMatch(n);
-       _pendingScheduledType = isBill ? 'bill' : 'income';
-       _step = BaiStep.awaitingScheduledName;
-       return await _handleScheduledEntryFlow(n);
+  Future<BaiReply> _handleUpcomingBillFlow(String input) async {
+    final normalized = _normalizeFutureText(input);
+    if (_isCancellation(normalized)) {
+      _resetState();
+      return const BaiReply('Okay, I cancelled that. Nothing was saved.');
+    }
+
+    if (_pendingBillDateNeedsConfirmation) {
+      if (RegExp(
+        r'^(?:yes|yeah|yep|correct|that works|oo)\b',
+      ).hasMatch(normalized)) {
+        _pendingBillDateNeedsConfirmation = false;
+        return await _saveUpcomingBill();
+      }
+      if (RegExp(r'^(?:no|nope|not that|hindi)\b').hasMatch(normalized)) {
+        _pendingBillDateNeedsConfirmation = false;
+        _pendingScheduledDateTime = null;
+        _pendingScheduledDate = null;
+        _step = BaiStep.awaitingScheduledDate;
+        return BaiReply('When is the ${_pendingScheduledName!} bill due?');
+      }
+      return BaiReply(
+        'Do you mean ${_formatBillDate(_pendingScheduledDateTime!)}?',
+      );
+    }
+
+    if (input.trim().isNotEmpty &&
+        (_step == BaiStep.awaitingScheduledName ||
+            _step == BaiStep.awaitingScheduledAmount ||
+            _step == BaiStep.awaitingScheduledDate)) {
+      final name = _extractUpcomingBillName(normalized);
+      if ((_pendingScheduledName == null || _pendingScheduledName!.isEmpty) &&
+          name.isNotEmpty) {
+        _pendingScheduledName = name;
+      }
+
+      if (_pendingScheduledAmount == null) {
+        final amount = _extractUpcomingBillAmount(normalized);
+        if (amount != null && amount.isFinite && amount > 0) {
+          _pendingScheduledAmount = amount;
+        }
+      }
+
+      if (_pendingScheduledDateTime == null) {
+        final date = _parseUpcomingBillDate(
+          normalized,
+          allowBareDay: _step == BaiStep.awaitingScheduledDate,
+        );
+        if (date != null) {
+          if (_isUpcomingBillDayOnly(normalized) && _isDateBeforeToday(date)) {
+            final nextMonthStart = DateTime(date.year, date.month + 1, 1);
+            final lastDayOfNextMonth = DateTime(
+              nextMonthStart.year,
+              nextMonthStart.month + 1,
+              0,
+            ).day;
+            final nextMonth = DateTime(
+              nextMonthStart.year,
+              nextMonthStart.month,
+              date.day.clamp(1, lastDayOfNextMonth).toInt(),
+            );
+            _pendingScheduledDateTime = nextMonth;
+            _pendingScheduledDate = _formatBillDate(nextMonth);
+            _pendingBillDateNeedsConfirmation = true;
+            _step = BaiStep.awaitingScheduledDate;
+            return BaiReply('Do you mean ${_formatBillDate(nextMonth)}?');
+          }
+          _pendingScheduledDateTime = date;
+          _pendingScheduledDate = _formatBillDate(date);
+        }
+      }
+    }
+
+    if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
+      _step = BaiStep.awaitingScheduledName;
+      return const BaiReply('What bill is this?');
+    }
+    if (_pendingScheduledAmount == null) {
+      _step = BaiStep.awaitingScheduledAmount;
+      return BaiReply('How much is the ${_pendingScheduledName!} bill?');
+    }
+    if (_pendingScheduledDateTime == null) {
+      _step = BaiStep.awaitingScheduledDate;
+      return BaiReply('When is the ${_pendingScheduledName!} bill due?');
+    }
+    return await _saveUpcomingBill();
+  }
+
+  String _extractUpcomingBillName(String text) {
+    var name = text;
+    name = _removeUpcomingBillDate(name);
+    name = name.replaceAll(
+      RegExp(r'(?<![\w/])\d+(?:,\d{3})*(?:\.\d+)?\s*[km]?\b'),
+      ' ',
+    );
+    name = name.replaceAll(
+      RegExp(r'\b(?:p|php|peso|pesos)\b|₱', caseSensitive: false),
+      ' ',
+    );
+    name = name.replaceAll(
+      RegExp(
+        r'\b(?:i\s+have|my|need\s+to\s+pay|have\s+to\s+pay|remind\s+me(?:\s+to\s+pay)?|pay|is|are|will\s+be|due|on|by|this|the|a|an|of|bill|payment)\b',
+        caseSensitive: false,
+      ),
+      ' ',
+    );
+    name = name.replaceAll(RegExp(r'[^\w\s-]'), ' ');
+    name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return _titleCase(name);
+  }
+
+  double? _extractUpcomingBillAmount(String text) {
+    var amountText = _removeUpcomingBillDate(text);
+    final match = RegExp(
+      r'(?<![\w/])(\d+(?:,\d{3})*(?:\.\d+)?)(\s*[km])?\b',
+      caseSensitive: false,
+    ).firstMatch(amountText);
+    if (match == null) return null;
+    final value = double.tryParse(match.group(1)!.replaceAll(',', ''));
+    if (value == null) return null;
+    return switch (match.group(2)?.trim().toLowerCase()) {
+      'k' => value * 1000,
+      'm' => value * 1000000,
+      _ => value,
+    };
+  }
+
+  DateTime? _parseUpcomingBillDate(String text, {bool allowBareDay = false}) {
+    final normalized = _normalizeFutureText(text);
+    final now = DateTime.now();
+    final monthNames = {
+      'january': 1,
+      'jan': 1,
+      'february': 2,
+      'feb': 2,
+      'march': 3,
+      'mar': 3,
+      'april': 4,
+      'apr': 4,
+      'may': 5,
+      'june': 6,
+      'jun': 6,
+      'july': 7,
+      'jul': 7,
+      'august': 8,
+      'aug': 8,
+      'september': 9,
+      'sep': 9,
+      'sept': 9,
+      'october': 10,
+      'oct': 10,
+      'november': 11,
+      'nov': 11,
+      'december': 12,
+      'dec': 12,
+    };
+
+    for (final entry in monthNames.entries) {
+      final match = RegExp(
+        r'\b' + entry.key + r'\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b',
+      ).firstMatch(normalized);
+      if (match != null) {
+        final day = int.parse(match.group(1)!);
+        final year = int.tryParse(match.group(2) ?? '') ?? now.year;
+        final date = _validCalendarDate(year, entry.value, day);
+        if (date == null) return null;
+        if (match.group(2) == null && _isDateBeforeToday(date)) {
+          return DateTime(year + 1, entry.value, day);
+        }
+        return date;
+      }
+    }
+
+    final numericDate = RegExp(
+      r'\b(\d{1,2})/(\d{1,2})(?:/(\d{2,4}))?\b',
+    ).firstMatch(normalized);
+    if (numericDate != null) {
+      final month = int.parse(numericDate.group(1)!);
+      final day = int.parse(numericDate.group(2)!);
+      var year = int.tryParse(numericDate.group(3) ?? '') ?? now.year;
+      if (year < 100) year += 2000;
+      final date = _validCalendarDate(year, month, day);
+      if (date == null) return null;
+      if (numericDate.group(3) == null && _isDateBeforeToday(date)) {
+        return DateTime(year + 1, month, day);
+      }
+      return date;
+    }
+
+    if (normalized.contains('tomorrow')) {
+      return DateTime(now.year, now.month, now.day + 1);
+    }
+    if (normalized.contains('next week') ||
+        RegExp(
+          r'\bnext\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b',
+        ).hasMatch(normalized)) {
+      return _parseDateFromText(normalized);
+    }
+
+    final markedDay = RegExp(
+      r'\b(?:on|due|by|this|the)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b',
+    ).firstMatch(normalized);
+    final bareDay = allowBareDay
+        ? RegExp(r'^\s*(\d{1,2})(?:st|nd|rd|th)?\s*$').firstMatch(normalized)
+        : null;
+    final day = int.tryParse(markedDay?.group(1) ?? bareDay?.group(1) ?? '');
+    if (day != null && day >= 1 && day <= 31) {
+      return _validCalendarDate(now.year, now.month, day);
     }
     return null;
   }
 
+  DateTime? _validCalendarDate(int year, int month, int day) {
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    final date = DateTime(year, month, day);
+    if (date.year != year || date.month != month || date.day != day)
+      return null;
+    return date;
+  }
+
+  bool _isUpcomingBillDayOnly(String text) {
+    if (RegExp(r'\b\d{1,2}/\d{1,2}\b').hasMatch(text) ||
+        RegExp(
+          r'\b(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\b',
+        ).hasMatch(text) ||
+        RegExp(r'\b(?:tomorrow|next\s+week|next\s+\w+day)\b').hasMatch(text)) {
+      return false;
+    }
+    return RegExp(
+      r'^\s*(?:(?:on|due|by|this|the)\s+(?:the\s+)?)?\d{1,2}(?:st|nd|rd|th)?\s*$',
+    ).hasMatch(text);
+  }
+
+  bool _isDateBeforeToday(DateTime date) {
+    final now = DateTime.now();
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+    ).isBefore(DateTime(now.year, now.month, now.day));
+  }
+
+  String _removeUpcomingBillDate(String text) {
+    var result = text;
+    final monthPattern =
+        r'\b(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\b';
+    result = result.replaceAll(RegExp(monthPattern, caseSensitive: false), ' ');
+    result = result.replaceAll(
+      RegExp(r'\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b'),
+      ' ',
+    );
+    result = result.replaceAll(
+      RegExp(
+        r'\b(?:next\s+week|next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|tomorrow)\b',
+      ),
+      ' ',
+    );
+    result = result.replaceAll(
+      RegExp(
+        r'\b(?:on|due|by|this|the)\s+(?:the\s+)?\d{1,2}(?:st|nd|rd|th)?\b',
+      ),
+      ' ',
+    );
+    return result;
+  }
+
+  String _formatBillDate(DateTime date) {
+    const months = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
+    return '${months[date.month - 1]} ${date.day}';
+  }
+
+  String _billEmoji(String name) {
+    final normalized = name.toLowerCase();
+    if (normalized.contains('electric')) return '💡';
+    if (normalized.contains('water')) return '💧';
+    if (normalized.contains('internet') || normalized.contains('wifi')) {
+      return '🌐';
+    }
+    if (normalized.contains('rent')) return '🏠';
+    if (normalized.contains('phone') || normalized.contains('load'))
+      return '📱';
+    if (normalized.contains('credit card') || normalized.contains('loan')) {
+      return '💳';
+    }
+    return '📅';
+  }
+
+  Future<BaiReply> _saveUpcomingBill() async {
+    final baseName = _pendingScheduledName!;
+    final displayName = '$baseName Bill';
+    final amount = _pendingScheduledAmount!;
+    final date = _pendingScheduledDateTime!;
+    final billId = DateTime.now().microsecondsSinceEpoch.toString();
+    final category = _categorizeFutureOutgoingEvent(displayName);
+    final event = FutureEvent(
+      id: billId,
+      amount: amount,
+      category: category,
+      description: displayName,
+      scheduledDate: date,
+      frequency: 'Once',
+    );
+
+    await FutureEventStorage.addEvent(event);
+    final bills = await BillStorage.loadBills();
+    bills.add(
+      Bill(
+        id: 'future_$billId',
+        type: displayName,
+        amount: amount,
+        dueDate: date,
+        isIncome: false,
+        frequency: 'Once',
+      ),
+    );
+    await BillStorage.saveBills(bills);
+
+    final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
+    final confirmation =
+        '${_billEmoji(displayName)} Bill Added to Calendar!\n'
+        '$displayName        P-$formattedAmount\n'
+        'Date:              ${_formatBillDate(date)}\n'
+        'I will remind you on the due date.';
+    _resetState();
+    return BaiReply(confirmation, highlightColor: 'red');
+  }
+
+  Future<BaiReply?> _tryScheduledEntry(String n) async {
+    final hasBillWord = RegExp(
+      r'\b(?:bill|due|payment|rent|utilities|electricity|water|internet|wifi|phone|load|loan|credit\s+card|insurance|tuition|subscription|mortgage|amortization|installment)\b',
+    ).hasMatch(n);
+    final hasFutureSignal = RegExp(
+      r'\b(?:due|on|this|by|need\s+to\s+pay|have\s+to\s+pay|remind\s+me|i\s+have|tomorrow|next\s+week|next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday))\b|'
+      r'\b(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\s+\d{1,2}\b|\b\d{1,2}/\d{1,2}\b',
+    ).hasMatch(n);
+    final billPayOnDate =
+        RegExp(r'\bpay\b').hasMatch(n) && RegExp(r'\b(?:on|by)\s+').hasMatch(n);
+    final pastPayment = RegExp(
+      r'\b(?:paid|spent|bought|charged)\b',
+    ).hasMatch(n);
+
+    if (hasBillWord && (hasFutureSignal || billPayOnDate) && !pastPayment) {
+      _resetState();
+      _pendingScheduledType = 'bill';
+      _step = BaiStep.awaitingScheduledName;
+      return await _handleUpcomingBillFlow(n);
+    }
+
+    final futureSignals = RegExp(
+      r'(will have|will receive|will get|will be|am getting|expecting|incoming|due|coming on|need to pay|have to pay|on \d+|this \w+|by \d+|remind me|i have)',
+      caseSensitive: false,
+    );
+    final pastSignals = RegExp(r'(spent|bought|paid|received|got|earned)');
+    if (futureSignals.hasMatch(n) && !pastSignals.hasMatch(n)) {
+      _pendingScheduledType = 'income';
+      _step = BaiStep.awaitingScheduledName;
+      return await _handleScheduledEntryFlow(n);
+    }
+    return null;
+  }
 }
