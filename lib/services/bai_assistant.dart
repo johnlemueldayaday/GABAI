@@ -3542,8 +3542,9 @@ class BaiAssistant {
   DateTime? _validCalendarDate(int year, int month, int day) {
     if (month < 1 || month > 12 || day < 1 || day > 31) return null;
     final date = DateTime(year, month, day);
-    if (date.year != year || date.month != month || date.day != day)
+    if (date.year != year || date.month != month || date.day != day) {
       return null;
+    }
     return date;
   }
 
@@ -3619,8 +3620,9 @@ class BaiAssistant {
       return '🌐';
     }
     if (normalized.contains('rent')) return '🏠';
-    if (normalized.contains('phone') || normalized.contains('load'))
+    if (normalized.contains('phone') || normalized.contains('load')) {
       return '📱';
+    }
     if (normalized.contains('credit card') || normalized.contains('loan')) {
       return '💳';
     }
