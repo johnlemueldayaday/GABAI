@@ -33,6 +33,10 @@ enum BaiStep {
   awaitingIncomeAccount,
   awaitingDuePaymentAction,
   awaitingDuePaymentAccount,
+  awaitingDuePaymentAmountConfirmation,
+  awaitingDuePaymentAmount,
+  awaitingDueRescheduleDecision,
+  awaitingDueRescheduleDate,
   awaitingExpenseAmount,
   awaitingExpenseItem,
   awaitingIncomeAmount,
@@ -43,15 +47,15 @@ enum BaiStep {
   awaitingScheduledName,
   awaitingScheduledAmount,
   awaitingScheduledDate,
+  awaitingScheduledDeleteConfirmation,
+  awaitingScheduledSelection,
+  awaitingScheduledMoveDate,
+  awaitingScheduledAmountUpdate,
 }
 
 /// BAI (Brother AI) - Unified smart assistant merging Ramsey + Tarsi
 class BaiAssistant {
   final String _currency = SettingsService().currency;
-  static const _expenseWalletNames = ['Cash', 'BDO'];
-  static const _expenseWalletList = 'Cash, BDO';
-  static const _incomeWalletNames = ['Cash', 'BDO'];
-  static const _incomeWalletList = 'Cash, BDO';
 
   // Cooking state (from Ramsey)
   final RamseyCookingAssistant _cookingEngine = RamseyCookingAssistant();
@@ -79,6 +83,10 @@ class BaiAssistant {
   String? _pendingAllocationPeriod;
   DateTime? _pendingScheduledDateTime;
   bool _pendingBillDateNeedsConfirmation = false;
+  String? _pendingScheduledManagementAction;
+  String? _pendingScheduledManagementInput;
+  List<FutureEvent> _pendingScheduledMatches = [];
+  FutureEvent? _pendingManagedEvent;
 
   // Track pending income details when waiting for account
   double? _pendingIncomeAmount;
@@ -88,6 +96,7 @@ class BaiAssistant {
 
   // Track pending due event when processing past-due events
   FutureEvent? _pendingDueEvent;
+  double? _pendingDueAmount;
 
   String _accountLabel(Account account) {
     final normalizedName = account.name.trim().toLowerCase();
@@ -192,6 +201,8 @@ class BaiAssistant {
   bool _pendingEventIsOutgoing() {
     final event = _pendingDueEvent;
     if (event == null) return false;
+    if (event.type == 'bill') return true;
+    if (event.type == 'income') return false;
     // Check stored category first — most reliable
     final cat = event.category.toLowerCase().trim();
     if (_outgoingCategories.contains(cat)) return true;
@@ -206,21 +217,378 @@ class BaiAssistant {
     final dueEvents = await FutureEventStorage.getDueEvents();
     if (dueEvents.isNotEmpty) {
       _pendingDueEvent = dueEvents.first;
+      _pendingDueAmount = _pendingDueEvent!.amount;
       _step = BaiStep.awaitingDuePaymentAction;
       final amountStr = _formatNumberWithCommas(
         _pendingDueEvent!.amount.toStringAsFixed(2),
       );
       final isOutgoing = _pendingEventIsOutgoing();
+      final name = _dueEventDisplayName(_pendingDueEvent!);
       final question = isOutgoing
-          ? "Did you pay your ${_pendingDueEvent!.description}?"
-          : "Did you receive your ${_pendingDueEvent!.description}?";
-      return BaiReply(
-        "You have a scheduled event due today:\n${_pendingDueEvent!.description} $_currency$amountStr\n\n$question",
-        quickReplies: const ["Yes", "No"],
-      );
+          ? '📅 Reminder: $name Bill (P-$amountStr) is due today. Did you pay it?'
+          : '💰 Reminder: $name (P $amountStr) is expected today. Did you receive it?';
+      return BaiReply(question, quickReplies: const ["Yes", "No"]);
     }
     return greeting;
   }
+
+  String _dueEventDisplayName(FutureEvent event) {
+    final description = event.description.trim();
+    if (description.toLowerCase().endsWith(' bill')) {
+      return description.substring(0, description.length - 5).trim();
+    }
+    return description;
+  }
+
+  bool _isScheduledManagementCommand(String input) {
+    final normalized = input.toLowerCase();
+    if (RegExp(
+      r'\b(?:show|list)\b.*\b(?:upcoming\s+bills?|bills?\s+(?:are\s+)?due|incoming\s+money|upcoming\s+events?)\b|\bwhat\s+bills?\s+(?:are\s+)?due\b',
+    ).hasMatch(normalized)) {
+      return true;
+    }
+    final hasManagementVerb = RegExp(
+      r'\b(?:cancel|delete|move|change)\b',
+    ).hasMatch(normalized);
+    final hasScheduledName = RegExp(
+      r'\b(?:bill|payment|rent|utilities|electricity|water|internet|wifi|phone|loan|credit\s+card|insurance|tuition|subscription|mortgage|amortization|installment|salary|allowance|commission|bonus|13th\s+month|refund|freelance|pension|cashback|incoming\s+money|entry)\b',
+    ).hasMatch(normalized);
+    return hasManagementVerb && hasScheduledName;
+  }
+
+  Future<BaiReply> _handleScheduledManagementCommand(String input) async {
+    _resetState();
+    final normalized = input.toLowerCase();
+    final events =
+        (await FutureEventStorage.loadEvents())
+            .where((event) => event.status == 'pending' && !event.isCompleted)
+            .toList()
+          ..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
+
+    final listType = _scheduledListType(normalized);
+    if (listType != null) {
+      final matchingEvents = events.where((event) {
+        if (listType == 'bill') return event.type == 'bill';
+        if (listType == 'income') return event.type == 'income';
+        return true;
+      }).toList();
+      return _scheduledEventsListReply(matchingEvents);
+    }
+
+    final action = _scheduledManagementAction(normalized);
+    if (action == null) {
+      return const BaiReply("I couldn't find that entry.");
+    }
+
+    final target = _scheduledManagementTarget(input);
+    final matches = events.where((event) {
+      final searchable =
+          '${event.description} ${event.category} ${event.entity ?? ''}'
+              .toLowerCase();
+      return target.isNotEmpty &&
+          (searchable.contains(target) || target.contains(searchable.trim()));
+    }).toList();
+    if (matches.isEmpty) {
+      return const BaiReply("I couldn't find that entry.");
+    }
+
+    _pendingScheduledManagementAction = action;
+    _pendingScheduledManagementInput = input;
+    if (matches.length > 1) {
+      _pendingScheduledMatches = matches;
+      _step = BaiStep.awaitingScheduledSelection;
+      return BaiReply(
+        'Which one do you mean?\n${_formatScheduledEvents(matches, numbered: true)}',
+      );
+    }
+
+    return _beginScheduledManagement(matches.single, action, input);
+  }
+
+  String? _scheduledListType(String input) {
+    if (RegExp(
+      r'\b(?:incoming\s+money|incoming\s+transactions?)\b',
+    ).hasMatch(input)) {
+      return 'income';
+    }
+    if (RegExp(
+      r'\b(?:upcoming\s+bills?|bills?\s+(?:are\s+)?due)\b',
+    ).hasMatch(input)) {
+      return 'bill';
+    }
+    if (RegExp(r'\bupcoming\s+events?\b').hasMatch(input)) return 'all';
+    if (RegExp(r'\bshow\s+my\s+incoming\s+money\b').hasMatch(input)) {
+      return 'income';
+    }
+    return null;
+  }
+
+  String? _scheduledManagementAction(String input) {
+    if (RegExp(r'\b(?:cancel|delete)\b').hasMatch(input)) return 'delete';
+    if (RegExp(r'\bmove\b').hasMatch(input)) return 'move';
+    if (RegExp(r'\bchange\b').hasMatch(input)) return 'amount';
+    return null;
+  }
+
+  String _scheduledManagementTarget(String input) {
+    var target = input.toLowerCase();
+    target = target.replaceFirst(
+      RegExp(r'\b(?:cancel|delete|move|change)\b'),
+      ' ',
+    );
+    target = target.replaceAll(
+      RegExp(r'\b(?:to|on|by|due|the|my|a|an|please)\b'),
+      ' ',
+    );
+    target = _removeUpcomingBillDate(target);
+    target = target.replaceAll(
+      RegExp(r'(?<![\w/])\d+(?:,\d{3})*(?:\.\d+)?\s*[km]?\b'),
+      ' ',
+    );
+    target = target.replaceAll(
+      RegExp(r'\b(?:p|php|peso|pesos)\b|₱', caseSensitive: false),
+      ' ',
+    );
+    target = target.replaceAll(
+      RegExp(r'\b(?:bill|payment|entry|scheduled|incoming|money)\b'),
+      ' ',
+    );
+    target = target.replaceAll(RegExp(r'[^\w\s-]'), ' ');
+    return target.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  Future<BaiReply> _beginScheduledManagement(
+    FutureEvent event,
+    String action,
+    String input,
+  ) async {
+    _pendingManagedEvent = event;
+    _pendingScheduledManagementAction = action;
+    final name = _scheduledManagementDisplayName(event);
+    if (action == 'delete') {
+      _step = BaiStep.awaitingScheduledDeleteConfirmation;
+      return BaiReply(
+        'Are you sure you want to delete $name?',
+        quickReplies: const ['Yes', 'No'],
+      );
+    }
+    if (action == 'move') {
+      final date = _parseUpcomingBillDate(input, allowBareDay: true);
+      if (date == null) {
+        _step = BaiStep.awaitingScheduledMoveDate;
+        return BaiReply('When should I move $name to?');
+      }
+      return _moveScheduledEvent(event, date);
+    }
+    final amount = _parseExpenseAmount(input);
+    if (amount == null) {
+      _step = BaiStep.awaitingScheduledAmountUpdate;
+      return BaiReply('What amount should I set for $name?');
+    }
+    if (!amount.isFinite || amount <= 0) {
+      _step = BaiStep.awaitingScheduledAmountUpdate;
+      return const BaiReply('Please enter a valid amount, for example 250.00.');
+    }
+    return _updateScheduledEventAmount(event, amount);
+  }
+
+  BaiReply _scheduledEventsListReply(List<FutureEvent> events) {
+    if (events.isEmpty) {
+      return const BaiReply('You have no upcoming bills or incoming money.');
+    }
+    return BaiReply('📅 Upcoming Events\n${_formatScheduledEvents(events)}');
+  }
+
+  String _formatScheduledEvents(
+    List<FutureEvent> events, {
+    bool numbered = false,
+  }) {
+    return events
+        .asMap()
+        .entries
+        .map((entry) {
+          final index = entry.key;
+          final event = entry.value;
+          final name = event.type == 'bill'
+              ? event.description
+              : _dueEventDisplayName(event);
+          final date =
+              '${_getMonthAbbreviation(event.scheduledDate.month)} ${event.scheduledDate.day}';
+          final emoji = _scheduledEventEmoji(event);
+          final amount = _formatNumberWithCommas(
+            event.amount.toStringAsFixed(2),
+          );
+          final formattedAmount = event.type == 'income'
+              ? 'P +$amount'
+              : 'P-$amount';
+          final prefix = numbered ? '${index + 1}. ' : '';
+          return '$prefix$date   $emoji $name   $formattedAmount';
+        })
+        .join('\n');
+  }
+
+  String _scheduledEventEmoji(FutureEvent event) {
+    final text = '${event.category} ${event.description}'.toLowerCase();
+    if (event.type == 'income') {
+      if (text.contains('salary')) return '💰';
+      if (text.contains('bonus') || text.contains('13th month')) return '🎁';
+      if (text.contains('allowance')) return '💵';
+      if (text.contains('commission') || text.contains('business')) return '📈';
+      if (text.contains('refund') || text.contains('cashback')) return '🔁';
+      return '💰';
+    }
+    if (text.contains('electric')) return '💡';
+    if (text.contains('water')) return '💧';
+    if (text.contains('internet') || text.contains('wifi')) return '🌐';
+    if (text.contains('rent')) return '🏠';
+    if (text.contains('phone') || text.contains('load')) return '📱';
+    if (text.contains('credit card') || text.contains('loan')) return '💳';
+    return '📅';
+  }
+
+  String _getMonthAbbreviation(int month) {
+    const months = [
+      '',
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    return months[month];
+  }
+
+  Future<BaiReply> _handleScheduledManagementState(String input) async {
+    final normalized = input.trim().toLowerCase();
+    if (_step == BaiStep.awaitingScheduledSelection) {
+      final matches = _pendingScheduledMatches;
+      FutureEvent? selected;
+      final index = int.tryParse(normalized.replaceFirst(RegExp(r'\.$'), ''));
+      if (index != null && index >= 1 && index <= matches.length) {
+        selected = matches[index - 1];
+      } else {
+        final selectedDate = _parseUpcomingBillDate(input, allowBareDay: true);
+        for (final event in matches) {
+          final eventName =
+              '${event.description} ${event.category} ${event.entity ?? ''}'
+                  .toLowerCase();
+          if (eventName.contains(normalized) ||
+              (selectedDate != null &&
+                  event.scheduledDate.year == selectedDate.year &&
+                  event.scheduledDate.month == selectedDate.month &&
+                  event.scheduledDate.day == selectedDate.day)) {
+            selected = event;
+            break;
+          }
+        }
+      }
+      if (selected == null) {
+        return BaiReply(
+          'Which one do you mean?\n${_formatScheduledEvents(matches, numbered: true)}',
+        );
+      }
+      final action = _pendingScheduledManagementAction!;
+      final command = _pendingScheduledManagementInput ?? input;
+      _pendingScheduledMatches = [];
+      return _beginScheduledManagement(selected, action, command);
+    }
+    if (_step == BaiStep.awaitingScheduledDeleteConfirmation) {
+      if (RegExp(r'^(?:yes|y|yeah|yep|sure)\b').hasMatch(normalized)) {
+        final event = _pendingManagedEvent!;
+        try {
+          await FutureEventStorage.removeEvent(event.id);
+          final bills = await BillStorage.loadBills();
+          bills.removeWhere((bill) => bill.id == 'future_${event.id}');
+          await BillStorage.saveBills(bills);
+          _resetState();
+          return BaiReply(
+            'Done! I deleted ${_scheduledManagementDisplayName(event)}.',
+          );
+        } catch (error) {
+          return BaiReply('⚠️ Failed to delete scheduled entry: $error');
+        }
+      }
+      if (RegExp(r'^(?:no|n|nope)\b').hasMatch(normalized)) {
+        _resetState();
+        return const BaiReply('Okay, I kept that entry.');
+      }
+      return BaiReply(
+        'Are you sure you want to delete ${_scheduledManagementDisplayName(_pendingManagedEvent!)}?',
+        quickReplies: const ['Yes', 'No'],
+      );
+    }
+    if (_step == BaiStep.awaitingScheduledMoveDate) {
+      final date = _parseUpcomingBillDate(input, allowBareDay: true);
+      if (date == null) {
+        return BaiReply(
+          'When should I move ${_scheduledManagementDisplayName(_pendingManagedEvent!)} to?',
+        );
+      }
+      return _moveScheduledEvent(_pendingManagedEvent!, date);
+    }
+    if (_step == BaiStep.awaitingScheduledAmountUpdate) {
+      final amount = _parseExpenseAmount(input);
+      if (amount == null || !amount.isFinite || amount <= 0) {
+        return const BaiReply(
+          'Please enter a valid amount, for example 250.00.',
+        );
+      }
+      return _updateScheduledEventAmount(_pendingManagedEvent!, amount);
+    }
+    return const BaiReply("I couldn't find that entry.");
+  }
+
+  Future<BaiReply> _moveScheduledEvent(FutureEvent event, DateTime date) async {
+    try {
+      await FutureEventStorage.updateEvent(event.copyWith(scheduledDate: date));
+      final bills = await BillStorage.loadBills();
+      final index = bills.indexWhere((bill) => bill.id == 'future_${event.id}');
+      if (index >= 0) {
+        bills[index] = bills[index].copyWith(dueDate: date);
+        await BillStorage.saveBills(bills);
+      }
+      final dateText = _formatBillDate(date);
+      _resetState();
+      return BaiReply(
+        'Done! I moved your ${_scheduledManagementDisplayName(event)} to $dateText.',
+      );
+    } catch (error) {
+      return BaiReply('⚠️ Failed to move scheduled entry: $error');
+    }
+  }
+
+  Future<BaiReply> _updateScheduledEventAmount(
+    FutureEvent event,
+    double amount,
+  ) async {
+    try {
+      await FutureEventStorage.updateEvent(event.copyWith(amount: amount));
+      final bills = await BillStorage.loadBills();
+      final index = bills.indexWhere((bill) => bill.id == 'future_${event.id}');
+      if (index >= 0) {
+        bills[index] = bills[index].copyWith(amount: amount);
+        await BillStorage.saveBills(bills);
+      }
+      final formattedAmount = _formatNumberWithCommas(
+        amount.toStringAsFixed(2),
+      );
+      final name = _scheduledManagementDisplayName(event);
+      _resetState();
+      return BaiReply('Done! Your $name is now P $formattedAmount.');
+    } catch (error) {
+      return BaiReply('⚠️ Failed to update scheduled entry: $error');
+    }
+  }
+
+  String _scheduledManagementDisplayName(FutureEvent event) =>
+      event.type == 'bill' ? event.description : _dueEventDisplayName(event);
 
   /// Main intent router — the brain of BAI
   Future<BaiReply> handle(String rawInput) async {
@@ -234,6 +602,31 @@ class BaiAssistant {
     if (n == 'start over' || n == 'reset') {
       _resetState();
       return greeting;
+    }
+
+    if (_step == BaiStep.awaitingScheduledDeleteConfirmation ||
+        _step == BaiStep.awaitingScheduledSelection ||
+        _step == BaiStep.awaitingScheduledMoveDate ||
+        _step == BaiStep.awaitingScheduledAmountUpdate) {
+      if (_isCancellation(n)) {
+        _resetState();
+        return const BaiReply('Okay, I cancelled that. Nothing was saved.');
+      }
+      if (!_isScheduledManagementCommand(n)) {
+        return await _handleScheduledManagementState(input);
+      }
+    }
+    if (_isScheduledManagementCommand(n)) {
+      return await _handleScheduledManagementCommand(input);
+    }
+
+    if (_step == BaiStep.awaitingDuePaymentAction ||
+        _step == BaiStep.awaitingDuePaymentAccount ||
+        _step == BaiStep.awaitingDuePaymentAmountConfirmation ||
+        _step == BaiStep.awaitingDuePaymentAmount ||
+        _step == BaiStep.awaitingDueRescheduleDecision ||
+        _step == BaiStep.awaitingDueRescheduleDate) {
+      return await _handleStateMachine(n);
     }
 
     if (_isExpenseFlowActive) {
@@ -408,6 +801,12 @@ class BaiAssistant {
         _step == BaiStep.awaitingScheduledDate) {
       return await _handleScheduledEntryFlow(n);
     }
+    if (_step == BaiStep.awaitingScheduledDeleteConfirmation ||
+        _step == BaiStep.awaitingScheduledSelection ||
+        _step == BaiStep.awaitingScheduledMoveDate ||
+        _step == BaiStep.awaitingScheduledAmountUpdate) {
+      return await _handleScheduledManagementState(n);
+    }
 
     // Handle awaiting expense item/amount states
     if (_step == BaiStep.awaitingExpenseItem ||
@@ -433,6 +832,18 @@ class BaiAssistant {
 
     if (_step == BaiStep.awaitingDuePaymentAccount) {
       return await _handleDuePaymentAccountResponse(n);
+    }
+    if (_step == BaiStep.awaitingDuePaymentAmountConfirmation) {
+      return _handleDuePaymentAmountConfirmation(n);
+    }
+    if (_step == BaiStep.awaitingDuePaymentAmount) {
+      return await _handleDuePaymentAmountResponse(n);
+    }
+    if (_step == BaiStep.awaitingDueRescheduleDecision) {
+      return _handleDueRescheduleDecision(n);
+    }
+    if (_step == BaiStep.awaitingDueRescheduleDate) {
+      return await _handleDueRescheduleDate(n);
     }
 
     // Allow finance commands to break out of cooking flow
@@ -514,6 +925,7 @@ class BaiAssistant {
     _pendingIncomeCategory = null;
     _pendingIncomeAccount = null;
     _pendingDueEvent = null;
+    _pendingDueAmount = null;
     _pendingScheduledName = null;
     _pendingScheduledAmount = null;
     _pendingScheduledDate = null;
@@ -521,6 +933,10 @@ class BaiAssistant {
     _pendingAllocationPeriod = null;
     _pendingScheduledDateTime = null;
     _pendingBillDateNeedsConfirmation = false;
+    _pendingScheduledManagementAction = null;
+    _pendingScheduledManagementInput = null;
+    _pendingScheduledMatches = [];
+    _pendingManagedEvent = null;
   }
 
   bool get _isExpenseFlowActive =>
@@ -633,45 +1049,59 @@ class BaiAssistant {
     };
   }
 
-  Account? _findExpenseWallet(String text, List<Account> accounts) {
-    final normalized = text.trim().toLowerCase();
-    for (final walletName in _expenseWalletNames) {
-      if (RegExp(
-        r'\b' + RegExp.escape(walletName.toLowerCase()) + r'\b',
-      ).hasMatch(normalized)) {
-        for (final account in accounts) {
-          if (account.name.trim().toLowerCase() == walletName.toLowerCase()) {
-            return account;
-          }
-        }
-      }
-    }
-    return null;
-  }
+  Account? _findExpenseWallet(String text, List<Account> accounts) =>
+      _findMentionedAccount(text, accounts);
 
   Account? _findMentionedAccount(String text, List<Account> accounts) {
-    for (final account in accounts) {
+    final normalized = text.toLowerCase();
+    final orderedAccounts = [...accounts]
+      ..sort((a, b) => b.name.length.compareTo(a.name.length));
+    for (final account in orderedAccounts) {
       if (RegExp(
         r'\b' + RegExp.escape(account.name.trim().toLowerCase()) + r'\b',
-      ).hasMatch(text.toLowerCase())) {
+      ).hasMatch(normalized)) {
         return account;
       }
     }
     return null;
   }
 
+  List<Account> _walletsInPromptOrder(List<Account> accounts) {
+    final ordered = [...accounts];
+    ordered.sort((a, b) {
+      final aIsCash = a.name.trim().toLowerCase() == 'cash';
+      final bIsCash = b.name.trim().toLowerCase() == 'cash';
+      if (aIsCash != bIsCash) return aIsCash ? -1 : 1;
+      return accounts.indexOf(a).compareTo(accounts.indexOf(b));
+    });
+    return ordered;
+  }
+
+  List<String> _walletNames(List<Account> accounts) =>
+      _walletsInPromptOrder(accounts).map((account) => account.name).toList();
+
+  String _availableWalletsText(List<Account> accounts) {
+    final names = _walletNames(accounts);
+    return names.isEmpty
+        ? 'No wallets are set up yet. Please add one in Account.'
+        : 'Available wallets: ${names.join(', ')}.';
+  }
+
+  String _unknownWalletText(List<Account> accounts) =>
+      "I couldn't find that wallet. ${_availableWalletsText(accounts)} Which one would you like to use?";
+
   String _formatExpenseAmount(double amount) {
     final formatted = _formatNumberWithCommas(amount.abs().toStringAsFixed(2));
     return amount < 0 ? '-$formatted' : formatted;
   }
 
-  String _extractIncomeSource(String input) {
+  String _extractIncomeSource(String input, List<Account> accounts) {
     var source = input.toLowerCase();
     source = source.replaceAll(
       RegExp(r'(?<![\w/])-?\d+(?:,\d{3})*(?:\.\d+)?\s*[km]?\b'),
       ' ',
     );
-    for (final wallet in _incomeWalletNames) {
+    for (final wallet in _walletNames(accounts)) {
       source = source.replaceAll(
         RegExp(r'\b' + RegExp.escape(wallet.toLowerCase()) + r'\b'),
         ' ',
@@ -692,11 +1122,10 @@ class BaiAssistant {
     if (_hasFutureExpenseSignal(n) || !_isIncomeIntent(n)) return null;
 
     _pendingIncomeAmount = _parseExpenseAmount(n);
-    _pendingIncomeDescription = _extractIncomeSource(n);
+    final accounts = await FinanceStorage.loadAccounts();
+    _pendingIncomeDescription = _extractIncomeSource(n, accounts);
     _pendingIncomeCategory = _categorizeIncome(_pendingIncomeDescription ?? '');
 
-    final accounts = await FinanceStorage.loadAccounts();
-    final mentionedAccount = _findMentionedAccount(n, accounts);
     _pendingIncomeAccount = _findIncomeWallet(n, accounts);
 
     if (_pendingIncomeAmount != null &&
@@ -715,38 +1144,15 @@ class BaiAssistant {
       _step = BaiStep.awaitingIncomeSource;
       return const BaiReply('What was this income from?');
     }
-    if (mentionedAccount != null &&
-        !_incomeWalletNames.any(
-          (wallet) =>
-              wallet.toLowerCase() == mentionedAccount.name.toLowerCase(),
-        )) {
-      _step = BaiStep.awaitingIncomeAccount;
-      return const BaiReply(
-        "I couldn't find that wallet. Available wallets: $_incomeWalletList. Which one would you like to use?",
-      );
-    }
-
     return await _continueIncomeFlow();
   }
 
   Account? _findIncomeWallet(String text, List<Account> accounts) {
-    final normalized = text.toLowerCase();
-    for (final wallet in _incomeWalletNames) {
-      if (!RegExp(
-        r'\b' + RegExp.escape(wallet.toLowerCase()) + r'\b',
-      ).hasMatch(normalized)) {
-        continue;
-      }
-      for (final account in accounts) {
-        if (account.name.trim().toLowerCase() == wallet.toLowerCase()) {
-          return account;
-        }
-      }
-    }
-    return null;
+    return _findMentionedAccount(text, accounts);
   }
 
   Future<BaiReply> _handleOngoingIncomeFlow(String input) async {
+    final accounts = await FinanceStorage.loadAccounts();
     if (_step == BaiStep.awaitingIncomeAmount) {
       final amount = _parseExpenseAmount(input);
       if (amount == null || !amount.isFinite || amount <= 0) {
@@ -756,17 +1162,17 @@ class BaiAssistant {
       }
       _pendingIncomeAmount = amount;
     } else if (_step == BaiStep.awaitingIncomeSource) {
-      final source = _extractIncomeSource(input);
+      final source = _extractIncomeSource(input, accounts);
       if (source.isNotEmpty) {
         _pendingIncomeDescription = source;
         _pendingIncomeCategory = _categorizeIncome(source);
       }
     } else if (_step == BaiStep.awaitingIncomeAccount) {
-      final accounts = await FinanceStorage.loadAccounts();
       final wallet = _findIncomeWallet(input, accounts);
       if (wallet == null) {
-        return const BaiReply(
-          "I couldn't find that wallet. Available wallets: $_incomeWalletList. Which one would you like to use?",
+        return BaiReply(
+          _unknownWalletText(accounts),
+          quickReplies: _walletNames(accounts),
         );
       }
       _pendingIncomeAccount = wallet;
@@ -786,9 +1192,11 @@ class BaiAssistant {
       return const BaiReply('What was this income from?');
     }
     if (_pendingIncomeAccount == null) {
+      final accounts = await FinanceStorage.loadAccounts();
       _step = BaiStep.awaitingIncomeAccount;
-      return const BaiReply(
-        'Which wallet did you deposit it to? Available wallets: $_incomeWalletList.',
+      return BaiReply(
+        'Which wallet did you deposit it to? ${_availableWalletsText(accounts)}',
+        quickReplies: _walletNames(accounts),
       );
     }
 
@@ -828,111 +1236,122 @@ class BaiAssistant {
 
   Future<BaiReply> _handleDuePaymentActionResponse(String n) async {
     final isOutgoing = _pendingEventIsOutgoing();
-    final confirmWords = isOutgoing
-        ? ['yes', 'y', 'yeah', 'yep', 'paid', 'done', 'sure']
-        : [
-            'yes',
-            'y',
-            'yeah',
-            'yep',
-            'received',
-            'got it',
-            'yup',
-            'sure',
-            'done',
-          ];
-    final confirmed = confirmWords.any((w) => n == w || n.contains(w));
+    if (isOutgoing &&
+        RegExp(r'\bpaid\b').hasMatch(n) &&
+        !RegExp(r'\b(?:yes|yeah|yep|done|sure)\b').hasMatch(n)) {
+      _step = BaiStep.awaitingDuePaymentAccount;
+      final accounts = await FinanceStorage.loadAccounts();
+      return BaiReply(
+        'Which wallet did you use to pay for it? ${_availableWalletsText(accounts)}',
+        quickReplies: _walletNames(accounts),
+      );
+    }
+    if (!isOutgoing &&
+        RegExp(r'\breceived\b').hasMatch(n) &&
+        !RegExp(r'\b(?:yes|yeah|yep|got it|yup|sure|done)\b').hasMatch(n)) {
+      _step = BaiStep.awaitingDuePaymentAccount;
+        final accounts = await FinanceStorage.loadAccounts();
+        return BaiReply(
+          'Which wallet did you deposit or transfer it to? ${_availableWalletsText(accounts)}',
+          quickReplies: _walletNames(accounts),
+        );
+    }
+    final confirmed = isOutgoing
+        ? RegExp(r'\b(?:yes|yeah|yep|paid|done|sure)\b').hasMatch(n)
+        : RegExp(
+            r'\b(?:yes|yeah|yep|received|got it|yup|sure|done)\b',
+          ).hasMatch(n);
 
     if (confirmed) {
       _step = BaiStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
-      final accountTokens = accounts
-          .map((a) => _accountIconToken(a))
-          .join(', ');
       final prompt = isOutgoing
-          ? "Awesome! What wallet are you using?\nAvailable: $accountTokens"
-          : "Nice! What wallet did you receive it in?\nAvailable: $accountTokens";
-      return BaiReply(
-        prompt,
-        quickReplies: accounts.map((a) => a.name).toList(),
-      );
+          ? 'Which wallet did you use to pay for it? ${_availableWalletsText(accounts)}'
+          : 'Which wallet did you deposit or transfer it to? ${_availableWalletsText(accounts)}';
+      return BaiReply(prompt, quickReplies: _walletNames(accounts));
     }
 
-    final noWords = [
-      'no',
-      'n',
-      'nope',
-      'not yet',
-      "haven't",
-      'havent',
-      'not paid',
-      'not received',
-      'nah',
-      'cancel',
-      'reschedule',
-    ];
-    final denied = noWords.any((w) => n == w || n.contains(w));
+    final denied = RegExp(
+      r'\b(?:no|nope|not yet|haven.t|havent|not paid|not received|nah|reschedule)\b',
+    ).hasMatch(n);
 
     if (denied) {
       final event = _pendingDueEvent!;
-      final newDate = DateTime.now().add(const Duration(days: 1));
-      await FutureEventStorage.updateEvent(
-        event.copyWith(scheduledDate: newDate),
+      final newDate = DateTime(
+        event.scheduledDate.year,
+        event.scheduledDate.month,
+        event.scheduledDate.day + 1,
       );
+      final rescheduleCount = event.rescheduleCount + 1;
+      await _rescheduleDueEvent(event, newDate, rescheduleCount);
 
-      final dateStr = _formatDate(newDate);
-      final amountStr = _formatNumberWithCommas(
-        event.amount.toStringAsFixed(2),
-      );
+      final dateStr = _formatBillDate(newDate);
+      if (rescheduleCount >= 3) {
+        _pendingDueEvent = event.copyWith(
+          scheduledDate: newDate,
+          rescheduleCount: rescheduleCount,
+          status: 'pending',
+          isCompleted: false,
+        );
+        _step = BaiStep.awaitingDueRescheduleDecision;
+        return const BaiReply(
+          'This has been moved 3 times. Would you like to set a new date?',
+          quickReplies: ['Yes', 'No'],
+        );
+      }
+      final message = isOutgoing
+          ? 'Okay, I moved your ${_dueEventDisplayName(event)} Bill to $dateStr. I will remind you again tomorrow.'
+          : 'Okay, I moved your ${_dueEventDisplayName(event)} to $dateStr. I will ask you again tomorrow.';
       _resetState();
-      return BaiReply(
-        isOutgoing
-            ? "⏭️ Rescheduled!\n\n${event.description}\n$_currency$amountStr\nPayment moved to: $dateStr"
-            : "⏭️ Rescheduled!\n\n${event.description}\n$_currency$amountStr\nExpected receipt moved to: $dateStr",
-        quickReplies: const [
-          "What is my total balance?",
-          "Show upcoming events",
-        ],
-        highlightColor: isOutgoing ? 'red' : 'green',
-      );
-    }
-
-    final question = isOutgoing
-        ? "Sorry, I didn't get that. Did you pay your ${_pendingDueEvent!.description}?"
-        : "Sorry, I didn't get that. Did you receive your ${_pendingDueEvent!.description}?";
-    return BaiReply(question, quickReplies: const ["Yes", "No"]);
-  }
-
-  Future<BaiReply> _handleDuePaymentAccountResponse(String n) async {
-    if (n == 'cancel' || n == 'nevermind') {
-      _resetState();
-      return const BaiReply("Got it, we can settle it later.");
-    }
-
-    final accounts = await FinanceStorage.loadAccounts();
-    Account? acc =
-        _findAccount(n, accounts) ?? _detectAccountFromText(n, accounts);
-    if (acc == null) {
-      return BaiReply(
-        "I couldn't find that account. Which wallet are you using?",
-        quickReplies: accounts.map((a) => a.name).toList(),
-      );
+      return BaiReply(message, highlightColor: isOutgoing ? 'red' : 'green');
     }
 
     final event = _pendingDueEvent!;
-    final amount = event.amount;
+    final amount = _formatNumberWithCommas(event.amount.toStringAsFixed(2));
+    final name = _dueEventDisplayName(event);
+    final question = isOutgoing
+        ? '📅 Reminder: $name Bill (P-$amount) is due today. Did you pay it?'
+        : '💰 Reminder: $name (P $amount) is expected today. Did you receive it?';
+    return BaiReply(question, quickReplies: const ['Yes', 'No']);
+  }
+
+  Future<BaiReply> _handleDuePaymentAccountResponse(String n) async {
+    if (_isCancellation(n)) {
+      _step = BaiStep.awaitingDuePaymentAction;
+      return _duePaymentReminder();
+    }
+
+    final accounts = await FinanceStorage.loadAccounts();
+    final event = _pendingDueEvent!;
+    final amountMentioned = _extractAmountWithSlang(n);
+    if (amountMentioned != null &&
+        amountMentioned != (_pendingDueAmount ?? event.amount)) {
+      _step = BaiStep.awaitingDuePaymentAmountConfirmation;
+      final scheduledAmount = _formatNumberWithCommas(
+        (_pendingDueAmount ?? event.amount).toStringAsFixed(2),
+      );
+      return BaiReply(
+        'Would you like to change the amount? The scheduled amount is P-$scheduledAmount.',
+        quickReplies: const ['Yes', 'No'],
+      );
+    }
+
+    final acc = _findIncomeWallet(n, accounts);
+    if (acc == null) {
+      return BaiReply(
+        _unknownWalletText(accounts),
+        quickReplies: _walletNames(accounts),
+      );
+    }
+
+    final amount = _pendingDueAmount ?? event.amount;
     final isOutgoing = _pendingEventIsOutgoing();
 
-    // Only check insufficient funds for outgoing/expense events
     if (isOutgoing && acc.balance < amount) {
-      final reqStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
       final hasStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
       return BaiReply(
-        "⚠️ Insufficient funds in ${_accountLabel(acc)}\n(Has: $_currency$hasStr, Needs: $_currency$reqStr)\nChoose another wallet:",
-        quickReplies: accounts
-            .where((a) => a.balance >= amount)
-            .map((a) => a.name)
-            .toList(),
+        'Your ${acc.name} balance is P$hasStr, which is lower than this bill. Would you like to use another wallet?',
+        quickReplies: _walletNames(accounts),
       );
     }
 
@@ -943,12 +1362,19 @@ class BaiAssistant {
         accountId: acc.id,
         accountName: acc.name,
         type: isOutgoing ? 'EXPENSE' : 'INCOME',
-        category: event.category,
-        description: event.description,
+        category: isOutgoing ? 'Bills' : event.category,
+        description: isOutgoing
+            ? '${_dueEventDisplayName(event)} Bill'
+            : event.description,
       );
       await FinanceStorage.addTransaction(txn);
 
-      final updatedEvent = event.copyWith(isCompleted: true);
+      final updatedEvent = event.copyWith(
+        isCompleted: true,
+        status: isOutgoing ? 'paid' : 'received',
+        wallet: acc.name,
+        amount: amount,
+      );
       await FutureEventStorage.updateEvent(updatedEvent);
 
       // also clear from bills if it's there
@@ -963,32 +1389,119 @@ class BaiAssistant {
       final newBalanceStr = _formatNumberWithCommas(
         newBalance.toStringAsFixed(2),
       );
-      final icon = _accountIconToken(acc);
+      final balanceLine = '${acc.name} balance: P $newBalanceStr';
 
       _resetState();
       if (isOutgoing) {
         return BaiReply(
-          "💸 Paid Bill!\n\n${event.description}    -$_currency$amountStr $icon\nRemaining balance :    $_currency$newBalanceStr $icon",
-          quickReplies: const [
-            "What is my total balance?",
-            "Check account balances",
-          ],
+          '✅ Payment recorded!\n${_dueEventDisplayName(event)} Bill  P-$amountStr was paid from ${acc.name}.\n$balanceLine',
           highlightColor: 'red',
         );
       } else {
         return BaiReply(
-          "💵 Received Income!\n\n${event.description}    +$_currency$amountStr $icon\nNew Balance :    $_currency$newBalanceStr $icon",
-          quickReplies: const [
-            "What is my total balance?",
-            "Check account balances",
-          ],
+          '✅ ${_dueEventDisplayName(event)} received!\nP $amountStr was added to your ${acc.name} wallet.\n$balanceLine',
           highlightColor: 'green',
         );
       }
     } catch (e) {
-      _resetState();
       return BaiReply("⚠️ ${e.toString()}");
     }
+  }
+
+  BaiReply _duePaymentReminder() {
+    final event = _pendingDueEvent!;
+    final isOutgoing = _pendingEventIsOutgoing();
+    final amount = _formatNumberWithCommas(event.amount.toStringAsFixed(2));
+    final name = _dueEventDisplayName(event);
+    return BaiReply(
+      isOutgoing
+          ? '📅 Reminder: $name Bill (P-$amount) is due today. Did you pay it?'
+          : '💰 Reminder: $name (P $amount) is expected today. Did you receive it?',
+      quickReplies: const ['Yes', 'No'],
+    );
+  }
+
+  Future<BaiReply> _handleDuePaymentAmountConfirmation(String input) async {
+    final normalized = input.trim().toLowerCase();
+    if (RegExp(r'^(?:yes|y|yeah|yep|sure)\b').hasMatch(normalized)) {
+      _step = BaiStep.awaitingDuePaymentAmount;
+      return const BaiReply('What is the new amount?');
+    }
+    if (RegExp(r'^(?:no|n|nope)\b').hasMatch(normalized)) {
+      _step = BaiStep.awaitingDuePaymentAccount;
+      final accounts = await FinanceStorage.loadAccounts();
+      return BaiReply(
+        'Which wallet would you like to use? ${_availableWalletsText(accounts)}',
+        quickReplies: _walletNames(accounts),
+      );
+    }
+    return const BaiReply(
+      'Would you like to change the amount? Please answer yes or no.',
+      quickReplies: ['Yes', 'No'],
+    );
+  }
+
+  Future<BaiReply> _handleDuePaymentAmountResponse(String input) async {
+    final amount = _parseExpenseAmount(input);
+    if (amount == null || !amount.isFinite || amount <= 0) {
+      return const BaiReply('Please enter a valid amount, for example 250.00.');
+    }
+    _pendingDueAmount = amount;
+    _step = BaiStep.awaitingDuePaymentAccount;
+    final accounts = await FinanceStorage.loadAccounts();
+    return BaiReply(
+      'Which wallet would you like to use? ${_availableWalletsText(accounts)}',
+      quickReplies: _walletNames(accounts),
+    );
+  }
+
+  Future<void> _rescheduleDueEvent(
+    FutureEvent event,
+    DateTime date,
+    int rescheduleCount,
+  ) async {
+    await FutureEventStorage.updateEvent(
+      event.copyWith(
+        scheduledDate: date,
+        rescheduleCount: rescheduleCount,
+        status: 'pending',
+        isCompleted: false,
+      ),
+    );
+    final bills = await BillStorage.loadBills();
+    final index = bills.indexWhere((bill) => bill.id == 'future_${event.id}');
+    if (index >= 0) {
+      bills[index] = bills[index].copyWith(dueDate: date);
+      await BillStorage.saveBills(bills);
+    }
+  }
+
+  BaiReply _handleDueRescheduleDecision(String input) {
+    final normalized = input.trim().toLowerCase();
+    if (RegExp(r'^(?:yes|y|yeah|yep|sure)\b').hasMatch(normalized)) {
+      _step = BaiStep.awaitingDueRescheduleDate;
+      return const BaiReply('What new date would you like to set?');
+    }
+    if (RegExp(r'^(?:no|n|nope)\b').hasMatch(normalized)) {
+      _resetState();
+      return const BaiReply('Okay, I will keep reminding you on the due date.');
+    }
+    return const BaiReply(
+      'Would you like to set a new date? Please answer yes or no.',
+      quickReplies: ['Yes', 'No'],
+    );
+  }
+
+  Future<BaiReply> _handleDueRescheduleDate(String input) async {
+    final date = _parseUpcomingBillDate(input, allowBareDay: true);
+    if (date == null) {
+      return const BaiReply('What new date would you like to set?');
+    }
+    final event = _pendingDueEvent!;
+    await _rescheduleDueEvent(event, date, 0);
+    final dateText = _formatBillDate(date);
+    _resetState();
+    return BaiReply('Okay, I moved it to $dateText. I will remind you then.');
   }
 
   // ═══════════════════════════════════════════════
@@ -1136,7 +1649,6 @@ class BaiAssistant {
     if (_hasFutureExpenseSignal(n) || !_isExpenseIntent(n)) return null;
 
     final accounts = await FinanceStorage.loadAccounts();
-    final detectedAccount = _findMentionedAccount(n, accounts);
     _pendingExpenseAccount = _findExpenseWallet(n, accounts);
     final item = _extractExpenseItemFragment(n, _pendingExpenseAccount);
     if (item.isNotEmpty) {
@@ -1155,16 +1667,6 @@ class BaiAssistant {
         _pendingExpenseDescription!.isEmpty) {
       return await _continueExpenseFlow();
     }
-    if (detectedAccount != null &&
-        !_expenseWalletNames.any(
-          (name) => name.toLowerCase() == detectedAccount.name.toLowerCase(),
-        )) {
-      _step = BaiStep.awaitingExpenseAccount;
-      return const BaiReply(
-        "I couldn't find that wallet. Available wallets: $_expenseWalletList. Which one would you like to use?",
-      );
-    }
-
     return await _continueExpenseFlow();
   }
 
@@ -2686,6 +3188,8 @@ class BaiAssistant {
       category: category,
       description: cleanTitle,
       scheduledDate: scheduledDate,
+      type: isOutgoing ? 'bill' : 'income',
+      status: 'pending',
       frequency: frequency,
       entity: entity.isNotEmpty ? entity : null,
     );
@@ -3124,8 +3628,9 @@ class BaiAssistant {
     } else if (_step == BaiStep.awaitingExpenseAccount) {
       final wallet = _findExpenseWallet(input, accounts);
       if (wallet == null) {
-        return const BaiReply(
-          "I couldn't find that wallet. Available wallets: $_expenseWalletList. Which one would you like to use?",
+        return BaiReply(
+          _unknownWalletText(accounts),
+          quickReplies: _walletNames(accounts),
         );
       }
       _pendingExpenseAccount = wallet;
@@ -3145,9 +3650,11 @@ class BaiAssistant {
       return const BaiReply('What did you spend from your wallet?');
     }
     if (_pendingExpenseAccount == null) {
+      final accounts = await FinanceStorage.loadAccounts();
       _step = BaiStep.awaitingExpenseAccount;
-      return const BaiReply(
-        'Which wallet did you spend it from? Available wallets: $_expenseWalletList.',
+      return BaiReply(
+        'Which wallet did you spend it from? ${_availableWalletsText(accounts)}',
+        quickReplies: _walletNames(accounts),
       );
     }
 
@@ -3222,6 +3729,9 @@ class BaiAssistant {
   Future<BaiReply> _handleScheduledEntryFlow(String input) async {
     if (_pendingScheduledType == 'bill') {
       return await _handleUpcomingBillFlow(input);
+    }
+    if (_pendingScheduledType == 'income') {
+      return await _handleUpcomingIncomeFlow(input);
     }
 
     final n = input.toLowerCase();
@@ -3438,6 +3948,14 @@ class BaiAssistant {
     return _titleCase(name);
   }
 
+  double? _extractUpcomingIncomeAmount(String text) {
+    final withoutNameNumber = text.replaceAll(
+      RegExp(r'\b13th\s+month(?:\s+pay)?\b', caseSensitive: false),
+      ' ',
+    );
+    return _extractUpcomingBillAmount(withoutNameNumber);
+  }
+
   double? _extractUpcomingBillAmount(String text) {
     var amountText = _removeUpcomingBillDate(text);
     final match = RegExp(
@@ -3526,6 +4044,28 @@ class BaiAssistant {
       return _parseDateFromText(normalized);
     }
 
+    final weekdayMatch = RegExp(
+      r'\b(?:(?:on|by|this|the|next)\s+)?(?:the\s+)?(mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)\b',
+    ).firstMatch(normalized);
+    if (weekdayMatch != null) {
+      const weekdayPrefixes = {
+        'mon': DateTime.monday,
+        'tue': DateTime.tuesday,
+        'wed': DateTime.wednesday,
+        'thu': DateTime.thursday,
+        'fri': DateTime.friday,
+        'sat': DateTime.saturday,
+        'sun': DateTime.sunday,
+      };
+      final token = weekdayMatch.group(1)!;
+      final target = weekdayPrefixes[token.substring(0, 3)]!;
+      var daysUntil = (target - now.weekday + 7) % 7;
+      if (daysUntil == 0 || weekdayMatch.group(0)!.startsWith('next ')) {
+        daysUntil += 7;
+      }
+      return DateTime(now.year, now.month, now.day + daysUntil);
+    }
+
     final markedDay = RegExp(
       r'\b(?:on|due|by|this|the)\s+(?:the\s+)?(\d{1,2})(?:st|nd|rd|th)?\b',
     ).firstMatch(normalized);
@@ -3581,7 +4121,7 @@ class BaiAssistant {
     );
     result = result.replaceAll(
       RegExp(
-        r'\b(?:next\s+week|next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|tomorrow)\b',
+        r'\b(?:next\s+week|next\s+(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)|(?:(?:on|by|this|the|next)\s+)?(?:the\s+)?(?:mon(?:day)?|tue(?:sday)?|wed(?:nesday)?|thu(?:rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?)|tomorrow)\b',
       ),
       ' ',
     );
@@ -3642,6 +4182,8 @@ class BaiAssistant {
       category: category,
       description: displayName,
       scheduledDate: date,
+      type: 'bill',
+      status: 'pending',
       frequency: 'Once',
     );
 
@@ -3690,6 +4232,36 @@ class BaiAssistant {
       return await _handleUpcomingBillFlow(n);
     }
 
+    final incomeNamePattern = RegExp(
+      r'\b(?:salary|allowance|commission|bonus|13th\s+month(?:\s+pay)?|refund|freelance\s+payment|business\s+income|rental\s+income|pension|cashback)\b',
+    );
+    final incomeFuturePattern = RegExp(
+      r'\b(?:will\s+have|will\s+receive|will\s+get|will\s+be\s+paid|expect(?:ing)?|incoming|coming\s+on|on|by)\b',
+    );
+    final hasIncomeName = incomeNamePattern.hasMatch(n);
+    final hasIncomeFutureSignal =
+        incomeFuturePattern.hasMatch(n) &&
+        RegExp(
+          r'\b(?:tomorrow|next\s+week|next\s+(?:mon|tue|wed|thu|fri|sat|sun)\w*|(?:on|by|this)\s+(?:the\s+)?\d{1,2}|(?:on|by)\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|january|february|march|april|june|july|august|september|october|november|december)|(?:on|by)\s+(?:the\s+)?(?:mon|tue|wed|thu|fri|sat|sun)\w*)\b|'
+          r'\b(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\s+\d{1,2}\b|\b\d{1,2}/\d{1,2}\b',
+        ).hasMatch(n);
+    final isPastIncome = RegExp(
+      r'\b(?:received|earned|got\s+paid|just\s+got|was\s+paid)\b',
+    ).hasMatch(n);
+    final unnamedIncomingPayment =
+        RegExp(r'\bwill\s+be\s+paid\b').hasMatch(n) &&
+        RegExp(
+          r'\b(?:on|by)\s+(?:the\s+)?(?:\d{1,2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mon|tue|wed|thu|fri|sat|sun)\w*)\b',
+        ).hasMatch(n);
+    if ((hasIncomeName || unnamedIncomingPayment) &&
+        hasIncomeFutureSignal &&
+        !isPastIncome) {
+      _resetState();
+      _pendingScheduledType = 'income';
+      _step = BaiStep.awaitingScheduledName;
+      return await _handleUpcomingIncomeFlow(n);
+    }
+
     final futureSignals = RegExp(
       r'(will have|will receive|will get|will be|am getting|expecting|incoming|due|coming on|need to pay|have to pay|on \d+|this \w+|by \d+|remind me|i have)',
       caseSensitive: false,
@@ -3701,5 +4273,141 @@ class BaiAssistant {
       return await _handleScheduledEntryFlow(n);
     }
     return null;
+  }
+
+  Future<BaiReply> _handleUpcomingIncomeFlow(String input) async {
+    final normalized = _normalizeFutureText(input);
+    if (_isCancellation(normalized)) {
+      _resetState();
+      return const BaiReply('Okay, I cancelled that. Nothing was saved.');
+    }
+
+    if (input.trim().isNotEmpty &&
+        (_step == BaiStep.awaitingScheduledName ||
+            _step == BaiStep.awaitingScheduledAmount ||
+            _step == BaiStep.awaitingScheduledDate)) {
+      if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
+        final name = _extractUpcomingIncomeName(normalized);
+        if (name.isNotEmpty) _pendingScheduledName = name;
+      }
+
+      if (_pendingScheduledAmount == null) {
+        final amount = _extractUpcomingIncomeAmount(normalized);
+        if (amount != null && amount.isFinite && amount > 0) {
+          _pendingScheduledAmount = amount;
+        }
+      }
+
+      if (_pendingScheduledDateTime == null) {
+        final date = _parseUpcomingBillDate(
+          normalized,
+          allowBareDay: _step == BaiStep.awaitingScheduledDate,
+        );
+        if (date != null) {
+          _pendingScheduledDateTime = date;
+          _pendingScheduledDate = _formatBillDate(date);
+        }
+      }
+    }
+
+    if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
+      _step = BaiStep.awaitingScheduledName;
+      return const BaiReply('What kind of incoming money is this?');
+    }
+    if (_pendingScheduledAmount == null) {
+      _step = BaiStep.awaitingScheduledAmount;
+      return BaiReply('How much is your ${_pendingScheduledName!}?');
+    }
+    if (_pendingScheduledDateTime == null) {
+      _step = BaiStep.awaitingScheduledDate;
+      return BaiReply(
+        'On what date will you receive your ${_pendingScheduledName!}?',
+      );
+    }
+    return await _saveUpcomingIncome();
+  }
+
+  String _extractUpcomingIncomeName(String text) {
+    final knownName = RegExp(
+      r'\b(?:13th\s+month(?:\s+pay)?|freelance\s+payment|business\s+income|rental\s+income|salary|allowance|commission|bonus|refund|pension|cashback)\b',
+    ).firstMatch(text);
+    if (knownName != null) return _titleCase(knownName.group(0)!);
+
+    var name = _removeUpcomingBillDate(text);
+    name = name.replaceAll(
+      RegExp(r'(?<![\w/])\d+(?:,\d{3})*(?:\.\d+)?\s*[km]?\b'),
+      ' ',
+    );
+    name = name.replaceAll(
+      RegExp(r'\b(?:p|php|peso|pesos)\b|₱', caseSensitive: false),
+      ' ',
+    );
+    name = name.replaceAll(
+      RegExp(
+        r'\b(?:i|my|will|have|receive|received|get|got|be|paid|expect|expecting|incoming|coming|on|by|this|the|a|an|of|is|arrive|arrives|arriving|money|income)\b',
+        caseSensitive: false,
+      ),
+      ' ',
+    );
+    name = name.replaceAll(RegExp(r'[^\w\s-]'), ' ');
+    name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return _titleCase(name);
+  }
+
+  Future<BaiReply> _saveUpcomingIncome() async {
+    final name = _titleCase(_pendingScheduledName!);
+    final amount = _pendingScheduledAmount!;
+    final date = _pendingScheduledDateTime!;
+    final id = DateTime.now().microsecondsSinceEpoch.toString();
+    final event = FutureEvent(
+      id: id,
+      amount: amount,
+      category: name,
+      description: name,
+      scheduledDate: date,
+      type: 'income',
+      status: 'pending',
+      frequency: 'Once',
+    );
+
+    await FutureEventStorage.addEvent(event);
+    final bills = await BillStorage.loadBills();
+    bills.add(
+      Bill(
+        id: 'future_$id',
+        type: name,
+        amount: amount,
+        dueDate: date,
+        isIncome: true,
+        frequency: 'Once',
+      ),
+    );
+    await BillStorage.saveBills(bills);
+
+    final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
+    final confirmation =
+        '${_incomeEmoji(name)} Incoming Transaction Added to Calendar!\n'
+        '$name            P $formattedAmount\n'
+        'Date:             ${_formatBillDate(date)}\n'
+        'I will remind you on the day it arrives.';
+    _resetState();
+    return BaiReply(confirmation, highlightColor: 'green');
+  }
+
+  String _incomeEmoji(String name) {
+    final normalized = name.toLowerCase();
+    if (normalized.contains('bonus') || normalized.contains('13th month')) {
+      return '🎁';
+    }
+    if (normalized.contains('allowance')) return '💵';
+    if (normalized.contains('commission') ||
+        normalized.contains('business') ||
+        normalized.contains('freelance')) {
+      return '📈';
+    }
+    if (normalized.contains('refund') || normalized.contains('cashback')) {
+      return '🔁';
+    }
+    return '💰';
   }
 }

@@ -54,7 +54,9 @@ class FutureEventStorage {
 
   static Future<List<FutureEvent>> getDueEvents() async {
     final events = await loadEvents();
-    return events.where((e) => e.isDue && !e.isCompleted).toList()
+    return events
+        .where((e) => e.isDue && e.status == 'pending' && !e.isCompleted)
+        .toList()
       ..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
   }
 }

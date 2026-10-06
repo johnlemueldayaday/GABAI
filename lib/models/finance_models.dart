@@ -249,6 +249,11 @@ class FutureEvent {
   final String?
   entity; // Optional: who is sending/receiving (e.g., "Lance", "Client")
   final bool isCompleted;
+  final String type; // 'bill' or 'income'
+  final String status; // 'pending', 'paid', or 'received'
+  final int rescheduleCount;
+  final String? wallet;
+  final DateTime createdAt;
 
   FutureEvent({
     required this.id,
@@ -256,10 +261,24 @@ class FutureEvent {
     required this.category,
     required this.description,
     required this.scheduledDate,
+    String? type,
+    String? status,
+    this.rescheduleCount = 0,
+    this.wallet,
+    DateTime? createdAt,
     this.frequency = 'Once',
     this.entity,
-    this.isCompleted = false,
-  });
+    bool isCompleted = false,
+  }) : type = type ?? _inferFutureEventType(category, description),
+       status =
+           status ??
+           (isCompleted
+               ? (_inferFutureEventType(category, description) == 'income'
+                     ? 'received'
+                     : 'paid')
+               : 'pending'),
+       createdAt = createdAt ?? DateTime.now(),
+       isCompleted = isCompleted || (status != null && status != 'pending');
 
   FutureEvent copyWith({
     String? id,
@@ -270,7 +289,18 @@ class FutureEvent {
     String? frequency,
     String? entity,
     bool? isCompleted,
+    String? type,
+    String? status,
+    int? rescheduleCount,
+    String? wallet,
+    DateTime? createdAt,
   }) {
+    final nextType = type ?? this.type;
+    final nextStatus =
+        status ??
+        (isCompleted == true
+            ? (nextType == 'income' ? 'received' : 'paid')
+            : this.status);
     return FutureEvent(
       id: id ?? this.id,
       amount: amount ?? this.amount,
@@ -279,7 +309,12 @@ class FutureEvent {
       scheduledDate: scheduledDate ?? this.scheduledDate,
       frequency: frequency ?? this.frequency,
       entity: entity ?? this.entity,
-      isCompleted: isCompleted ?? this.isCompleted,
+      isCompleted: isCompleted ?? nextStatus != 'pending',
+      type: nextType,
+      status: nextStatus,
+      rescheduleCount: rescheduleCount ?? this.rescheduleCount,
+      wallet: wallet ?? this.wallet,
+      createdAt: createdAt ?? this.createdAt,
     );
   }
 
@@ -292,6 +327,11 @@ class FutureEvent {
     'frequency': frequency,
     'entity': entity,
     'isCompleted': isCompleted,
+    'type': type,
+    'status': status,
+    'rescheduleCount': rescheduleCount,
+    'wallet': wallet,
+    'createdAt': createdAt.toIso8601String(),
   };
 
   factory FutureEvent.fromJson(Map<String, dynamic> json) => FutureEvent(
@@ -303,6 +343,11 @@ class FutureEvent {
     frequency: json['frequency'] ?? 'Once',
     entity: json['entity'],
     isCompleted: json['isCompleted'] ?? false,
+    type: json['type'],
+    status: json['status'],
+    rescheduleCount: json['rescheduleCount'] ?? 0,
+    wallet: json['wallet'],
+    createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
   );
 
   /// Returns true if the event is due today or overdue.
@@ -329,4 +374,14 @@ class FutureEvent {
     );
     return eventDay.isAfter(todayStart);
   }
+}
+
+String _inferFutureEventType(String category, String description) {
+  final searchable = '$category $description'.toLowerCase();
+  if (RegExp(
+    r'\b(?:salary|freelance|business|allowance|scholarship|investment|remittance|bonus|commission|pension|rental income|dividend|gift|refund|reimbursement|cashback)\b',
+  ).hasMatch(searchable)) {
+    return 'income';
+  }
+  return 'bill';
 }

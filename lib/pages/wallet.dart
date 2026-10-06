@@ -112,6 +112,14 @@ class _WalletPageState extends State<WalletPage> {
       );
     }
 
+    accounts = [
+      ...accounts.where(
+        (account) => account.name.trim().toLowerCase() == 'cash',
+      ),
+      ...accounts.where(
+        (account) => account.name.trim().toLowerCase() != 'cash',
+      ),
+    ];
     _accounts = accounts;
 
     _transactions = await FinanceStorage.loadTransactions();
@@ -679,9 +687,7 @@ class _WalletPageState extends State<WalletPage> {
   Widget build(BuildContext context) {
     final addedWallets = _accounts.where((account) {
       return walletOptions.any(
-        (wallet) =>
-            wallet.name.toLowerCase() == account.name.toLowerCase() &&
-            wallet.name.toLowerCase() != 'cash',
+        (wallet) => wallet.name.toLowerCase() == account.name.toLowerCase(),
       );
     }).toList();
 
