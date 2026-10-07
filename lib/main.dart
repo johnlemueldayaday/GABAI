@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gabay/pages/cart.dart';
+import 'package:gabay/pages/cart.dart'
+    show GroceryApp, groceryScaffoldMessengerKey;
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/notification_service.dart';
+import 'package:gabay/services/bill_calendar_service.dart';
+import 'package:gabay/services/bill_storage.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,10 +20,35 @@ void main() async {
   await GroceryStorage.loadAll();
   await PriceStorage.load();
   await SettingsService().load();
-  
-  // Initialize notification service
+
   await NotificationService().init();
 
   runApp(const GroceryApp());
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    _restoreBillReminders();
+  });
 }
 
+Future<void> _restoreBillReminders() async {
+  final bills = await BillStorage.loadBills();
+  if (bills.isEmpty) return;
+
+  final errors = <String>[];
+  try {
+    await NotificationService().rescheduleAllBills(bills);
+  } catch (error) {
+    errors.add('Phone notifications: $error');
+  }
+
+  try {
+    await BillCalendarService().syncAllBills(bills);
+  } catch (error) {
+    errors.add('Phone calendar: $error');
+  }
+
+  if (errors.isNotEmpty) {
+    groceryScaffoldMessengerKey.currentState?.showSnackBar(
+      SnackBar(content: Text('Reminder setup issue. ${errors.join(' ')}')),
+    );
+  }
+}

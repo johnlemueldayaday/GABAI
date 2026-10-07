@@ -60,6 +60,7 @@ class BaiAssistant {
   // Cooking state (from Ramsey)
   final RamseyCookingAssistant _cookingEngine = RamseyCookingAssistant();
   BaiStep _step = BaiStep.idle;
+  List<String> _undoTransactionIds = [];
 
   // Track last spending for breakdown follow-up
   bool _awaitingBreakdown = false;
@@ -232,6 +233,12 @@ class BaiAssistant {
     return greeting;
   }
 
+  void resetConversation() {
+    _resetState();
+    _cookingEngine.resetConversation();
+    _undoTransactionIds = [];
+  }
+
   String _dueEventDisplayName(FutureEvent event) {
     final description = event.description.trim();
     if (description.toLowerCase().endsWith(' bill')) {
@@ -267,6 +274,7 @@ class BaiAssistant {
 
     final listType = _scheduledListType(normalized);
     if (listType != null) {
+      if (listType == 'bill') return await _billsSummaryReply();
       final matchingEvents = events.where((event) {
         if (listType == 'bill') return event.type == 'bill';
         if (listType == 'income') return event.type == 'income';
@@ -592,16 +600,88 @@ class BaiAssistant {
 
   /// Main intent router — the brain of BAI
   Future<BaiReply> handle(String rawInput) async {
+    final normalized = rawInput.trim().toLowerCase();
+    final undoIds = _undoTransactionIds;
+    _undoTransactionIds = [];
+
+    if (_isUndoCommand(normalized)) {
+      if (undoIds.isEmpty) {
+        resetConversation();
+        return const BaiReply(
+          'There is no recent transaction to undo.',
+          quickReplies: ['What is my total balance?'],
+        );
+      }
+      resetConversation();
+      return await _undoTransactions(undoIds);
+    }
+
+    final transactionsBefore = await FinanceStorage.loadTransactions();
+    final reply = await _handleMessage(rawInput);
+    final existingIds = transactionsBefore.map((transaction) => transaction.id).toSet();
+    final transactionsAfter = await FinanceStorage.loadTransactions();
+    final resultingIds = transactionsAfter.map((transaction) => transaction.id).toSet();
+    if (existingIds.every(resultingIds.contains)) {
+      _undoTransactionIds = transactionsAfter
+          .where((transaction) => !existingIds.contains(transaction.id))
+          .map((transaction) => transaction.id)
+          .toList();
+    }
+    return reply;
+  }
+
+  Future<BaiReply> _handleMessage(String rawInput) async {
     final input = rawInput.trim();
     final n = input.toLowerCase(); // normalized
 
     // ─── 0. GREETING / HELP ───
     if (n == 'help' || n == 'commands' || n.contains('what can you do')) {
+      resetConversation();
       return _helpReply();
     }
     if (n == 'start over' || n == 'reset') {
-      _resetState();
+      resetConversation();
       return greeting;
+    }
+
+    final quickAction = n.replaceFirst(RegExp(r'^[^a-z]+'), '').trim();
+    if (quickAction == 'do something else') {
+      resetConversation();
+      return const BaiReply("Sure! What else can I help you with?");
+    }
+    if (quickAction == 'another expense') {
+      resetConversation();
+      _step = BaiStep.awaitingExpenseAmount;
+      return const BaiReply(
+        'How much did you spend?',
+        quickReplies: ['❌ Cancel', '🔄 Do Something Else'],
+      );
+    }
+    if (quickAction == 'log income') {
+      resetConversation();
+      _step = BaiStep.awaitingIncomeAmount;
+      return const BaiReply('How much did you receive?');
+    }
+    if (quickAction == 'check balance') {
+      resetConversation();
+      return (await _tryBalanceCheck('check balance'))!;
+    }
+    if (quickAction == 'done') {
+      resetConversation();
+      return const BaiReply("Okay! Let me know if you need anything else.");
+    }
+
+    if (_isUpcomingBillsInquiry(n)) {
+      resetConversation();
+      return await _billsSummaryReply();
+    }
+    final freshBalanceReply = await _tryBalanceCheck(n);
+    if (freshBalanceReply != null) {
+      if (!_isExpenseFlowActive) resetConversation();
+      return freshBalanceReply;
+    }
+    if (_step != BaiStep.idle && _isFreshQuestion(n)) {
+      resetConversation();
     }
 
     if (_step == BaiStep.awaitingScheduledDeleteConfirmation ||
@@ -634,6 +714,8 @@ class BaiAssistant {
         _resetState();
         return const BaiReply("Okay, I cancelled that. Nothing was saved.");
       }
+      final balanceReply = await _tryBalanceCheck(n);
+      if (balanceReply != null) return balanceReply;
       if (!_isNewCommandDuringExpense(n)) {
         return await _handleOngoingExpenseFlow(input);
       }
@@ -695,14 +777,6 @@ class BaiAssistant {
     if (expenseResult != null) return expenseResult;
 
     // ─── 1. STATE MACHINE (mid-conversation flows take priority) ───
-    final undoResult = await _tryUndo(n);
-    if (undoResult != null &&
-        _step != BaiStep.awaitingDuePaymentAction &&
-        _step != BaiStep.awaitingDuePaymentAccount) {
-      _resetState();
-      return undoResult;
-    }
-
     if (_step != BaiStep.idle) {
       return await _handleStateMachine(n);
     }
@@ -787,15 +861,6 @@ class BaiAssistant {
   // ═══════════════════════════════════════════════
 
   Future<BaiReply> _handleStateMachine(String n) async {
-    if (_step != BaiStep.awaitingDuePaymentAction &&
-        _step != BaiStep.awaitingDuePaymentAccount) {
-      final undoResult = await _tryUndo(n);
-      if (undoResult != null) {
-        _resetState();
-        return undoResult;
-      }
-    }
-
     if (_step == BaiStep.awaitingScheduledName ||
         _step == BaiStep.awaitingScheduledAmount ||
         _step == BaiStep.awaitingScheduledDate) {
@@ -959,7 +1024,13 @@ class BaiAssistant {
     'never mind',
     'nevermind',
     'forget it',
-  }.contains(input.trim().toLowerCase());
+  }.contains(
+    input
+        .trim()
+        .toLowerCase()
+        .replaceFirst(RegExp(r'^[^a-z]+'), '')
+        .trim(),
+  );
 
   bool _isNewCommandDuringExpense(String input) {
     final n = input.toLowerCase().trim();
@@ -1791,6 +1862,8 @@ class BaiAssistant {
         n.contains('how much money do i have') ||
         n.contains('total balance') ||
         n.contains('financial status') ||
+        n == 'balance' ||
+        n == 'check balance' ||
         n == 'check balances' ||
         n == 'check account balances') {
       final accounts = await FinanceStorage.loadAccounts();
@@ -1826,69 +1899,40 @@ class BaiAssistant {
     return null;
   }
 
-  Future<BaiReply?> _tryUndo(String n) async {
-    final l = n.toLowerCase();
-    final undoKeywords = [
-      'undo',
-      'no',
-      'cancel',
-      'mali',
-      'wrong',
-      'erase that',
-      'revert',
-      'delete last',
-      'delete last entry',
-      'remove last',
-      'cancel last',
-      'nvm',
-      'nevermind',
-      'delete',
-      'undo previous',
-      'revert previous',
-      'undo last transaction',
-      'revert previous transaction',
-    ];
+  bool _isUndoCommand(String input) => RegExp(
+    r'^(?:please\s+)?(?:undo(?:\s+(?:that|last(?:\s+transaction)?|previous(?:\s+transaction)?))?|revert(?:\s+(?:that|last transaction|previous transaction))?|delete last transaction|remove last transaction|erase that|mali|wrong)$',
+  ).hasMatch(input.trim());
 
-    final exactUndoKeywords = ['undo', 'no', 'cancel', 'mali', 'wrong'];
-    final phraseUndoKeywords = undoKeywords.where(
-      (k) => !exactUndoKeywords.contains(k),
-    );
-
-    if (!exactUndoKeywords.contains(l) &&
-        !phraseUndoKeywords.any((k) => l.contains(k))) {
-      return null;
+  Future<BaiReply> _undoTransactions(List<String> transactionIds) async {
+    final deletedTransactions = <FinanceTransaction>[];
+    for (final id in transactionIds.reversed) {
+      final transaction = await FinanceStorage.deleteTransaction(id);
+      if (transaction != null) deletedTransactions.add(transaction);
     }
-
-    final deletedTxn = await FinanceStorage.deleteLastTransaction();
-    if (deletedTxn == null) {
-      return BaiReply(
-        "⚠️ No transactions to undo.",
-        quickReplies: const ["What is my total balance?"],
+    if (deletedTransactions.isEmpty) {
+      return const BaiReply(
+        'There is no recent transaction to undo.',
+        quickReplies: ['What is my total balance?'],
       );
     }
 
     final accounts = await FinanceStorage.loadAccounts();
-    Account? restoredAccount;
-    for (final account in accounts) {
-      if (account.id == deletedTxn.accountId) {
-        restoredAccount = account;
-        break;
-      }
-    }
+    final details = deletedTransactions.map((transaction) {
+      final account = accounts.where((item) => item.id == transaction.accountId);
+      final accountLabel = account.isEmpty
+          ? transaction.accountName
+          : _accountLabel(account.first);
+      final balanceLine = account.isEmpty
+          ? ''
+          : '\nNew balance: $_currency${_formatNumberWithCommas(account.first.balance.toStringAsFixed(2))}';
+      return '${transaction.description} removed.\n$accountLabel balance restored.$balanceLine';
+    }).join('\n\n');
 
-    final restoredLabel = restoredAccount != null
-        ? _accountLabel(restoredAccount)
-        : deletedTxn.accountName;
-    final balanceLine = restoredAccount != null
-        ? "\n\nNew Balance: $_currency${_formatNumberWithCommas(restoredAccount.balance.toStringAsFixed(2))}"
-        : '';
     return BaiReply(
-      "\u{1F504} Transaction Undo!\n\n"
-      "${deletedTxn.description} removed.\n"
-      "$restoredLabel balance restored.$balanceLine",
+      '\u{1F504} Transaction Undo!\n\n$details',
       quickReplies: const [
-        "What is my total balance?",
-        "Check account balances",
+        'What is my total balance?',
+        'Check account balances',
       ],
     );
   }
@@ -1991,10 +2035,55 @@ class BaiAssistant {
   }
 
   Future<BaiReply> _billsSummaryReply() async {
-    final bills = await BillStorage.loadBills();
-    _cookingEngine.updateBills(bills);
-    final reply = _cookingEngine.handle('upcoming bills');
-    return _fromRamsey(reply);
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final bills = (await BillStorage.loadBills())
+        .where(
+          (bill) =>
+              !bill.isIncome &&
+              !bill.isPaid &&
+              !DateTime(
+                bill.dueDate.year,
+                bill.dueDate.month,
+                bill.dueDate.day,
+              ).isBefore(today),
+        )
+        .toList();
+    final billIds = bills.map((bill) => bill.id).toSet();
+    final events = (await FutureEventStorage.loadEvents())
+        .where(
+          (event) =>
+              event.type == 'bill' &&
+              event.status == 'pending' &&
+              !event.isCompleted &&
+              !DateTime(
+                event.scheduledDate.year,
+                event.scheduledDate.month,
+                event.scheduledDate.day,
+              ).isBefore(today) &&
+              !billIds.contains('future_${event.id}'),
+        )
+        .toList();
+    final upcoming = [
+      ...bills.map(
+        (bill) => FutureEvent(
+          id: bill.id,
+          amount: bill.amount,
+          category: bill.type,
+          description: bill.type,
+          scheduledDate: bill.dueDate,
+          type: 'bill',
+          status: 'pending',
+          frequency: bill.frequency,
+        ),
+      ),
+      ...events,
+    ]..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
+
+    if (upcoming.isEmpty) {
+      return const BaiReply('You have no upcoming bills.');
+    }
+    return BaiReply('📅 Upcoming Events\n${_formatScheduledEvents(upcoming)}');
   }
 
   // ═══════════════════════════════════════════════
@@ -2151,6 +2240,23 @@ class BaiAssistant {
       n.contains('any bills') ||
       n.contains('bayad') ||
       n.contains('overdue');
+
+  bool _isUpcomingBillsInquiry(String n) => RegExp(
+    r'\b(?:upcoming\s+bills?|do i have (?:any )?bills?|any bills|what bills are due)\b',
+  ).hasMatch(n);
+
+  bool _isFreshQuestion(String input) =>
+      input.contains('?') ||
+      RegExp(
+        r'^(?:what|why|how|where|when|who|which|do|does|did|can|could|would|is|are|show|list|check|tell me)\b',
+      ).hasMatch(input) ||
+      _isCookingAsk(input) ||
+      _isMealPlanAsk(input) ||
+      _isSpendingAsk(input) ||
+      _isBudgetAsk(input) ||
+      _isAnalyticsAsk(input) ||
+      _isWeeklyBillAsk(input) ||
+      _isBillAsk(input);
 
   bool _isSpendingAsk(String n) =>
       n.contains('spend') ||
@@ -3626,6 +3732,9 @@ class BaiAssistant {
         _pendingExpenseCategory = _categorizeExpense(item);
       }
     } else if (_step == BaiStep.awaitingExpenseAccount) {
+      if (const {'ok', 'okay', 'sure'}.contains(n.trim())) {
+        return _continueExpenseFlow();
+      }
       final wallet = _findExpenseWallet(input, accounts);
       if (wallet == null) {
         return BaiReply(
@@ -3642,19 +3751,25 @@ class BaiAssistant {
   Future<BaiReply> _continueExpenseFlow() async {
     if (_pendingExpenseAmount == null) {
       _step = BaiStep.awaitingExpenseAmount;
-      return const BaiReply('How much did you spend from your wallet?');
+      return const BaiReply(
+        'How much did you spend from your wallet?',
+        quickReplies: ['❌ Cancel', '🔄 Do Something Else'],
+      );
     }
     if (_pendingExpenseDescription == null ||
         _pendingExpenseDescription!.trim().isEmpty) {
       _step = BaiStep.awaitingExpenseItem;
-      return const BaiReply('What did you spend from your wallet?');
+      return const BaiReply(
+        'What did you spend it on?',
+        quickReplies: ['❌ Cancel', '🔄 Do Something Else'],
+      );
     }
     if (_pendingExpenseAccount == null) {
       final accounts = await FinanceStorage.loadAccounts();
       _step = BaiStep.awaitingExpenseAccount;
       return BaiReply(
         'Which wallet did you spend it from? ${_availableWalletsText(accounts)}',
-        quickReplies: _walletNames(accounts),
+        quickReplies: [..._walletNames(accounts), '🔄 Do Something Else'],
       );
     }
 
@@ -3691,14 +3806,31 @@ class BaiAssistant {
 
       _resetState();
       return BaiReply(
-        '✅ Expense logged!\n$item  P-$amountText\nWallet: ${wallet.name}\nRemaining today: P $remainingText',
+        '✅ Expense logged!\n$item  P-$amountText\nWallet: ${wallet.name}\nRemaining today: P $remainingText\nAnything else?',
         quickReplies: const [
-          'What is my total balance?',
-          'Check account balances',
+          '➕ Another Expense',
+          '💰 Log Income',
+          '💼 Check Balance',
+          '👍 Done',
         ],
         highlightColor: 'red',
       );
     } catch (error) {
+      if (error.toString().contains('Insufficient funds')) {
+        _pendingExpenseAccount = null;
+        _step = BaiStep.awaitingExpenseAccount;
+        final accounts = await FinanceStorage.loadAccounts();
+        final alternatives = accounts.where(
+          (account) => account.id != wallet.id,
+        );
+        return BaiReply(
+          '⚠️ ${error.toString()}\nPlease choose another wallet.',
+          quickReplies: [
+            ..._walletNames(alternatives.toList()),
+            '🔄 Do Something Else',
+          ],
+        );
+      }
       return BaiReply("⚠️ ${error.toString()}", quickReplies: const ['Cancel']);
     }
   }
@@ -3748,7 +3880,7 @@ class BaiAssistant {
 
     if (n.contains('update') && n.contains('budget') || n.contains('spent')) {
       _resetState();
-      return handle(input); // Reroute as a fresh command
+      return _handleMessage(input); // Reroute as a fresh command
     }
 
     // 2. PARSE MISSING FIELDS
@@ -4263,7 +4395,7 @@ class BaiAssistant {
     }
 
     final futureSignals = RegExp(
-      r'(will have|will receive|will get|will be|am getting|expecting|incoming|due|coming on|need to pay|have to pay|on \d+|this \w+|by \d+|remind me|i have)',
+      r'(will have|will receive|will get|will be|am getting|expecting|incoming|due|coming on|need to pay|have to pay|on \d+|this \w+|by \d+|remind me)',
       caseSensitive: false,
     );
     final pastSignals = RegExp(r'(spent|bought|paid|received|got|earned)');

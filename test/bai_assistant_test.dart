@@ -680,7 +680,7 @@ void main() {
 
     final reply = await BaiAssistant().handle('Spent 500 from my budget');
 
-    expect(reply.text, 'What did you spend from your wallet?');
+    expect(reply.text, 'What did you spend it on?');
     expect(SettingsService().dailySpendingAllocation, 172.30);
     expect(await FinanceStorage.loadTransactions(), isEmpty);
   });
@@ -695,18 +695,31 @@ void main() {
       final assistant = BaiAssistant();
 
       final itemPrompt = await assistant.handle('I spent 300');
-      expect(itemPrompt.text, 'What did you spend from your wallet?');
+      expect(itemPrompt.text, 'What did you spend it on?');
+      expect(itemPrompt.quickReplies, ['❌ Cancel', '🔄 Do Something Else']);
 
       final walletPrompt = await assistant.handle('Shoes');
       expect(
         walletPrompt.text,
         'Which wallet did you spend it from? Available wallets: Cash, BDO.',
       );
+      expect(walletPrompt.quickReplies, [
+        'Cash',
+        'BDO',
+        '🔄 Do Something Else',
+      ]);
 
       final confirmation = await assistant.handle('BDO');
       expect(confirmation.text, contains('✅ Expense logged!\nShoes  P-300.00'));
       expect(confirmation.text, contains('Wallet: BDO'));
       expect(confirmation.text, contains('Remaining today: P -127.70'));
+      expect(confirmation.text, endsWith('Anything else?'));
+      expect(confirmation.quickReplies, [
+        '➕ Another Expense',
+        '💰 Log Income',
+        '💼 Check Balance',
+        '👍 Done',
+      ]);
       expect(SettingsService().dailySpendingAllocation, 172.30);
 
       final accounts = await FinanceStorage.loadAccounts();
@@ -718,6 +731,62 @@ void main() {
       expect(transactions, hasLength(1));
       expect(transactions.single.type, 'EXPENSE');
       expect(transactions.single.description, 'Shoes');
+    },
+  );
+
+  test('expense flow offers another wallet after insufficient funds', () async {
+    await FinanceStorage.saveAccounts([
+      Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 100),
+      Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 1000),
+    ]);
+    final assistant = BaiAssistant();
+
+    await assistant.handle('I spent 300');
+    await assistant.handle('Shoes');
+    final insufficient = await assistant.handle('Cash');
+
+    expect(insufficient.text, contains('Insufficient funds'));
+    expect(insufficient.text, contains('Please choose another wallet.'));
+    expect(insufficient.quickReplies, ['BDO', '🔄 Do Something Else']);
+    expect(await FinanceStorage.loadTransactions(), isEmpty);
+
+    final acknowledgement = await assistant.handle('okay');
+    expect(
+      acknowledgement.text,
+      contains('Which wallet did you spend it from?'),
+    );
+    expect(acknowledgement.text, isNot(contains("couldn't find")));
+
+    final balance = await assistant.handle('balance');
+    expect(balance.text, contains('Your Total Balance:'));
+
+    final confirmation = await assistant.handle('BDO');
+    expect(confirmation.text, contains('✅ Expense logged!\nShoes  P-300.00'));
+    expect(confirmation.text, contains('Wallet: BDO'));
+    expect(await FinanceStorage.loadTransactions(), hasLength(1));
+    final accounts = await FinanceStorage.loadAccounts();
+    expect(accounts.firstWhere((account) => account.id == 'cash').balance, 100);
+    expect(accounts.firstWhere((account) => account.id == 'bdo').balance, 700);
+  });
+
+  test(
+    'expense follow-up quick replies start their respective actions',
+    () async {
+      await FinanceStorage.saveAccounts([
+        Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
+      ]);
+      final assistant = BaiAssistant();
+
+      final anotherExpense = await assistant.handle('➕ Another Expense');
+      expect(anotherExpense.text, 'How much did you spend?');
+      await assistant.handle('❌ Cancel');
+
+      final income = await assistant.handle('💰 Log Income');
+      expect(income.text, 'How much did you receive?');
+      await assistant.handle('👍 Done');
+
+      final balance = await assistant.handle('💼 Check Balance');
+      expect(balance.text, contains('Your Total Balance:'));
     },
   );
 
@@ -1051,6 +1120,134 @@ void main() {
     expect(income.text, contains('Salary   P +8,000.00'));
     expect(income.text, isNot(contains('Electricity Bill')));
   });
+
+  test(
+    'asks all upcoming bills without starting a future-income prompt',
+    () async {
+      final today = DateTime.now();
+      final nearDue = DateTime(today.year, today.month, today.day + 3);
+      final laterDue = DateTime(today.year, today.month, today.day + 20);
+      await BillStorage.saveBills([
+        Bill(
+          id: 'future_loan-event',
+          type: 'Car Loan Bill',
+          amount: 2500,
+          dueDate: laterDue,
+        ),
+        Bill(id: 'water', type: 'Water Bill', amount: 450, dueDate: nearDue),
+        Bill(
+          id: 'paid-internet',
+          type: 'Internet Bill',
+          amount: 1200,
+          dueDate: nearDue,
+          isPaid: true,
+        ),
+        Bill(
+          id: 'salary',
+          type: 'Salary',
+          amount: 30000,
+          dueDate: laterDue,
+          isIncome: true,
+        ),
+      ]);
+      await FutureEventStorage.saveEvents([
+        FutureEvent(
+          id: 'loan-event',
+          amount: 2500,
+          category: 'Car Loan',
+          description: 'Car Loan Bill',
+          scheduledDate: laterDue,
+          type: 'bill',
+        ),
+        FutureEvent(
+          id: 'internet-event',
+          amount: 1200,
+          category: 'Internet',
+          description: 'Internet Bill',
+          scheduledDate: laterDue,
+          type: 'bill',
+        ),
+      ]);
+
+      final reply = await BaiAssistant().handle('Do I have upcoming bills?');
+
+      expect(reply.text, contains('📅 Upcoming Events'));
+      expect(reply.text, contains('Car Loan Bill'));
+      expect(reply.text, contains('Water Bill'));
+      expect(reply.text, contains('Internet Bill'));
+      expect(reply.text.split('Car Loan Bill'), hasLength(2));
+      expect(reply.text, isNot(contains('Salary')));
+      expect(reply.text, isNot(contains('When is')));
+      expect(reply.text, isNot(contains('How much is your')));
+    },
+  );
+
+  test(
+    'new balance question clears a pending scheduled-income prompt',
+    () async {
+      await FinanceStorage.saveAccounts([
+        Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
+      ]);
+      final assistant = BaiAssistant();
+      final prompt = await assistant.handle('I will receive salary');
+      expect(prompt.text, contains('How much'));
+
+      final balance = await assistant.handle('What is my total balance?');
+
+      expect(balance.text, contains('Your Total Balance'));
+      expect(balance.text, isNot(contains('On what date will you receive')));
+      expect(await FutureEventStorage.loadEvents(), isEmpty);
+    },
+  );
+
+  test('undo only removes a transaction on the next user message', () async {
+    await FinanceStorage.saveAccounts([
+      Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 500),
+    ]);
+    final assistant = BaiAssistant();
+
+    final logged = await assistant.handle('Spent 80 on coffee from Cash');
+    expect(logged.text, contains('Expense logged'));
+    final undo = await assistant.handle('undo');
+
+    expect(undo.text, contains('Transaction Undo'));
+    expect(await FinanceStorage.loadTransactions(), isEmpty);
+    expect((await FinanceStorage.loadAccounts()).single.balance, 500);
+  });
+
+  test(
+    'undo cannot remove a transaction after an unrelated balance query',
+    () async {
+      await FinanceStorage.saveAccounts([
+        Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 500),
+      ]);
+      final assistant = BaiAssistant();
+      await assistant.handle('Spent 80 on coffee from Cash');
+
+      final balance = await assistant.handle('What is my total balance?');
+      expect(balance.text, contains('Your Total Balance'));
+      final undo = await assistant.handle('undo');
+
+      expect(undo.text, contains('There is no recent transaction to undo'));
+      expect(await FinanceStorage.loadTransactions(), hasLength(1));
+      expect((await FinanceStorage.loadAccounts()).single.balance, 420);
+    },
+  );
+
+  test(
+    'resetting conversation discards pending prompts but keeps stored data',
+    () async {
+      final assistant = BaiAssistant();
+      final prompt = await assistant.handle('I will receive salary');
+      expect(prompt.text, contains('How much'));
+
+      assistant.resetConversation();
+      final unrelatedAmount = await assistant.handle('15000');
+
+      expect(unrelatedAmount.text, isNot(contains('salary')));
+      expect(await FutureEventStorage.loadEvents(), isEmpty);
+    },
+  );
 
   test(
     'scheduled deletion requires yes and removes its calendar mirror',

@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:gabay/models/bill_models.dart';
@@ -10,102 +12,144 @@ class NotificationService {
 
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
+  bool _initialized = false;
+  bool _permissionsGranted = false;
 
   Future<void> init() async {
+    if (_initialized) return;
+
     tz.initializeTimeZones();
+    final localTimezone = await FlutterTimezone.getLocalTimezone();
+    tz.setLocalLocation(tz.getLocation(localTimezone.identifier));
 
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/launcher_icon');
-
-    const DarwinInitializationSettings initializationSettingsIOS =
-        DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-    );
-
-    const InitializationSettings initializationSettings =
-        InitializationSettings(
-      android: initializationSettingsAndroid,
-      iOS: initializationSettingsIOS,
+    const initializationSettings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/launcher_icon'),
+      iOS: DarwinInitializationSettings(
+        requestAlertPermission: false,
+        requestBadgePermission: false,
+        requestSoundPermission: false,
+      ),
     );
 
     await flutterLocalNotificationsPlugin.initialize(
       settings: initializationSettings,
     );
+    _initialized = true;
+  }
+
+  Future<void> _ensurePermissions() async {
+    if (_permissionsGranted) return;
+
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final androidPlugin = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin
+          >();
+      final notificationsGranted =
+          await androidPlugin?.requestNotificationsPermission() ?? false;
+      final exactAlarmsGranted =
+          await androidPlugin?.requestExactAlarmsPermission() ?? false;
+      if (!notificationsGranted || !exactAlarmsGranted) {
+        throw StateError(
+          'Allow notifications and exact alarms in Android settings to receive bill reminders.',
+        );
+      }
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      final iosPlugin = flutterLocalNotificationsPlugin
+          .resolvePlatformSpecificImplementation<
+            IOSFlutterLocalNotificationsPlugin
+          >();
+      final granted =
+          await iosPlugin?.requestPermissions(
+            alert: true,
+            badge: true,
+            sound: true,
+          ) ??
+          false;
+      if (!granted) {
+        throw StateError(
+          'Allow notifications in iOS Settings to receive bill reminders.',
+        );
+      }
+    }
+
+    _permissionsGranted = true;
   }
 
   int _notificationId(String billId, int daysBefore) {
-    return (billId.hashCode * 31 + daysBefore) & 0x7FFFFFFF;
+    var hash = 0x811C9DC5;
+    for (final codeUnit in billId.codeUnits) {
+      hash = ((hash ^ codeUnit) * 0x01000193) & 0x7FFFFFFF;
+    }
+    return (hash * 8 + daysBefore) & 0x7FFFFFFF;
   }
 
-  /// Schedule notifications 7 days before due date, and everyday for 7 days leading to due date.
+  /// Schedules reminders at 9:00 a.m. each day during the seven days before a
+  /// due date, plus on the due date itself.
   Future<void> scheduleBillNotification(Bill bill) async {
-    if (bill.isPaid) return;
+    if (bill.isPaid) {
+      await cancelBillNotification(bill.id);
+      return;
+    }
+
+    await init();
+    await _ensurePermissions();
+    await cancelBillNotification(bill.id);
 
     final now = DateTime.now();
-
-    for (int daysBefore = 7; daysBefore >= 0; daysBefore--) {
-      // Schedule for 9:00 AM on the target reminder date
+    for (var daysBefore = 7; daysBefore >= 0; daysBefore--) {
       final targetDate = DateTime(
         bill.dueDate.year,
         bill.dueDate.month,
         bill.dueDate.day,
         9,
-        0,
       ).subtract(Duration(days: daysBefore));
 
-      if (targetDate.isBefore(now)) {
-        continue; // Already past this reminder time
-      }
+      if (targetDate.isBefore(now)) continue;
 
-      final id = _notificationId(bill.id, daysBefore);
-      final daysText = daysBefore == 0
-          ? 'is due today!'
-          : daysBefore == 1
-              ? 'is due tomorrow!'
-              : 'is due in $daysBefore days!';
+      final daysText = switch (daysBefore) {
+        0 => 'is due today!',
+        1 => 'is due tomorrow!',
+        _ => 'is due in $daysBefore days!',
+      };
 
-      try {
-        await flutterLocalNotificationsPlugin.zonedSchedule(
-          id: id,
-          title: 'Upcoming ${bill.isIncome ? 'Income' : 'Bill'}: ${bill.type}',
-          body: '${bill.type} of ₱${bill.amount.toStringAsFixed(2)} $daysText',
-          scheduledDate: tz.TZDateTime.from(targetDate, tz.local),
-          notificationDetails: const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'bill_reminders',
-              'Bill Reminders',
-              channelDescription: 'Daily reminders for upcoming bills and income',
-              importance: Importance.max,
-              priority: Priority.high,
-            ),
-            iOS: DarwinNotificationDetails(),
+      await flutterLocalNotificationsPlugin.zonedSchedule(
+        id: _notificationId(bill.id, daysBefore),
+        title: 'Upcoming ${bill.isIncome ? 'Income' : 'Bill'}: ${bill.type}',
+        body: '${bill.type} of ₱${bill.amount.toStringAsFixed(2)} $daysText',
+        scheduledDate: tz.TZDateTime.from(targetDate, tz.local),
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'bill_reminders',
+            'Bill Reminders',
+            channelDescription: 'Daily reminders for upcoming bills and income',
+            importance: Importance.max,
+            priority: Priority.high,
           ),
-          androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        );
-      } catch (e) {
-        // Fallback / ignore scheduling failures on unsupported platforms
-      }
+          iOS: DarwinNotificationDetails(),
+        ),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
     }
   }
 
   Future<void> cancelBillNotification(String billId) async {
-    // Cancel all daily scheduled reminders (offsets 0 to 7) as well as legacy id
-    await flutterLocalNotificationsPlugin.cancel(id: billId.hashCode);
-    for (int daysBefore = 0; daysBefore <= 7; daysBefore++) {
-      final id = _notificationId(billId, daysBefore);
-      await flutterLocalNotificationsPlugin.cancel(id: id);
+    await init();
+    for (var daysBefore = 0; daysBefore <= 7; daysBefore++) {
+      await flutterLocalNotificationsPlugin.cancel(
+        id: _notificationId(billId, daysBefore),
+      );
     }
   }
 
   Future<void> rescheduleAllBills(List<Bill> bills) async {
+    if (bills.any((bill) => !bill.isPaid)) {
+      await init();
+      await _ensurePermissions();
+    }
+
     for (final bill in bills) {
-      if (!bill.isPaid) {
-        await scheduleBillNotification(bill);
-      } else {
-        await cancelBillNotification(bill.id);
-      }
+      await scheduleBillNotification(bill);
     }
   }
 }

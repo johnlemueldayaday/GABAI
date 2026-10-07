@@ -28,6 +28,10 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>GABAY needs camera access to scan products and receipts.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>GABAY adds bill and income reminders to your device calendar.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>GABAY adds bill and income reminders to your device calendar.</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>GABAY uses the microphone so you can speak grocery item names.</string>
 	<key>NSPhotoLibraryUsageDescription</key>

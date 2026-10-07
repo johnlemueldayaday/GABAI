@@ -36,7 +36,10 @@ class _BaiChatPageState extends State<BaiChatPage> {
   final Random _random = Random();
 
   bool _isTyping = false;
+  bool _assistantCallInFlight = false;
+  bool _isClearingChat = false;
   int _typingDots = 1;
+  int _chatGeneration = 0;
   Timer? _replyTimer;
   Timer? _typingTimer;
 
@@ -75,9 +78,10 @@ class _BaiChatPageState extends State<BaiChatPage> {
   }
 
   Future<void> _send([String? value]) async {
-    if (_isTyping) return;
+    if (_isTyping || _assistantCallInFlight || _isClearingChat) return;
     final text = (value ?? _controller.text).trim();
     if (text.isEmpty) return;
+    final generation = _chatGeneration;
 
     _controller.clear();
     setState(() {
@@ -87,12 +91,21 @@ class _BaiChatPageState extends State<BaiChatPage> {
     _scrollToBottom();
     _startTyping();
 
-    final reply = await _assistant.handle(text);
+    _assistantCallInFlight = true;
+    setState(() {});
+    late final BaiReply reply;
+    try {
+      reply = await _assistant.handle(text);
+    } finally {
+      _assistantCallInFlight = false;
+      if (mounted) setState(() {});
+    }
+    if (!mounted || generation != _chatGeneration) return;
 
     final delay = Duration(milliseconds: _random.nextInt(1200) + 1200);
     _replyTimer?.cancel();
     _replyTimer = Timer(delay, () {
-      if (!mounted) return;
+      if (!mounted || generation != _chatGeneration) return;
       _stopTyping();
       setState(() {
         _savedMessages.add(
@@ -123,23 +136,34 @@ class _BaiChatPageState extends State<BaiChatPage> {
     });
   }
 
-  void _clearChat() {
+  Future<void> _clearChat() async {
+    if (_assistantCallInFlight || _isClearingChat) return;
+    setState(() => _isClearingChat = true);
+    _chatGeneration++;
     _replyTimer?.cancel();
     _typingTimer?.cancel();
-    final g = _assistant.greeting;
-    setState(() {
-      _isTyping = false;
-      _typingDots = 1;
-      _savedMessages.clear();
-      _savedMessages.add(_BaiChatMessage(text: g.text, isUser: false));
-      if (g.extraTexts != null) {
-        for (var t in g.extraTexts!) {
-          _savedMessages.add(_BaiChatMessage(text: t, isUser: false));
+    _isTyping = false;
+    _assistant.resetConversation();
+    try {
+      final g = await _assistant.getAsyncGreeting();
+      if (!mounted) return;
+      _controller.clear();
+      setState(() {
+        _typingDots = 1;
+        _savedMessages.clear();
+        _savedMessages.add(_BaiChatMessage(text: g.text, isUser: false));
+        if (g.extraTexts != null) {
+          for (var t in g.extraTexts!) {
+            _savedMessages.add(_BaiChatMessage(text: t, isUser: false));
+          }
         }
-      }
-      _savedQuickReplies = g.quickReplies;
-    });
-    _scrollToBottom();
+        _savedQuickReplies = g.quickReplies;
+      });
+      _scrollToBottom();
+    } finally {
+      _isClearingChat = false;
+      if (mounted) setState(() {});
+    }
   }
 
   void _startTyping() {
@@ -249,7 +273,9 @@ class _BaiChatPageState extends State<BaiChatPage> {
             tooltip: 'Minimize to bubble',
           ),
           IconButton(
-            onPressed: _clearChat,
+            onPressed: (_assistantCallInFlight || _isClearingChat)
+                ? null
+                : _clearChat,
             icon: Icon(Icons.delete_sweep_outlined, color: kTextCharcoal),
             tooltip: 'Clear Chat',
           ),

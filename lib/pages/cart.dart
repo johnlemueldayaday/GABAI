@@ -22,6 +22,9 @@ import 'package:gabay/data/grocery_database.dart';
 import 'package:gabay/widgets/home/sections/store_picker_sheet.dart';
 import 'package:gabay/widgets/home/sections/add_item_sheet.dart';
 
+final GlobalKey<ScaffoldMessengerState> groceryScaffoldMessengerKey =
+    GlobalKey<ScaffoldMessengerState>();
+
 class GroceryApp extends StatelessWidget {
   const GroceryApp({super.key});
 
@@ -34,6 +37,7 @@ class GroceryApp extends StatelessWidget {
         updateAppTheme(SettingsService().themeMode);
 
         return MaterialApp(
+          scaffoldMessengerKey: groceryScaffoldMessengerKey,
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
             fontFamily: GoogleFonts.plusJakartaSans().fontFamily,

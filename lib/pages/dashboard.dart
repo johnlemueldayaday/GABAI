@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:gabay/models/bill_models.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/models/finance_models.dart';
@@ -29,7 +31,7 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage>
-  with WidgetsBindingObserver {
+    with WidgetsBindingObserver {
   List<Bill> _bills = [];
   List<FinanceTransaction> _transactions = [];
   List<Account> _accounts = [];
@@ -61,7 +63,9 @@ class _DashboardPageState extends State<DashboardPage>
       _handleDailyAllocationChanged,
     );
     _loadData();
-    _safeToSpendPageController = PageController(initialPage: _showWeeklySpending ? 1 : 0);
+    _safeToSpendPageController = PageController(
+      initialPage: _showWeeklySpending ? 1 : 0,
+    );
   }
 
   @override
@@ -132,12 +136,14 @@ class _DashboardPageState extends State<DashboardPage>
       payday1: _payday1,
       payday2: _payday2,
     );
-    final cycleStart =
-        resolvedPayday.subtract(Duration(days: totalCycleDays - 1));
-    final effectiveCycleStart =
-        cycleStart.isAfter(today) ? today : cycleStart;
-    final cycleSpentBeforeToday =
-        _calculateSpentBetween(effectiveCycleStart, today);
+    final cycleStart = resolvedPayday.subtract(
+      Duration(days: totalCycleDays - 1),
+    );
+    final effectiveCycleStart = cycleStart.isAfter(today) ? today : cycleStart;
+    final cycleSpentBeforeToday = _calculateSpentBetween(
+      effectiveCycleStart,
+      today,
+    );
     final todaySpent = _calculateSpentBetween(today, tomorrow);
     final daysLeft = calculateDaysLeft(today: today, payday: resolvedPayday);
     final spendingPlan = SafeToSpend.calculate(
@@ -151,7 +157,7 @@ class _DashboardPageState extends State<DashboardPage>
     final weekStart = today.subtract(const Duration(days: 6));
     final weekSpent = _calculateSpentBetween(weekStart, tomorrow);
     final weekBudget = _dailyAllocation * 7;
-    
+
     final updated = await WidgetService.updateSafeToSpendWidget(
       safeToSpend: spendingPlan.safeToSpend,
       weekSpent: weekSpent,
@@ -747,12 +753,16 @@ class _DashboardPageState extends State<DashboardPage>
     );
     final weekStart = today.subtract(const Duration(days: 6));
     final weekSpent = _calculateSpentBetween(weekStart, tomorrow);
-    
+
     final todayBudget = _dailyAllocation;
-    final todayProgress = todayBudget <= 0 ? 0.0 : (todaySpent / todayBudget).clamp(0.0, 1.0).toDouble();
-    
+    final todayProgress = todayBudget <= 0
+        ? 0.0
+        : (todaySpent / todayBudget).clamp(0.0, 1.0).toDouble();
+
     final weekBudget = _dailyAllocation * 7;
-    final weekProgress = weekBudget <= 0 ? 0.0 : (weekSpent / weekBudget).clamp(0.0, 1.0).toDouble();
+    final weekProgress = weekBudget <= 0
+        ? 0.0
+        : (weekSpent / weekBudget).clamp(0.0, 1.0).toDouble();
 
     final sortedTxns = List<FinanceTransaction>.from(_transactions)
       ..sort((a, b) => b.date.compareTo(a.date));
@@ -834,7 +844,11 @@ class _DashboardPageState extends State<DashboardPage>
             ),
             const SizedBox(height: 16),
 
-            _GreetingSection(spentToday: spendingPlan.spentToday),
+            _GreetingSection(
+              spentToday: spendingPlan.spentToday,
+              dailyBudget: _dailyAllocation,
+              onChatClosed: _loadData,
+            ),
 
             // Total Balance Card
             Container(
@@ -1042,20 +1056,32 @@ class _DashboardPageState extends State<DashboardPage>
                                 });
                               },
                               children: [
-                                _buildPeriodPage(isWeek: false, progress: todayProgress, safeToSpend: spendingPlan.safeToSpend),
-                                _buildPeriodPage(isWeek: true, progress: weekProgress, safeToSpend: spendingPlan.safeToSpend),
+                                _buildPeriodPage(
+                                  isWeek: false,
+                                  progress: todayProgress,
+                                  safeToSpend: spendingPlan.safeToSpend,
+                                ),
+                                _buildPeriodPage(
+                                  isWeek: true,
+                                  progress: weekProgress,
+                                  safeToSpend: spendingPlan.safeToSpend,
+                                ),
                               ],
                             ),
                           ),
                           AnimatedSwitcher(
                             duration: const Duration(milliseconds: 300),
                             child: Text(
-                              key: ValueKey<double>(spendingPlan.effectiveDailyBudget),
+                              key: ValueKey<double>(
+                                spendingPlan.effectiveDailyBudget,
+                              ),
                               '${formatPeso(spendingPlan.effectiveDailyBudget)}/day',
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
-                                color: spendingPlan.extra < 0 ? Colors.orange : kMuted,
+                                color: spendingPlan.extra < 0
+                                    ? Colors.orange
+                                    : kMuted,
                               ),
                             ),
                           ),
@@ -1094,6 +1120,7 @@ class _DashboardPageState extends State<DashboardPage>
       ),
     );
   }
+
   Widget _buildPeriodPage({
     required bool isWeek,
     required double progress,
@@ -1587,11 +1614,7 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
       children: [
         Row(
           children: [
-            Icon(
-              Icons.payments_outlined,
-              size: 15,
-              color: kPrimary,
-            ),
+            Icon(Icons.payments_outlined, size: 15, color: kPrimary),
             const SizedBox(width: 5),
             Text(
               'WEEKLY SPENDING',
@@ -1683,7 +1706,11 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
                                             0.45,
                                           )!,
                                           kPrimary,
-                                          Color.lerp(kPrimary, Colors.black, 0.15)!,
+                                          Color.lerp(
+                                            kPrimary,
+                                            Colors.black,
+                                            0.15,
+                                          )!,
                                         ]
                                       : [
                                           kPrimary.withValues(alpha: 0.35),
@@ -1697,7 +1724,9 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
                                       : const [0.0, 0.5, 1.0],
                                 )
                               : null,
-                          color: hasData ? null : kMuted.withValues(alpha: 0.08),
+                          color: hasData
+                              ? null
+                              : kMuted.withValues(alpha: 0.08),
                           width: 10,
                           borderRadius: BorderRadius.circular(5),
                           backDrawRodData: BackgroundBarChartRodData(
@@ -1772,7 +1801,9 @@ class _UpcomingEventsList extends StatelessWidget {
             onTap: () => onBillTapped(bill),
             child: Container(
               width: MediaQuery.of(context).size.width * 0.75,
-              margin: EdgeInsets.only(right: index == items.length - 1 ? 0 : 12),
+              margin: EdgeInsets.only(
+                right: index == items.length - 1 ? 0 : 12,
+              ),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: kCardBg,
@@ -2089,23 +2120,81 @@ class _SectionHeader extends StatelessWidget {
 
 class _GreetingSection extends StatefulWidget {
   final double spentToday;
+  final double dailyBudget;
+  final Future<void> Function() onChatClosed;
 
-  const _GreetingSection({required this.spentToday});
+  const _GreetingSection({
+    required this.spentToday,
+    required this.dailyBudget,
+    required this.onChatClosed,
+  });
 
   @override
   State<_GreetingSection> createState() => _GreetingSectionState();
 }
 
 class _GreetingSectionState extends State<_GreetingSection> {
+  static const _lastBudgetMessageKey = 'dashboard_last_budget_bubble_message';
+  static const _greenMessages = [
+    "You're doing great today! Still got {remaining} left to play with 😎",
+    "Easy lang, you're way under budget. Keep it up! 💪",
+    "Wallet's feeling good so far. Nice job! ✨",
+    'Safe pa tayo, {remaining} left. Enjoy your day! 😊',
+    'Look at you being responsible today 👏',
+    'Plenty of room left in your budget. No stress! 🌿',
+  ];
+  static const _yellowMessages = [
+    "You're halfway through your safe-to-spend. Pace yourself, okay? 🙂",
+    'Half of your budget is gone already. Still fine, just keep an eye on it 👀',
+    '{remaining} left. Think twice before the next purchase, okay?',
+    "Chill muna sa spending, you're already past the middle 😅",
+    "Still safe, but don't get too excited with spending yet!",
+    "Just a heads up, you've used {percent}% already. You got this though! 💛",
+  ];
+  static const _orangeMessages = [
+    "Uh oh, you're getting close to your limit! Only {remaining} left 😬",
+    'Careful na, your budget is running low. Spend wisely okay? 🧐',
+    "You've used {percent}% already! Maybe skip the non-essentials today?",
+    'Almost there to the limit. Think before you tap! 🙏',
+    "Your budget's getting thin, don't go crazy now okay? 😅",
+    'Just {remaining} left. Choose what really matters!',
+  ];
+  static const _redMessages = [
+    "You're almost tight on budget! Don't spend too much okay? 🥺",
+    'Your safe-to-spend is almost gone, only {remaining} left! Be careful 🚨',
+    'Konti na lang ang natitira, {remaining} na lang! Hold the spending okay? ✋',
+    'Almost out of budget! Maybe save the extras for tomorrow? 🙏',
+    "Warning! You've used {percent}% already. Please go easy 😭",
+    'Super tight na, only {remaining} left. Essentials only today, okay? 💸',
+  ];
+  static const _finishedMessages = [
+    "You've used up your safe-to-spend for today. Time to stop spending! 🛑",
+    "Budget's all gone! Only the must-haves from here, okay? 🙏",
+    "Zero left na! Let's pause the spending for now 😮‍💨",
+    "You hit your limit today. Tomorrow's a fresh start! 🌅",
+    'No more safe-to-spend left. Please hold off on buying okay? ✋',
+    "Budget finished! Let's be extra careful for the rest of the day 💛",
+  ];
+  static const _overBudgetMessages = [
+    "Oops, you went over your budget by {over_amount}. It's okay, let's be careful tomorrow 😅",
+    "You're over the limit na! Let's try to balance it out soon okay? 🥲",
+    "Over budget by {over_amount}. No judgment, but let's slow down a bit 🙏",
+    "Your budget got exceeded. Maybe we can adjust tomorrow's spending?",
+    "Hala, over na tayo sa budget! Let's cut back for the next few days 😬",
+    "You went past your limit. Don't worry, we can fix this together 💪",
+  ];
+
   List<String> _messages = ['Hi, welcome!'];
   int _currentIndex = 0;
   Timer? _timer;
   bool _isLoading = true;
+  final Random _random = Random();
 
   @override
   void didUpdateWidget(covariant _GreetingSection oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.spentToday != widget.spentToday) {
+    if (oldWidget.spentToday != widget.spentToday ||
+        oldWidget.dailyBudget != widget.dailyBudget) {
       _loadGreeting();
     }
   }
@@ -2130,35 +2219,40 @@ class _GreetingSectionState extends State<_GreetingSection> {
     final today = DateTime(now.year, now.month, now.day);
 
     List<String> activeMessages = [];
+    final budgetMessage = await _selectBudgetMessage();
+    if (!mounted) return;
 
-    // 1. Check Bills
-    final sevenDaysLater = today.add(const Duration(days: 7));
-    final upcomingBills = bills.where((bill) {
-      final billDay = DateTime(
-        bill.dueDate.year,
-        bill.dueDate.month,
-        bill.dueDate.day,
-      );
-      return billDay.isAfter(today) &&
-          billDay.isBefore(sevenDaysLater.add(const Duration(days: 1))) &&
-          !bill.isPaid;
-    }).toList();
+    if (budgetMessage != null) {
+      activeMessages.add(budgetMessage);
+    } else {
+      final sevenDaysLater = today.add(const Duration(days: 7));
+      final upcomingBills = bills.where((bill) {
+        final billDay = DateTime(
+          bill.dueDate.year,
+          bill.dueDate.month,
+          bill.dueDate.day,
+        );
+        return billDay.isAfter(today) &&
+            billDay.isBefore(sevenDaysLater.add(const Duration(days: 1))) &&
+            !bill.isPaid;
+      }).toList();
 
-    if (upcomingBills.isNotEmpty) {
-      upcomingBills.sort((a, b) => a.dueDate.compareTo(b.dueDate));
-      final firstBill = upcomingBills.first;
-      final dateStr = DateFormat(
-        'EEEE',
-      ).format(firstBill.dueDate).toLowerCase();
-      activeMessages.add(
-        'hey, you have upcoming ${firstBill.type.toLowerCase()} bill this $dateStr, worth ${formatPeso(firstBill.amount)}.',
-      );
-    }
+      if (upcomingBills.isNotEmpty) {
+        upcomingBills.sort((a, b) => a.dueDate.compareTo(b.dueDate));
+        final firstBill = upcomingBills.first;
+        final dateStr = DateFormat(
+          'EEEE',
+        ).format(firstBill.dueDate).toLowerCase();
+        activeMessages.add(
+          'hey, you have upcoming ${firstBill.type.toLowerCase()} bill this $dateStr, worth ${formatPeso(firstBill.amount)}.',
+        );
+      }
 
-    if (widget.spentToday > 0) {
-      activeMessages.add(
-        'your total spent for today is ${formatPeso(widget.spentToday)}.',
-      );
+      if (widget.spentToday > 0) {
+        activeMessages.add(
+          'your total spent for today is ${formatPeso(widget.spentToday)}.',
+        );
+      }
     }
 
     // Default if empty
@@ -2168,6 +2262,7 @@ class _GreetingSectionState extends State<_GreetingSection> {
 
     setState(() {
       _messages = activeMessages;
+      _currentIndex = 0;
       _isLoading = false;
     });
 
@@ -2182,12 +2277,54 @@ class _GreetingSectionState extends State<_GreetingSection> {
     }
   }
 
+  Future<String?> _selectBudgetMessage() async {
+    final budget = widget.dailyBudget;
+    final spent = widget.spentToday;
+    if (!budget.isFinite || budget <= 0 || !spent.isFinite || spent < 0) {
+      return null;
+    }
+
+    final percentUsed = spent / budget * 100;
+    final remaining = budget - spent;
+    final List<String> variants;
+    if (percentUsed > 100) {
+      variants = _overBudgetMessages;
+    } else if (percentUsed == 100) {
+      variants = _finishedMessages;
+    } else if (percentUsed >= 90) {
+      variants = _redMessages;
+    } else if (percentUsed >= 75) {
+      variants = _orangeMessages;
+    } else if (percentUsed >= 50) {
+      variants = _yellowMessages;
+    } else {
+      variants = _greenMessages;
+    }
+
+    final percentText = percentUsed.round().toString();
+    final amountFormat = NumberFormat('#,##0.00');
+    final preferences = await SharedPreferences.getInstance();
+    final lastTemplate = preferences.getString(_lastBudgetMessageKey);
+    final candidates = variants
+        .where((message) => message != lastTemplate)
+        .toList();
+    final selectedTemplate = candidates[_random.nextInt(candidates.length)];
+    await preferences.setString(_lastBudgetMessageKey, selectedTemplate);
+    return selectedTemplate
+        .replaceAll('{remaining}', 'P ${amountFormat.format(remaining)}')
+        .replaceAll('{percent}', percentText)
+        .replaceAll(
+          '{over_amount}',
+          'P ${amountFormat.format(spent - budget)}',
+        );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () {
-        Navigator.push(
+      onTap: () async {
+        await Navigator.push(
           context,
           PageRouteBuilder<void>(
             settings: const RouteSettings(name: kBaiChatRouteName),
@@ -2213,6 +2350,7 @@ class _GreetingSectionState extends State<_GreetingSection> {
             },
           ),
         );
+        await widget.onChatClosed();
       },
       child: Semantics(
         button: true,
@@ -2345,11 +2483,11 @@ class _BubblePainter extends CustomPainter {
       ],
       stops: const [0.0, 0.7, 1.0],
     );
-    
+
     final fillPaint = Paint()
       ..shader = gradient.createShader(Offset.zero & size)
       ..style = PaintingStyle.fill;
-      
+
     canvas.drawPath(path, fillPaint);
   }
 

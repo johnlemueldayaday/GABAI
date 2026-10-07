@@ -9,6 +9,7 @@ import '../widgets/app_drawer.dart';
 import '../models/bill_models.dart';
 import '../models/finance_models.dart';
 import '../services/bill_storage.dart';
+import '../services/bill_calendar_service.dart';
 import '../services/finance_storage.dart';
 import '../services/notification_service.dart';
 import '../services/safe_to_spend.dart';
@@ -75,6 +76,43 @@ class _BillsPageState extends State<BillsPage> {
     await BillStorage.saveBills(_allBills);
   }
 
+  Future<void> _syncBillReminders(Bill bill) async {
+    final errors = <String>[];
+    try {
+      await NotificationService().scheduleBillNotification(bill);
+    } catch (error) {
+      errors.add('Phone notification: $error');
+    }
+    try {
+      await BillCalendarService().syncBill(bill);
+    } catch (error) {
+      errors.add('Phone calendar: $error');
+    }
+    _showReminderErrors(errors);
+  }
+
+  Future<void> _deleteBillReminders(String billId) async {
+    final errors = <String>[];
+    try {
+      await NotificationService().cancelBillNotification(billId);
+    } catch (error) {
+      errors.add('Phone notification: $error');
+    }
+    try {
+      await BillCalendarService().deleteBill(billId);
+    } catch (error) {
+      errors.add('Phone calendar: $error');
+    }
+    _showReminderErrors(errors);
+  }
+
+  void _showReminderErrors(List<String> errors) {
+    if (!mounted || errors.isEmpty) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Reminder sync issue. ${errors.join(' ')}')),
+    );
+  }
+
   List<Bill> _getEventsForDay(DateTime day) {
     return _allBills.where((b) => isSameDay(b.dueDate, day)).toList();
   }
@@ -124,13 +162,15 @@ class _BillsPageState extends State<BillsPage> {
     }
 
     final idx = _allBills.indexWhere((b) => b.id == bill.id);
+    Bill? updatedBill;
     if (idx != -1) {
       setState(() {
-        _allBills[idx] = _allBills[idx].copyWith(isPaid: true);
+        updatedBill = _allBills[idx].copyWith(isPaid: true);
+        _allBills[idx] = updatedBill!;
       });
       await _saveData();
     }
-    await NotificationService().cancelBillNotification(bill.id);
+    if (updatedBill != null) await _syncBillReminders(updatedBill!);
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -177,7 +217,7 @@ class _BillsPageState extends State<BillsPage> {
         _allBills.removeWhere((b) => b.id == bill.id);
       });
       await _saveData();
-      await NotificationService().cancelBillNotification(bill.id);
+      await _deleteBillReminders(bill.id);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -203,7 +243,7 @@ class _BillsPageState extends State<BillsPage> {
               _allBills[idx] = updatedBill;
             });
             await _saveData();
-            await NotificationService().scheduleBillNotification(updatedBill);
+            await _syncBillReminders(updatedBill);
           }
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -255,9 +295,9 @@ class _BillsPageState extends State<BillsPage> {
         onAdd: (newBill) async {
           setState(() {
             _allBills.add(newBill);
-            _saveData();
           });
-          await NotificationService().scheduleBillNotification(newBill);
+          await _saveData();
+          await _syncBillReminders(newBill);
 
           // Only add to FinanceStorage automatically if date is today or in the past
           final now = DateTime.now();
@@ -285,9 +325,9 @@ class _BillsPageState extends State<BillsPage> {
         onDelete: (id) async {
           setState(() {
             _allBills.removeWhere((b) => b.id == id);
-            _saveData();
           });
-          await NotificationService().cancelBillNotification(id);
+          await _saveData();
+          await _deleteBillReminders(id);
         },
         onTogglePaid: (id) async {
           final idx = _allBills.indexWhere((b) => b.id == id);
@@ -298,9 +338,9 @@ class _BillsPageState extends State<BillsPage> {
             } else {
               setState(() {
                 _allBills[idx] = bill.copyWith(isPaid: false);
-                _saveData();
               });
-              await NotificationService().scheduleBillNotification(_allBills[idx]);
+              await _saveData();
+              await _syncBillReminders(_allBills[idx]);
             }
           }
         },

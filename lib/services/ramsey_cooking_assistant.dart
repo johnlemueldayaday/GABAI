@@ -50,7 +50,12 @@ class RamseyReply {
   final List<String> quickReplies;
   final String? navigateTo;
 
-  const RamseyReply(this.text, {this.extraTexts, this.quickReplies = const [], this.navigateTo});
+  const RamseyReply(
+    this.text, {
+    this.extraTexts,
+    this.quickReplies = const [],
+    this.navigateTo,
+  });
 }
 
 class RamseyCookingAssistant {
@@ -73,14 +78,18 @@ class RamseyCookingAssistant {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final sevenDaysLater = today.add(const Duration(days: 7));
-    
+
     final upcoming = _allBills.where((bill) {
-      final billDate = DateTime(bill.dueDate.year, bill.dueDate.month, bill.dueDate.day);
-      return (billDate.isAfter(today) || billDate.isAtSameMomentAs(today)) && 
-             billDate.isBefore(sevenDaysLater.add(const Duration(days: 1))) &&
-             !bill.isPaid;
+      final billDate = DateTime(
+        bill.dueDate.year,
+        bill.dueDate.month,
+        bill.dueDate.day,
+      );
+      return (billDate.isAfter(today) || billDate.isAtSameMomentAs(today)) &&
+          billDate.isBefore(sevenDaysLater.add(const Duration(days: 1))) &&
+          !bill.isPaid;
     }).toList();
-    
+
     upcoming.sort((a, b) => a.dueDate.compareTo(b.dueDate));
     return upcoming;
   }
@@ -93,13 +102,33 @@ class RamseyCookingAssistant {
   }
 
   String _formatDateNicely(DateTime date) {
-    final monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-                       'July', 'August', 'September', 'October', 'November', 'December'];
+    final monthNames = [
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
+    ];
     return '${monthNames[date.month - 1]} ${date.day}';
   }
 
   /// Expose current step for BAI integration
   RamseyStep get stepForBai => _step;
+
+  void resetConversation() {
+    _resetCooking();
+    _lastSpending = null;
+    _lastDish = null;
+    _lastDishNames = [];
+    _suggestedDishNames.clear();
+  }
 
   bool get hasRecentFridgeItems => _recentIngredientKeywords().isNotEmpty;
 
@@ -129,7 +158,8 @@ class RamseyCookingAssistant {
     if (_isMealPlanAsk(normalized)) {
       _resetCooking();
       final amount = _parseAmount(normalized);
-      if (amount != null && (normalized.contains('budget') || normalized.contains('amount'))) {
+      if (amount != null &&
+          (normalized.contains('budget') || normalized.contains('amount'))) {
         return _budgetMealPlanReply(amount);
       }
       return _weeklyMealPlanReply();
@@ -173,11 +203,17 @@ class RamseyCookingAssistant {
     if (_step == RamseyStep.mealPrompt) {
       final selectedCraving = _cravingFromInput(normalized);
       if (selectedCraving != null) {
-        return _handleMealInquiry(RamseyCookingAssistant.detectMeal(DateTime.now()), selectedCraving);
+        return _handleMealInquiry(
+          RamseyCookingAssistant.detectMeal(DateTime.now()),
+          selectedCraving,
+        );
       }
 
       if (_looksLikeCookingAsk(normalized)) {
-        return _handleMealInquiry(RamseyCookingAssistant.detectMeal(DateTime.now()), 'Anything');
+        return _handleMealInquiry(
+          RamseyCookingAssistant.detectMeal(DateTime.now()),
+          'Anything',
+        );
       }
       return const RamseyReply(
         "I'd love to help! I can assist with cooking, grocery tracking, or managing your budget. What's on your mind?",
@@ -330,9 +366,9 @@ class RamseyCookingAssistant {
 
   bool _isWeeklyBillAsk(String input) {
     return (input.contains('how much') && input.contains('bill')) ||
-           input.contains('total bills this week') ||
-           input.contains('bills this week') ||
-           input.contains('bills for this week');
+        input.contains('total bills this week') ||
+        input.contains('bills this week') ||
+        input.contains('bills for this week');
   }
 
   bool _isBillAsk(String input) {
@@ -670,9 +706,33 @@ class RamseyCookingAssistant {
     final dailyBudget = weeklyBudget / 7;
 
     // Filter budget-friendly dishes for each category
-    final bPool = _dishes.where((d) => d.meals.contains('Breakfast') && _calculateDishPrice(d) < (dailyBudget * 0.25)).toList()..shuffle(_random);
-    final lPool = _dishes.where((d) => d.meals.contains('Lunch') && _calculateDishPrice(d) < (dailyBudget * 0.40)).toList()..shuffle(_random);
-    final dPool = _dishes.where((d) => d.meals.contains('Dinner') && _calculateDishPrice(d) < (dailyBudget * 0.40)).toList()..shuffle(_random);
+    final bPool =
+        _dishes
+            .where(
+              (d) =>
+                  d.meals.contains('Breakfast') &&
+                  _calculateDishPrice(d) < (dailyBudget * 0.25),
+            )
+            .toList()
+          ..shuffle(_random);
+    final lPool =
+        _dishes
+            .where(
+              (d) =>
+                  d.meals.contains('Lunch') &&
+                  _calculateDishPrice(d) < (dailyBudget * 0.40),
+            )
+            .toList()
+          ..shuffle(_random);
+    final dPool =
+        _dishes
+            .where(
+              (d) =>
+                  d.meals.contains('Dinner') &&
+                  _calculateDishPrice(d) < (dailyBudget * 0.40),
+            )
+            .toList()
+          ..shuffle(_random);
 
     // Fallback if pools are too small
     final fallbackPool = _dishes.toList()..shuffle(_random);
@@ -681,11 +741,20 @@ class RamseyCookingAssistant {
     var estimatedTotal = 0.0;
 
     for (var i = 0; i < 7; i++) {
-      final b = bPool.isNotEmpty ? bPool[i % bPool.length] : fallbackPool[i % fallbackPool.length];
-      final l = lPool.isNotEmpty ? lPool[i % lPool.length] : fallbackPool[(i + 7) % fallbackPool.length];
-      final d = dPool.isNotEmpty ? dPool[i % dPool.length] : fallbackPool[(i + 14) % fallbackPool.length];
+      final b = bPool.isNotEmpty
+          ? bPool[i % bPool.length]
+          : fallbackPool[i % fallbackPool.length];
+      final l = lPool.isNotEmpty
+          ? lPool[i % lPool.length]
+          : fallbackPool[(i + 7) % fallbackPool.length];
+      final d = dPool.isNotEmpty
+          ? dPool[i % dPool.length]
+          : fallbackPool[(i + 14) % fallbackPool.length];
 
-      estimatedTotal += _calculateDishPrice(b) + _calculateDishPrice(l) + _calculateDishPrice(d);
+      estimatedTotal +=
+          _calculateDishPrice(b) +
+          _calculateDishPrice(l) +
+          _calculateDishPrice(d);
       lines.add("• ${days[i]}: ${b.name}, ${l.name}, ${d.name}");
     }
 
@@ -771,10 +840,11 @@ class RamseyCookingAssistant {
   RamseyReply _handleMealInquiry(String meal, String craving) {
     _meal = meal;
     _craving = craving;
-    
-    final pool = _pickDishes(meal, craving).where((d) => 
-      !_suggestedDishNames.contains(d.name)
-    ).toList();
+
+    final pool = _pickDishes(
+      meal,
+      craving,
+    ).where((d) => !_suggestedDishNames.contains(d.name)).toList();
 
     if (pool.isEmpty) {
       _step = RamseyStep.mealPrompt;
@@ -797,7 +867,8 @@ class RamseyCookingAssistant {
 
   RamseyDish? _findDirectRecipeRequest(String input) {
     // Check if the input looks like a direct recipe request
-    final hasRecipeKeyword = input.contains('recipe') ||
+    final hasRecipeKeyword =
+        input.contains('recipe') ||
         input.contains('cook') ||
         input.contains('give') ||
         input.contains('want') ||
@@ -831,7 +902,9 @@ class RamseyCookingAssistant {
       // e.g. "adobo" matches "Chicken Adobo", "caldereta" matches "Chicken Afritada" won't
       final words = dishName.split(' ');
       for (final word in words) {
-        if (word.length >= 4 && input.contains(word) && dishName.length > bestMatchLength) {
+        if (word.length >= 4 &&
+            input.contains(word) &&
+            dishName.length > bestMatchLength) {
           bestMatch = dish;
           bestMatchLength = dishName.length;
         }
@@ -898,14 +971,18 @@ class RamseyCookingAssistant {
       final category = (dbMatch?['category'] as String?) ?? 'Other';
       final unit = (dbMatch?['unit'] as String?) ?? 'pc';
 
-      newList.items.add(GroceryItem(
-        id: DateTime.now().millisecondsSinceEpoch.toString() + ingredient.hashCode.toString(),
-        name: ingredient.replaceAll(RegExp(r'\s*\[[^\]]*\]'), '').trim(),
-        qty: 1,
-        unit: unit,
-        price: price,
-        category: category,
-      ));
+      newList.items.add(
+        GroceryItem(
+          id:
+              DateTime.now().millisecondsSinceEpoch.toString() +
+              ingredient.hashCode.toString(),
+          name: ingredient.replaceAll(RegExp(r'\s*\[[^\]]*\]'), '').trim(),
+          qty: 1,
+          unit: unit,
+          price: price,
+          category: category,
+        ),
+      );
     }
 
     AppState.lists.add(newList);
@@ -914,8 +991,26 @@ class RamseyCookingAssistant {
 
   bool _isYes(String input) {
     final yesWords = [
-      'yes', 'yea', 'yup', 'yess', 'yesss', 'yessss', 'yeas', 'yeah', 'yah', 'y',
-      'opo', 'oo', 'sige', 'g', 'game', 'ok', 'okay', 'sure', 'add it', 'put it'
+      'yes',
+      'yea',
+      'yup',
+      'yess',
+      'yesss',
+      'yessss',
+      'yeas',
+      'yeah',
+      'yah',
+      'y',
+      'opo',
+      'oo',
+      'sige',
+      'g',
+      'game',
+      'ok',
+      'okay',
+      'sure',
+      'add it',
+      'put it',
     ];
     return yesWords.any((w) => input.contains(w));
   }
@@ -974,7 +1069,8 @@ class RamseyCookingAssistant {
     String list = '';
     for (final bill in upcoming) {
       final formatted = _formatDateNicely(bill.dueDate);
-      list += "\u2022 ${bill.type}: \u20b1${bill.amount.toStringAsFixed(2)} ($formatted)\n";
+      list +=
+          "\u2022 ${bill.type}: \u20b1${bill.amount.toStringAsFixed(2)} ($formatted)\n";
     }
 
     return RamseyReply(
@@ -996,8 +1092,9 @@ class RamseyCookingAssistant {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
 
-    final upcoming = _allBills.where((b) => !b.isPaid && !b.dueDate.isBefore(today)).toList()
-      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    final upcoming =
+        _allBills.where((b) => !b.isPaid && !b.dueDate.isBefore(today)).toList()
+          ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
 
     if (upcoming.isEmpty) {
       return const RamseyReply(
@@ -1007,7 +1104,8 @@ class RamseyCookingAssistant {
     }
 
     final nextBill = upcoming.first;
-    final dateStr = "${_monthName(nextBill.dueDate.month)} ${nextBill.dueDate.day}";
+    final dateStr =
+        "${_monthName(nextBill.dueDate.month)} ${nextBill.dueDate.day}";
 
     return RamseyReply(
       "Your upcoming bill is ${nextBill.type} amounting to \u20b1${nextBill.amount.toStringAsFixed(2)} on $dateStr.\n\n"
@@ -1017,8 +1115,9 @@ class RamseyCookingAssistant {
   }
 
   RamseyReply _budgetSummaryReply() {
-    final recent =
-        AppState.recentLists.isNotEmpty ? AppState.recentLists.first : null;
+    final recent = AppState.recentLists.isNotEmpty
+        ? AppState.recentLists.first
+        : null;
     if (recent == null) {
       return const RamseyReply(
         "Wala pa akong nakitang active budget. Start a shopping list and set a budget so I can help you track it! 💰",
@@ -1928,118 +2027,365 @@ const List<RamseyDish> _dishes = [
   RamseyDish(
     name: 'Filipino Spaghetti',
     shortInfo: 'Sweet-style birthday party classic',
-    ingredients: ['Spaghetti noodles', 'Ground pork', 'Hotdogs', 'Filipino sweet spaghetti sauce', 'Banana ketchup', 'Cheddar cheese', 'Garlic', 'Onion', 'Cooking oil'],
-    instructions: ['Boil noodles until al dente, drain.', 'Saute garlic and onion, add ground pork.', 'Add sliced hotdogs and cook briefly.', 'Pour in spaghetti sauce and banana ketchup.', 'Simmer for 10 minutes.', 'Toss with noodles and top with cheese.'],
-    minutes: 30, servings: 6,
-    tags: {'Anything'}, meals: {'Lunch', 'Dinner', 'Snack'},
+    ingredients: [
+      'Spaghetti noodles',
+      'Ground pork',
+      'Hotdogs',
+      'Filipino sweet spaghetti sauce',
+      'Banana ketchup',
+      'Cheddar cheese',
+      'Garlic',
+      'Onion',
+      'Cooking oil',
+    ],
+    instructions: [
+      'Boil noodles until al dente, drain.',
+      'Saute garlic and onion, add ground pork.',
+      'Add sliced hotdogs and cook briefly.',
+      'Pour in spaghetti sauce and banana ketchup.',
+      'Simmer for 10 minutes.',
+      'Toss with noodles and top with cheese.',
+    ],
+    minutes: 30,
+    servings: 6,
+    tags: {'Anything'},
+    meals: {'Lunch', 'Dinner', 'Snack'},
     ingredientKeywords: {'noodle', 'pork'},
   ),
   RamseyDish(
     name: 'Lumpiang Shanghai',
     shortInfo: 'Crispy spring rolls, fiesta must-have',
-    ingredients: ['Ground pork', 'Carrots', 'Onion', 'Garlic', 'Egg', 'Soy sauce', 'Salt and pepper', 'Lumpia wrapper', 'Cooking oil'],
-    instructions: ['Mix ground pork, minced carrots, onion, garlic, egg, and soy sauce.', 'Season with salt and pepper.', 'Wrap in lumpia wrappers, roll tightly.', 'Deep fry in hot oil until golden brown.', 'Drain on paper towels and serve with sweet chili sauce.'],
-    minutes: 45, servings: 8,
-    tags: {'Anything'}, meals: {'Lunch', 'Dinner', 'Snack'},
+    ingredients: [
+      'Ground pork',
+      'Carrots',
+      'Onion',
+      'Garlic',
+      'Egg',
+      'Soy sauce',
+      'Salt and pepper',
+      'Lumpia wrapper',
+      'Cooking oil',
+    ],
+    instructions: [
+      'Mix ground pork, minced carrots, onion, garlic, egg, and soy sauce.',
+      'Season with salt and pepper.',
+      'Wrap in lumpia wrappers, roll tightly.',
+      'Deep fry in hot oil until golden brown.',
+      'Drain on paper towels and serve with sweet chili sauce.',
+    ],
+    minutes: 45,
+    servings: 8,
+    tags: {'Anything'},
+    meals: {'Lunch', 'Dinner', 'Snack'},
     ingredientKeywords: {'pork', 'egg'},
   ),
   RamseyDish(
     name: 'Beef Caldereta',
     shortInfo: 'Rich tomato beef stew, fiesta favorite',
-    ingredients: ['Beef chunks', 'Potatoes', 'Carrots', 'Bell pepper', 'Tomato sauce', 'Liver spread', 'Garlic', 'Onion', 'Bay leaves', 'Soy sauce', 'Cooking oil'],
-    instructions: ['Saute garlic and onion.', 'Brown beef on all sides.', 'Add soy sauce and tomato sauce, simmer until tender.', 'Add potatoes, carrots, and bell pepper.', 'Stir in liver spread to thicken.', 'Simmer until vegetables are cooked.'],
-    minutes: 90, servings: 6,
-    tags: {'Spicy', 'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredients: [
+      'Beef chunks',
+      'Potatoes',
+      'Carrots',
+      'Bell pepper',
+      'Tomato sauce',
+      'Liver spread',
+      'Garlic',
+      'Onion',
+      'Bay leaves',
+      'Soy sauce',
+      'Cooking oil',
+    ],
+    instructions: [
+      'Saute garlic and onion.',
+      'Brown beef on all sides.',
+      'Add soy sauce and tomato sauce, simmer until tender.',
+      'Add potatoes, carrots, and bell pepper.',
+      'Stir in liver spread to thicken.',
+      'Simmer until vegetables are cooked.',
+    ],
+    minutes: 90,
+    servings: 6,
+    tags: {'Spicy', 'Anything'},
+    meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'beef', 'tomato'},
   ),
   RamseyDish(
     name: 'Kare-Kare',
     shortInfo: 'Peanut-based oxtail stew, special occasion dish',
-    ingredients: ['Oxtail', 'Peanut butter', 'Eggplant', 'String beans', 'Pechay', 'Banana heart', 'Annatto powder', 'Toasted rice flour', 'Garlic', 'Onion', 'Bagoong alamang'],
-    instructions: ['Boil oxtail until tender, reserve broth.', 'Saute garlic and onion, add annatto powder.', 'Add broth and peanut butter, stir well.', 'Add toasted rice flour to thicken.', 'Add vegetables and cook until tender.', 'Serve with bagoong alamang.'],
-    minutes: 120, servings: 6,
-    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredients: [
+      'Oxtail',
+      'Peanut butter',
+      'Eggplant',
+      'String beans',
+      'Pechay',
+      'Banana heart',
+      'Annatto powder',
+      'Toasted rice flour',
+      'Garlic',
+      'Onion',
+      'Bagoong alamang',
+    ],
+    instructions: [
+      'Boil oxtail until tender, reserve broth.',
+      'Saute garlic and onion, add annatto powder.',
+      'Add broth and peanut butter, stir well.',
+      'Add toasted rice flour to thicken.',
+      'Add vegetables and cook until tender.',
+      'Serve with bagoong alamang.',
+    ],
+    minutes: 120,
+    servings: 6,
+    tags: {'Anything'},
+    meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'beef', 'vegetable'},
   ),
   RamseyDish(
     name: 'Menudo',
     shortInfo: 'Hearty pork and liver tomato stew',
-    ingredients: ['Diced pork', 'Pork liver', 'Potatoes', 'Carrots', 'Tomato sauce', 'Soy sauce', 'Garlic', 'Onion', 'Bay leaves', 'Green peas', 'Hotdogs', 'Cooking oil'],
-    instructions: ['Saute garlic and onion.', 'Add diced pork and cook until browned.', 'Add pork liver and cook briefly.', 'Pour in tomato sauce and soy sauce.', 'Add potatoes, carrots, and bay leaves, simmer.', 'Add hotdogs and green peas, cook until done.'],
-    minutes: 50, servings: 5,
-    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredients: [
+      'Diced pork',
+      'Pork liver',
+      'Potatoes',
+      'Carrots',
+      'Tomato sauce',
+      'Soy sauce',
+      'Garlic',
+      'Onion',
+      'Bay leaves',
+      'Green peas',
+      'Hotdogs',
+      'Cooking oil',
+    ],
+    instructions: [
+      'Saute garlic and onion.',
+      'Add diced pork and cook until browned.',
+      'Add pork liver and cook briefly.',
+      'Pour in tomato sauce and soy sauce.',
+      'Add potatoes, carrots, and bay leaves, simmer.',
+      'Add hotdogs and green peas, cook until done.',
+    ],
+    minutes: 50,
+    servings: 5,
+    tags: {'Anything'},
+    meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork'},
   ),
   RamseyDish(
     name: 'Bistek Tagalog',
     shortInfo: 'Filipino beef steak with onion rings',
-    ingredients: ['Beef sirloin slices', 'Onion rings', 'Soy sauce', 'Calamansi juice', 'Garlic', 'Black pepper', 'Cooking oil'],
-    instructions: ['Marinate beef in soy sauce, calamansi, and pepper for 30 mins.', 'Pan-fry beef slices until browned, set aside.', 'Saute onion rings until soft.', 'Return beef to pan with marinade.', 'Simmer until sauce thickens.', 'Top with onion rings and serve.'],
-    minutes: 45, servings: 4,
-    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredients: [
+      'Beef sirloin slices',
+      'Onion rings',
+      'Soy sauce',
+      'Calamansi juice',
+      'Garlic',
+      'Black pepper',
+      'Cooking oil',
+    ],
+    instructions: [
+      'Marinate beef in soy sauce, calamansi, and pepper for 30 mins.',
+      'Pan-fry beef slices until browned, set aside.',
+      'Saute onion rings until soft.',
+      'Return beef to pan with marinade.',
+      'Simmer until sauce thickens.',
+      'Top with onion rings and serve.',
+    ],
+    minutes: 45,
+    servings: 4,
+    tags: {'Anything'},
+    meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'beef'},
   ),
   RamseyDish(
     name: 'Lechon Kawali',
     shortInfo: 'Crispy deep-fried pork belly',
-    ingredients: ['Pork belly', 'Garlic', 'Bay leaves', 'Whole peppercorns', 'Salt', 'Cooking oil', 'Soy sauce', 'Vinegar'],
-    instructions: ['Boil pork belly with garlic, bay leaves, peppercorns, and salt until tender.', 'Drain and let dry completely.', 'Deep fry in hot oil until golden and crispy.', 'Chop into pieces.', 'Serve with lechon sauce or spiced vinegar.'],
-    minutes: 75, servings: 5,
-    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredients: [
+      'Pork belly',
+      'Garlic',
+      'Bay leaves',
+      'Whole peppercorns',
+      'Salt',
+      'Cooking oil',
+      'Soy sauce',
+      'Vinegar',
+    ],
+    instructions: [
+      'Boil pork belly with garlic, bay leaves, peppercorns, and salt until tender.',
+      'Drain and let dry completely.',
+      'Deep fry in hot oil until golden and crispy.',
+      'Chop into pieces.',
+      'Serve with lechon sauce or spiced vinegar.',
+    ],
+    minutes: 75,
+    servings: 5,
+    tags: {'Anything'},
+    meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork'},
   ),
   RamseyDish(
     name: 'Pancit Canton',
     shortInfo: 'Stir-fried egg noodles, party staple',
-    ingredients: ['Pancit canton noodles', 'Pork slices', 'Shrimp', 'Cabbage', 'Carrots', 'Snow peas', 'Soy sauce', 'Oyster sauce', 'Garlic', 'Onion', 'Chicken broth'],
-    instructions: ['Saute garlic and onion.', 'Cook pork slices until done, add shrimp.', 'Add vegetables and stir-fry briefly.', 'Add broth, soy sauce, and oyster sauce.', 'Add noodles and toss until cooked.', 'Serve hot with calamansi.'],
-    minutes: 30, servings: 5,
-    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredients: [
+      'Pancit canton noodles',
+      'Pork slices',
+      'Shrimp',
+      'Cabbage',
+      'Carrots',
+      'Snow peas',
+      'Soy sauce',
+      'Oyster sauce',
+      'Garlic',
+      'Onion',
+      'Chicken broth',
+    ],
+    instructions: [
+      'Saute garlic and onion.',
+      'Cook pork slices until done, add shrimp.',
+      'Add vegetables and stir-fry briefly.',
+      'Add broth, soy sauce, and oyster sauce.',
+      'Add noodles and toss until cooked.',
+      'Serve hot with calamansi.',
+    ],
+    minutes: 30,
+    servings: 5,
+    tags: {'Anything'},
+    meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'noodle', 'pork', 'shrimp'},
   ),
   RamseyDish(
     name: 'Sisig',
     shortInfo: 'Sizzling chopped pork, pulutan favorite',
-    ingredients: ['Pork belly', 'Pork ears', 'Onion', 'Chili peppers', 'Calamansi', 'Soy sauce', 'Mayonnaise', 'Egg', 'Garlic', 'Cooking oil'],
-    instructions: ['Boil pork belly and ears until tender.', 'Grill or broil until slightly charred.', 'Chop finely and set aside.', 'Saute onion and chili peppers.', 'Add chopped pork, soy sauce, and calamansi.', 'Top with egg and mayonnaise, serve sizzling.'],
-    minutes: 60, servings: 4,
-    tags: {'Spicy', 'Anything'}, meals: {'Lunch', 'Dinner', 'Midnight Snack'},
+    ingredients: [
+      'Pork belly',
+      'Pork ears',
+      'Onion',
+      'Chili peppers',
+      'Calamansi',
+      'Soy sauce',
+      'Mayonnaise',
+      'Egg',
+      'Garlic',
+      'Cooking oil',
+    ],
+    instructions: [
+      'Boil pork belly and ears until tender.',
+      'Grill or broil until slightly charred.',
+      'Chop finely and set aside.',
+      'Saute onion and chili peppers.',
+      'Add chopped pork, soy sauce, and calamansi.',
+      'Top with egg and mayonnaise, serve sizzling.',
+    ],
+    minutes: 60,
+    servings: 4,
+    tags: {'Spicy', 'Anything'},
+    meals: {'Lunch', 'Dinner', 'Midnight Snack'},
     ingredientKeywords: {'pork', 'egg'},
   ),
   RamseyDish(
     name: 'Bulalo',
     shortInfo: 'Beef shank bone marrow soup',
-    ingredients: ['Beef shank with bone marrow', 'Corn on the cob', 'Napa cabbage', 'Green beans', 'Onion', 'Whole peppercorns', 'Fish sauce', 'Green onions'],
-    instructions: ['Boil beef shank in water, skim off scum.', 'Add onion and peppercorns, simmer 2-3 hours.', 'Add corn and cook 10 minutes.', 'Add green beans and napa cabbage.', 'Season with fish sauce.', 'Garnish with green onions.'],
-    minutes: 180, servings: 6,
-    tags: {'Soupy', 'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredients: [
+      'Beef shank with bone marrow',
+      'Corn on the cob',
+      'Napa cabbage',
+      'Green beans',
+      'Onion',
+      'Whole peppercorns',
+      'Fish sauce',
+      'Green onions',
+    ],
+    instructions: [
+      'Boil beef shank in water, skim off scum.',
+      'Add onion and peppercorns, simmer 2-3 hours.',
+      'Add corn and cook 10 minutes.',
+      'Add green beans and napa cabbage.',
+      'Season with fish sauce.',
+      'Garnish with green onions.',
+    ],
+    minutes: 180,
+    servings: 6,
+    tags: {'Soupy', 'Anything'},
+    meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'beef'},
   ),
   RamseyDish(
     name: 'Pancit Palabok',
     shortInfo: 'Rice noodles in orange shrimp sauce',
-    ingredients: ['Rice noodles', 'Shrimp', 'Ground pork', 'Annatto powder', 'Fish sauce', 'Garlic', 'Boiled eggs', 'Chicharon', 'Green onions', 'Calamansi', 'Cornstarch'],
-    instructions: ['Boil noodles until tender, drain.', 'Make sauce: saute garlic, add broth with annatto and cornstarch.', 'Cook ground pork and shrimp separately.', 'Pour sauce over noodles.', 'Top with pork, shrimp, sliced eggs, and chicharon.', 'Garnish with green onions and calamansi.'],
-    minutes: 40, servings: 5,
-    tags: {'Anything'}, meals: {'Lunch', 'Dinner'},
+    ingredients: [
+      'Rice noodles',
+      'Shrimp',
+      'Ground pork',
+      'Annatto powder',
+      'Fish sauce',
+      'Garlic',
+      'Boiled eggs',
+      'Chicharon',
+      'Green onions',
+      'Calamansi',
+      'Cornstarch',
+    ],
+    instructions: [
+      'Boil noodles until tender, drain.',
+      'Make sauce: saute garlic, add broth with annatto and cornstarch.',
+      'Cook ground pork and shrimp separately.',
+      'Pour sauce over noodles.',
+      'Top with pork, shrimp, sliced eggs, and chicharon.',
+      'Garnish with green onions and calamansi.',
+    ],
+    minutes: 40,
+    servings: 5,
+    tags: {'Anything'},
+    meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'noodle', 'shrimp', 'pork', 'egg'},
   ),
   RamseyDish(
     name: 'Leche Flan',
     shortInfo: 'Creamy caramel custard dessert',
-    ingredients: ['Egg yolks', 'Condensed milk', 'Evaporated milk', 'Sugar', 'Vanilla extract', 'Calamansi rind'],
-    instructions: ['Caramelize sugar in llanera until golden.', 'Mix egg yolks, condensed milk, evaporated milk, and vanilla.', 'Strain mixture and pour into llanera.', 'Cover with foil.', 'Steam for 30-40 minutes until set.', 'Let cool, then flip onto a plate.'],
-    minutes: 50, servings: 8,
-    tags: {'Anything'}, meals: {'Snack', 'Dinner'},
+    ingredients: [
+      'Egg yolks',
+      'Condensed milk',
+      'Evaporated milk',
+      'Sugar',
+      'Vanilla extract',
+      'Calamansi rind',
+    ],
+    instructions: [
+      'Caramelize sugar in llanera until golden.',
+      'Mix egg yolks, condensed milk, evaporated milk, and vanilla.',
+      'Strain mixture and pour into llanera.',
+      'Cover with foil.',
+      'Steam for 30-40 minutes until set.',
+      'Let cool, then flip onto a plate.',
+    ],
+    minutes: 50,
+    servings: 8,
+    tags: {'Anything'},
+    meals: {'Snack', 'Dinner'},
     ingredientKeywords: {'egg'},
   ),
   RamseyDish(
     name: 'Buko Salad',
     shortInfo: 'Sweet coconut fruit salad, fiesta dessert',
-    ingredients: ['Young coconut strips', 'Fruit cocktail', 'Nata de coco', 'Kaong', 'All-purpose cream', 'Condensed milk'],
-    instructions: ['Drain fruit cocktail, nata de coco, and kaong.', 'Combine all fruits and coconut strips in a bowl.', 'Add all-purpose cream and condensed milk.', 'Mix gently until well combined.', 'Chill in refrigerator for at least 2 hours.', 'Serve cold.'],
-    minutes: 15, servings: 10,
-    tags: {'Anything'}, meals: {'Snack', 'Dinner', 'Lunch'},
+    ingredients: [
+      'Young coconut strips',
+      'Fruit cocktail',
+      'Nata de coco',
+      'Kaong',
+      'All-purpose cream',
+      'Condensed milk',
+    ],
+    instructions: [
+      'Drain fruit cocktail, nata de coco, and kaong.',
+      'Combine all fruits and coconut strips in a bowl.',
+      'Add all-purpose cream and condensed milk.',
+      'Mix gently until well combined.',
+      'Chill in refrigerator for at least 2 hours.',
+      'Serve cold.',
+    ],
+    minutes: 15,
+    servings: 10,
+    tags: {'Anything'},
+    meals: {'Snack', 'Dinner', 'Lunch'},
     ingredientKeywords: {'coconut'},
   ),
 ];
