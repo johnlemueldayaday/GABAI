@@ -1552,6 +1552,15 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
   }
 
   @override
+  void didUpdateWidget(_GlassTrendChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.transactions != widget.transactions ||
+        oldWidget.recentLists != widget.recentLists) {
+      _animCtrl.forward(from: 0);
+    }
+  }
+
+  @override
   void dispose() {
     _animCtrl.dispose();
     super.dispose();
