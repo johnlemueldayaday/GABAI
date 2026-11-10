@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gabay/models/bill_models.dart';
 import 'package:gabay/services/bill_calendar_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/data/latest.dart' as timezone_data;
+import 'package:timezone/timezone.dart' as timezone;
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -13,6 +15,8 @@ void main() {
   final calls = <MethodCall>[];
 
   setUp(() {
+    timezone_data.initializeTimeZones();
+    timezone.setLocalLocation(timezone.getLocation('Asia/Manila'));
     SharedPreferences.setMockInitialValues({});
     plugin = DeviceCalendarPlugin.private();
     calls.clear();

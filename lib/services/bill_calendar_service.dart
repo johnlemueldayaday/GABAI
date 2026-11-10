@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:device_calendar/device_calendar.dart';
 import 'package:gabay/models/bill_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:timezone/timezone.dart' as tz;
 
 class BillCalendarService {
   BillCalendarService({DeviceCalendarPlugin? plugin})
@@ -91,8 +92,11 @@ class BillCalendarService {
         title: '${bill.isIncome ? 'Income' : 'Bill'}: ${bill.type}',
         description:
             '${bill.type} • ₱${bill.amount.toStringAsFixed(2)} • ${bill.frequency}',
-        start: start,
-        end: start.add(const Duration(minutes: 15)),
+        start: tz.TZDateTime.from(start, tz.local),
+        end: tz.TZDateTime.from(
+          start.add(const Duration(minutes: 15)),
+          tz.local,
+        ),
         recurrenceRule: recurrenceRuleForFrequency(bill.frequency),
         reminders: [Reminder(minutes: 0)],
       );
