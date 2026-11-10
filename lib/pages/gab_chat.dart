@@ -4,31 +4,31 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../config/app_theme.dart';
 import '../navigation/app_routes.dart';
-import '../services/bai_assistant.dart';
+import '../services/gab_assistant.dart';
 import '../widgets/app_drawer.dart';
 import '../pages/cart.dart';
 
-class BaiChatPage extends StatefulWidget {
-  const BaiChatPage({super.key});
+class GabChatPage extends StatefulWidget {
+  const GabChatPage({super.key});
 
   @override
-  State<BaiChatPage> createState() => _BaiChatPageState();
+  State<GabChatPage> createState() => _GabChatPageState();
 }
 
-class _BaiChatMessage {
+class _GabChatMessage {
   final String text;
   final bool isUser;
   final String? highlightColor;
-  const _BaiChatMessage({
+  const _GabChatMessage({
     required this.text,
     required this.isUser,
     this.highlightColor,
   });
 }
 
-class _BaiChatPageState extends State<BaiChatPage> {
-  static final BaiAssistant _assistant = BaiAssistant();
-  static final List<_BaiChatMessage> _savedMessages = [];
+class _GabChatPageState extends State<GabChatPage> {
+  static final GabAssistant _assistant = GabAssistant();
+  static final List<_GabChatMessage> _savedMessages = [];
   static List<String> _savedQuickReplies = [];
 
   final TextEditingController _controller = TextEditingController();
@@ -57,10 +57,10 @@ class _BaiChatPageState extends State<BaiChatPage> {
     final g = await _assistant.getAsyncGreeting();
     if (!mounted) return;
     setState(() {
-      _savedMessages.add(_BaiChatMessage(text: g.text, isUser: false));
+      _savedMessages.add(_GabChatMessage(text: g.text, isUser: false));
       if (g.extraTexts != null) {
         for (var t in g.extraTexts!) {
-          _savedMessages.add(_BaiChatMessage(text: t, isUser: false));
+          _savedMessages.add(_GabChatMessage(text: t, isUser: false));
         }
       }
       _savedQuickReplies = g.quickReplies;
@@ -85,7 +85,7 @@ class _BaiChatPageState extends State<BaiChatPage> {
 
     _controller.clear();
     setState(() {
-      _savedMessages.add(_BaiChatMessage(text: text, isUser: true));
+      _savedMessages.add(_GabChatMessage(text: text, isUser: true));
       _savedQuickReplies = [];
     });
     _scrollToBottom();
@@ -93,7 +93,7 @@ class _BaiChatPageState extends State<BaiChatPage> {
 
     _assistantCallInFlight = true;
     setState(() {});
-    late final BaiReply reply;
+    late final GabReply reply;
     try {
       reply = await _assistant.handle(text);
     } finally {
@@ -109,7 +109,7 @@ class _BaiChatPageState extends State<BaiChatPage> {
       _stopTyping();
       setState(() {
         _savedMessages.add(
-          _BaiChatMessage(
+          _GabChatMessage(
             text: reply.text,
             isUser: false,
             highlightColor: reply.highlightColor,
@@ -117,7 +117,7 @@ class _BaiChatPageState extends State<BaiChatPage> {
         );
         if (reply.extraTexts != null) {
           for (var t in reply.extraTexts!) {
-            _savedMessages.add(_BaiChatMessage(text: t, isUser: false));
+            _savedMessages.add(_GabChatMessage(text: t, isUser: false));
           }
         }
         _savedQuickReplies = reply.quickReplies;
@@ -151,10 +151,10 @@ class _BaiChatPageState extends State<BaiChatPage> {
       setState(() {
         _typingDots = 1;
         _savedMessages.clear();
-        _savedMessages.add(_BaiChatMessage(text: g.text, isUser: false));
+        _savedMessages.add(_GabChatMessage(text: g.text, isUser: false));
         if (g.extraTexts != null) {
           for (var t in g.extraTexts!) {
-            _savedMessages.add(_BaiChatMessage(text: t, isUser: false));
+            _savedMessages.add(_GabChatMessage(text: t, isUser: false));
           }
         }
         _savedQuickReplies = g.quickReplies;
@@ -216,7 +216,7 @@ class _BaiChatPageState extends State<BaiChatPage> {
               height: 44,
               decoration: const BoxDecoration(shape: BoxShape.circle),
               child: ClipOval(
-                child: Image.asset('assets/images/bai.png', fit: BoxFit.cover),
+                child: Image.asset('assets/images/gab.png', fit: BoxFit.cover),
               ),
             ),
             const SizedBox(width: 12),
@@ -226,7 +226,7 @@ class _BaiChatPageState extends State<BaiChatPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'BAI',
+                    'GAB',
                     style: GoogleFonts.plusJakartaSans(
                       color: kTextCharcoal,
                       fontSize: 16,
@@ -247,7 +247,7 @@ class _BaiChatPageState extends State<BaiChatPage> {
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'Brother AI • Your Smart Assistant',
+                          'GAB • Assistant',
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.plusJakartaSans(
                             color: kMuted,
@@ -286,7 +286,7 @@ class _BaiChatPageState extends State<BaiChatPage> {
         foregroundColor: kTextCharcoal,
         centerTitle: false,
       ),
-      drawer: const AppDrawer(currentPage: 'BAI'),
+      drawer: const AppDrawer(currentPage: 'GAB'),
       body: Column(
         children: [
           Expanded(
@@ -340,7 +340,7 @@ class _TypingWidget extends StatelessWidget {
           boxShadow: [kShadowSoft],
         ),
         child: Text(
-          'BAI is thinking${List.filled(dots, '.').join()}',
+          'GAB is thinking${List.filled(dots, '.').join()}',
           style: GoogleFonts.plusJakartaSans(
             color: kMuted,
             fontSize: 13,
@@ -353,7 +353,7 @@ class _TypingWidget extends StatelessWidget {
 }
 
 class _BubbleWidget extends StatelessWidget {
-  final _BaiChatMessage message;
+  final _GabChatMessage message;
   const _BubbleWidget({required this.message});
 
   // Pattern for inline icon tokens: {{icon:assets/images/gcash.png}}
@@ -502,7 +502,7 @@ class _BubbleWidget extends StatelessWidget {
               margin: const EdgeInsets.only(bottom: 12, right: 8),
               decoration: const BoxDecoration(shape: BoxShape.circle),
               child: ClipOval(
-                child: Image.asset('assets/images/bai.png', fit: BoxFit.cover),
+                child: Image.asset('assets/images/gab.png', fit: BoxFit.cover),
               ),
             ),
           ],
@@ -629,8 +629,8 @@ class _ComposerWidget extends StatelessWidget {
                 ),
                 decoration: InputDecoration(
                   hintText: isEnabled
-                      ? 'Ask BAI anything...'
-                      : 'BAI is thinking...',
+                      ? 'Ask GAB anything...'
+                      : 'GAB is thinking...',
                   hintStyle: TextStyle(color: kMuted),
                   filled: true,
                   fillColor: kCardBg,

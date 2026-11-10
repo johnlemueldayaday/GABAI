@@ -12,7 +12,7 @@ void main() {
     await SettingsService().load();
 
     await tester.pumpWidget(const GroceryApp());
-    expect(find.text('GABAY'), findsOneWidget);
+    expect(find.text('GABAI'), findsOneWidget);
     await tester.pump(const Duration(seconds: 3));
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pump(const Duration(milliseconds: 100));

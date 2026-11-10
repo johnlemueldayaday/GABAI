@@ -103,7 +103,7 @@ class _SplashScreenState extends State<SplashScreen>
                           ),
                           const SizedBox(height: 24),
                           Text(
-                            'GABAY',
+                            'GABAI',
                             style: GoogleFonts.luckiestGuy(
                               fontSize: 48,
                               color: Colors.white,

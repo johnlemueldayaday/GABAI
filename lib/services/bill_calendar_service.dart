@@ -140,7 +140,7 @@ class BillCalendarService {
       final requested = await _plugin.requestPermissions();
       if (requested.data != true) {
         throw StateError(
-          'Allow GABAY to access your calendar to add bill reminders.',
+          'Allow GABAI to access your calendar to add bill reminders.',
         );
       }
     }

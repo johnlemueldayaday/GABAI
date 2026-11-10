@@ -105,7 +105,7 @@ class FinanceStorage {
   }
 
   /// Add a transaction, update the linked account balance, and persist both.
-  /// This is the core method that Tarsi's `add_transaction` tool will call.
+  /// This is the core method that Gab's `add_transaction` tool will call.
   /// Throws an exception if the transaction would result in a negative balance for Cash, E-Wallet, or Bank accounts.
   static Future<void> addTransaction(FinanceTransaction txn) async {
     // 1. Load the account to check balance constraints
@@ -141,7 +141,7 @@ class FinanceStorage {
   }
 
   /// Transfer money between two accounts and log it as two transactions.
-  /// This is the core method that Tarsi's `transfer_money` tool will call.
+  /// This is the core method that Gab's `transfer_money` tool will call.
   /// Throws an exception if the source account has insufficient funds.
   static Future<void> transferMoney({
     required Account fromAccount,

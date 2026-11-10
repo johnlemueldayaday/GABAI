@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>GABAY</string>
+	<string>GABAI</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -27,17 +27,17 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>GABAY needs camera access to scan products and receipts.</string>
+	<string>GABAI needs camera access to scan products and receipts.</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
-	<string>GABAY adds bill and income reminders to your device calendar.</string>
+	<string>GABAI adds bill and income reminders to your device calendar.</string>
 	<key>NSCalendarsUsageDescription</key>
-	<string>GABAY adds bill and income reminders to your device calendar.</string>
+	<string>GABAI adds bill and income reminders to your device calendar.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>GABAY uses the microphone so you can speak grocery item names.</string>
+	<string>GABAI uses the microphone so you can speak grocery item names.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>GABAY needs photo library access to pick product images.</string>
+	<string>GABAI needs photo library access to pick product images.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>GABAY uses speech recognition so you can add grocery items by voice.</string>
+	<string>GABAI uses speech recognition so you can add grocery items by voice.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

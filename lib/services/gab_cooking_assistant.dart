@@ -4,7 +4,7 @@ import 'package:gabay/data/grocery_database.dart';
 import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/models/bill_models.dart';
 
-enum RamseyStep { mealPrompt, cravingPrompt, dishPrompt, cartPrompt }
+enum GabCookingStep { mealPrompt, cravingPrompt, dishPrompt, cartPrompt }
 
 class _SpendingSnapshot {
   final String label;
@@ -20,7 +20,7 @@ class _SpendingSnapshot {
   });
 }
 
-class RamseyDish {
+class GabDish {
   final String name;
   final String shortInfo;
   final List<String> ingredients;
@@ -31,7 +31,7 @@ class RamseyDish {
   final Set<String> meals;
   final Set<String> ingredientKeywords;
 
-  const RamseyDish({
+  const GabDish({
     required this.name,
     this.shortInfo = 'Classic Filipino favorite',
     required this.ingredients,
@@ -44,13 +44,13 @@ class RamseyDish {
   });
 }
 
-class RamseyReply {
+class GabCookingReply {
   final String text;
   final List<String>? extraTexts;
   final List<String> quickReplies;
   final String? navigateTo;
 
-  const RamseyReply(
+  const GabCookingReply(
     this.text, {
     this.extraTexts,
     this.quickReplies = const [],
@@ -58,16 +58,16 @@ class RamseyReply {
   });
 }
 
-class RamseyCookingAssistant {
+class GabCookingAssistant {
   final Random _random = Random();
-  RamseyStep _step = RamseyStep.mealPrompt;
+  GabCookingStep _step = GabCookingStep.mealPrompt;
   String? _meal;
   String? _craving;
-  List<RamseyDish> _currentOptions = [];
+  List<GabDish> _currentOptions = [];
   List<String> _lastDishNames = [];
   _SpendingSnapshot? _lastSpending;
   List<Bill> _allBills = [];
-  RamseyDish? _lastDish;
+  GabDish? _lastDish;
   final Set<String> _suggestedDishNames = {};
 
   void updateBills(List<Bill> bills) {
@@ -94,9 +94,9 @@ class RamseyCookingAssistant {
     return upcoming;
   }
 
-  RamseyReply get greeting {
-    return const RamseyReply(
-      "Kumusta! I'm Ramsey, your all-in-one smart assistant. 🇵🇭",
+  GabCookingReply get greeting {
+    return const GabCookingReply(
+      "Kumusta! I'm Gab, your all-in-one smart assistant. 🇵🇭",
       extraTexts: ["How can I help you today?"],
     );
   }
@@ -119,8 +119,8 @@ class RamseyCookingAssistant {
     return '${monthNames[date.month - 1]} ${date.day}';
   }
 
-  /// Expose current step for BAI integration
-  RamseyStep get stepForBai => _step;
+  /// Expose current step for GAB integration
+  GabCookingStep get stepForGab => _step;
 
   void resetConversation() {
     _resetCooking();
@@ -132,7 +132,7 @@ class RamseyCookingAssistant {
 
   bool get hasRecentFridgeItems => _recentIngredientKeywords().isNotEmpty;
 
-  RamseyReply handle(String rawInput) {
+  GabCookingReply handle(String rawInput) {
     final input = rawInput.trim();
     final normalized = input.toLowerCase();
 
@@ -148,9 +148,9 @@ class RamseyCookingAssistant {
     if (_isExplicitBudgetAsk(normalized)) {
       final amount = _parseAmount(normalized);
       if (amount != null) {
-        _meal = RamseyCookingAssistant.detectMeal(DateTime.now());
+        _meal = GabCookingAssistant.detectMeal(DateTime.now());
         _currentOptions = _pickDishesByBudget(amount);
-        _step = RamseyStep.dishPrompt;
+        _step = GabCookingStep.dishPrompt;
         return _dishOptionsReply();
       }
     }
@@ -185,7 +185,7 @@ class RamseyCookingAssistant {
     final directDish = _findDirectRecipeRequest(normalized);
     if (directDish != null) {
       _lastDish = directDish;
-      _step = RamseyStep.cartPrompt;
+      _step = GabCookingStep.cartPrompt;
       return _recipeReply(directDish);
     }
 
@@ -200,28 +200,28 @@ class RamseyCookingAssistant {
       return _handleMealInquiry(explicitMeal, 'Anything');
     }
 
-    if (_step == RamseyStep.mealPrompt) {
+    if (_step == GabCookingStep.mealPrompt) {
       final selectedCraving = _cravingFromInput(normalized);
       if (selectedCraving != null) {
         return _handleMealInquiry(
-          RamseyCookingAssistant.detectMeal(DateTime.now()),
+          GabCookingAssistant.detectMeal(DateTime.now()),
           selectedCraving,
         );
       }
 
       if (_looksLikeCookingAsk(normalized)) {
         return _handleMealInquiry(
-          RamseyCookingAssistant.detectMeal(DateTime.now()),
+          GabCookingAssistant.detectMeal(DateTime.now()),
           'Anything',
         );
       }
-      return const RamseyReply(
+      return const GabCookingReply(
         "I'd love to help! I can assist with cooking, grocery tracking, or managing your budget. What's on your mind?",
         quickReplies: ['What can I cook?', 'How much did I spend this week?'],
       );
     }
 
-    if (_step == RamseyStep.cravingPrompt) {
+    if (_step == GabCookingStep.cravingPrompt) {
       final selectedCraving = _cravingFromInput(normalized);
       if (selectedCraving == null) {
         return _cravingPrompt();
@@ -229,7 +229,7 @@ class RamseyCookingAssistant {
       return _handleMealInquiry(_meal!, selectedCraving);
     }
 
-    if (_step == RamseyStep.dishPrompt) {
+    if (_step == GabCookingStep.dishPrompt) {
       if (normalized == 'yes' ||
           normalized == 'more' ||
           normalized.contains('suggest more') ||
@@ -240,7 +240,7 @@ class RamseyCookingAssistant {
       final number = int.tryParse(normalized);
       if (number != null && number >= 1 && number <= _currentOptions.length) {
         _lastDish = _currentOptions[number - 1];
-        _step = RamseyStep.cartPrompt;
+        _step = GabCookingStep.cartPrompt;
         return _recipeReply(_lastDish!);
       }
 
@@ -249,43 +249,43 @@ class RamseyCookingAssistant {
         return _handleMealInquiry(_meal!, selectedCraving);
       }
 
-      return const RamseyReply(
+      return const GabCookingReply(
         "Type the dish number you want to cook. Sarap nyan soon.",
       );
     }
 
-    if (_step == RamseyStep.cartPrompt) {
+    if (_step == GabCookingStep.cartPrompt) {
       if (normalized == 'yes' || _isYes(normalized)) {
         if (_lastDish != null) {
           _addIngredientsToCart(_lastDish!);
-          _step = RamseyStep.mealPrompt;
-          return RamseyReply(
+          _step = GabCookingStep.mealPrompt;
+          return GabCookingReply(
             "Done! I've created a new list for ${_lastDish!.name} and added all the ingredients. Opening it for you now... 🛒",
             navigateTo: 'cart_detail',
           );
         }
       }
-      _step = RamseyStep.mealPrompt;
-      return const RamseyReply(
+      _step = GabCookingStep.mealPrompt;
+      return const GabCookingReply(
         "No problem! I'm here if you need more suggestions or help with your budget.",
         quickReplies: ['What can I cook?', 'Show my budget'],
       );
     }
 
     if (normalized.contains('notify me')) {
-      return const RamseyReply(
+      return const GabCookingReply(
         "Got it! I've set a reminder for you. I'll make sure to notify you 3 days before the due date so you never miss a payment! 🔔",
         quickReplies: ['Show my budget', 'What can I cook for dinner?'],
       );
     }
 
     if (normalized.contains('show all bills')) {
-      return const RamseyReply(
+      return const GabCookingReply(
         "You can see all your recorded bills in the Bills Tracker section. It has a full calendar view and payment status for each one!",
       );
     }
 
-    return const RamseyReply(
+    return const GabCookingReply(
       "I'd love to help! I can assist with cooking, grocery tracking, or managing your budget. What's on your mind?",
       quickReplies: ['What can I cook?', 'How much did I spend this week?'],
     );
@@ -309,7 +309,7 @@ class RamseyCookingAssistant {
   }
 
   void _resetCooking() {
-    _step = RamseyStep.mealPrompt;
+    _step = GabCookingStep.mealPrompt;
     _meal = null;
     _craving = null;
     _currentOptions = [];
@@ -405,8 +405,8 @@ class RamseyCookingAssistant {
     return null;
   }
 
-  RamseyReply _cravingPrompt() {
-    return const RamseyReply(
+  GabCookingReply _cravingPrompt() {
+    return const GabCookingReply(
       "What are you craving for?\n\n"
       "1. Healthy\n"
       "2. Soupy\n"
@@ -439,9 +439,9 @@ class RamseyCookingAssistant {
     return null;
   }
 
-  List<RamseyDish> _pickDishes(String meal, String craving) {
+  List<GabDish> _pickDishes(String meal, String craving) {
     final pool = _candidateDishes(meal, craving);
-    final shuffled = List<RamseyDish>.from(pool)..shuffle(_random);
+    final shuffled = List<GabDish>.from(pool)..shuffle(_random);
     var picked = shuffled.take(5).toList();
 
     if (_sameAsLast(picked) && pool.length > 5) {
@@ -457,13 +457,13 @@ class RamseyCookingAssistant {
     return picked;
   }
 
-  bool _sameAsLast(List<RamseyDish> dishes) {
+  bool _sameAsLast(List<GabDish> dishes) {
     final names = dishes.map((dish) => dish.name).toSet();
     return names.length == _lastDishNames.length &&
         _lastDishNames.every(names.contains);
   }
 
-  List<RamseyDish> _candidateDishes(String meal, String craving) {
+  List<GabDish> _candidateDishes(String meal, String craving) {
     if (craving == "Depends on what's in my fridge") {
       final fridge = _recentIngredientKeywords();
       if (fridge.isEmpty) {
@@ -505,11 +505,11 @@ class RamseyCookingAssistant {
     return names;
   }
 
-  RamseyReply _spendingSummaryReply(String input) {
+  GabCookingReply _spendingSummaryReply(String input) {
     final snapshot = _spendingSnapshot(input);
     _lastSpending = snapshot;
     if (snapshot.trips.isEmpty) {
-      return RamseyReply(
+      return GabCookingReply(
         "Wala akong nakitang purchase data para sa ${snapshot.label}.\nMake sure your groceries are logged in the app.",
       );
     }
@@ -517,7 +517,7 @@ class RamseyCookingAssistant {
     final total = _tripTotal(snapshot.trips);
     final biggest = _biggestPurchase(snapshot.trips);
 
-    return RamseyReply(
+    return GabCookingReply(
       "${_formatRange(snapshot.start, snapshot.end)}\n"
       "₱${total.toStringAsFixed(2)}\n"
       "${biggest.$1} - ₱${biggest.$2.toStringAsFixed(2)}\n\n"
@@ -525,9 +525,9 @@ class RamseyCookingAssistant {
     );
   }
 
-  RamseyReply _spendingBreakdownReply(_SpendingSnapshot snapshot) {
+  GabCookingReply _spendingBreakdownReply(_SpendingSnapshot snapshot) {
     if (snapshot.trips.isEmpty) {
-      return RamseyReply(
+      return GabCookingReply(
         "Wala akong nakitang purchase data para sa ${snapshot.label}.\nMake sure your groceries are logged in the app.",
       );
     }
@@ -551,7 +551,7 @@ class RamseyCookingAssistant {
       }
     }
 
-    return RamseyReply("Here's the full breakdown.\n\n${lines.join('\n')}");
+    return GabCookingReply("Here's the full breakdown.\n\n${lines.join('\n')}");
   }
 
   _SpendingSnapshot _spendingSnapshot(String input) {
@@ -673,7 +673,7 @@ class RamseyCookingAssistant {
     return entries.first.key;
   }
 
-  double _calculateDishPrice(RamseyDish dish) {
+  double _calculateDishPrice(GabDish dish) {
     var total = 0.0;
     for (final ingredient in dish.ingredients) {
       final match = _findGroceryPrice(ingredient);
@@ -686,7 +686,7 @@ class RamseyCookingAssistant {
     return total;
   }
 
-  List<RamseyDish> _pickDishesByBudget(double targetBudget) {
+  List<GabDish> _pickDishesByBudget(double targetBudget) {
     final dishesWithPrices = _dishes.map((dish) {
       return (dish, _calculateDishPrice(dish));
     }).toList();
@@ -701,7 +701,7 @@ class RamseyCookingAssistant {
     return dishesWithPrices.take(5).map((e) => e.$1).toList();
   }
 
-  RamseyReply _budgetMealPlanReply(double weeklyBudget) {
+  GabCookingReply _budgetMealPlanReply(double weeklyBudget) {
     final days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final dailyBudget = weeklyBudget / 7;
 
@@ -758,7 +758,7 @@ class RamseyCookingAssistant {
       lines.add("• ${days[i]}: ${b.name}, ${l.name}, ${d.name}");
     }
 
-    return RamseyReply(
+    return GabCookingReply(
       "I've designed a 7-day Filipino meal plan for your ₱${weeklyBudget.toStringAsFixed(0)} budget! 🇵🇭\n\n"
       "${lines.join('\n')}\n\n"
       "Estimated Total Cost: ₱${estimatedTotal.toStringAsFixed(2)}\n\n"
@@ -766,7 +766,7 @@ class RamseyCookingAssistant {
     );
   }
 
-  RamseyReply _weeklyMealPlanReply() {
+  GabCookingReply _weeklyMealPlanReply() {
     final days = [
       'Monday',
       'Tuesday',
@@ -793,7 +793,7 @@ class RamseyCookingAssistant {
       );
     }
 
-    return RamseyReply(
+    return GabCookingReply(
       "Here's a simple weekly Filipino meal plan.\n\n${lines.join('\n')}",
     );
   }
@@ -837,7 +837,7 @@ class RamseyCookingAssistant {
     return keywords;
   }
 
-  RamseyReply _handleMealInquiry(String meal, String craving) {
+  GabCookingReply _handleMealInquiry(String meal, String craving) {
     _meal = meal;
     _craving = craving;
 
@@ -847,8 +847,8 @@ class RamseyCookingAssistant {
     ).where((d) => !_suggestedDishNames.contains(d.name)).toList();
 
     if (pool.isEmpty) {
-      _step = RamseyStep.mealPrompt;
-      return const RamseyReply(
+      _step = GabCookingStep.mealPrompt;
+      return const GabCookingReply(
         "That's all I can find for now, sorry. 👨‍🍳 Is there anything else I can help you with?",
         quickReplies: ['Show my budget', 'Do I have upcoming bills?'],
       );
@@ -861,11 +861,11 @@ class RamseyCookingAssistant {
       _suggestedDishNames.add(dish.name);
     }
 
-    _step = RamseyStep.dishPrompt;
+    _step = GabCookingStep.dishPrompt;
     return _dishOptionsReply();
   }
 
-  RamseyDish? _findDirectRecipeRequest(String input) {
+  GabDish? _findDirectRecipeRequest(String input) {
     // Check if the input looks like a direct recipe request
     final hasRecipeKeyword =
         input.contains('recipe') ||
@@ -888,7 +888,7 @@ class RamseyCookingAssistant {
     if (!hasRecipeKeyword) return null;
 
     // Try to match a dish name from our database
-    RamseyDish? bestMatch;
+    GabDish? bestMatch;
     int bestMatchLength = 0;
 
     for (final dish in _dishes) {
@@ -914,7 +914,7 @@ class RamseyCookingAssistant {
     return bestMatch;
   }
 
-  RamseyReply _dishOptionsReply() {
+  GabCookingReply _dishOptionsReply() {
     final meal = _meal ?? 'meal';
     final list = _currentOptions
         .asMap()
@@ -925,7 +925,7 @@ class RamseyCookingAssistant {
         )
         .join('\n');
 
-    return RamseyReply(
+    return GabCookingReply(
       "These are some excellent dishes you can cook for ${meal.toLowerCase()}...\n\n"
       "$list\n\n"
       "None of these suit your liking? Would you like me to suggest more? "
@@ -934,7 +934,7 @@ class RamseyCookingAssistant {
     );
   }
 
-  RamseyReply _recipeReply(RamseyDish dish) {
+  GabCookingReply _recipeReply(GabDish dish) {
     final ingredients = dish.ingredients
         .map((item) => '- $item ${_ingredientPriceLabel(item)}')
         .join('\n');
@@ -944,7 +944,7 @@ class RamseyCookingAssistant {
         .map((entry) => '${entry.key + 1}. ${entry.value}')
         .join('\n');
 
-    return RamseyReply(
+    return GabCookingReply(
       "Great choice! Here's how to cook ${dish.name}.\n\n"
       "Ingredients:\n"
       "$ingredients\n\n"
@@ -956,7 +956,7 @@ class RamseyCookingAssistant {
     );
   }
 
-  void _addIngredientsToCart(RamseyDish dish) {
+  void _addIngredientsToCart(GabDish dish) {
     final newList = GroceryList(
       dish.name,
       date: DateTime.now(),
@@ -1041,7 +1041,7 @@ class RamseyCookingAssistant {
     return null;
   }
 
-  String _shortInfo(RamseyDish dish) {
+  String _shortInfo(GabDish dish) {
     if (dish.shortInfo != 'Classic Filipino favorite') {
       return dish.shortInfo;
     }
@@ -1057,10 +1057,10 @@ class RamseyCookingAssistant {
     return 'Easy Filipino favorite for any craving';
   }
 
-  RamseyReply _weeklyBillsSummaryReply() {
+  GabCookingReply _weeklyBillsSummaryReply() {
     final upcoming = _getUpcomingBillsWithin7Days();
     if (upcoming.isEmpty) {
-      return const RamseyReply(
+      return const GabCookingReply(
         "You don't have any bills due for the next 7 days. You're all clear for now! \ud83d\ude4c",
       );
     }
@@ -1073,7 +1073,7 @@ class RamseyCookingAssistant {
           "\u2022 ${bill.type}: \u20b1${bill.amount.toStringAsFixed(2)} ($formatted)\n";
     }
 
-    return RamseyReply(
+    return GabCookingReply(
       "Your total bills for this week (next 7 days) is \u20b1${total.toStringAsFixed(2)}.\n\n"
       "Here's the breakdown:\n"
       "$list\n"
@@ -1081,9 +1081,9 @@ class RamseyCookingAssistant {
     );
   }
 
-  RamseyReply _billsSummaryReply() {
+  GabCookingReply _billsSummaryReply() {
     if (_allBills.isEmpty) {
-      return const RamseyReply(
+      return const GabCookingReply(
         "I can help you keep track of your payments! \ud83d\udcc5\n\n"
         "Currently, you don't have any bills recorded. Head over to the Bills Tracker to add your first bill, and I'll help you monitor it!",
       );
@@ -1097,7 +1097,7 @@ class RamseyCookingAssistant {
           ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
 
     if (upcoming.isEmpty) {
-      return const RamseyReply(
+      return const GabCookingReply(
         "Good news! You have no upcoming bills for now. \ud83d\udcc5\n\n"
         "You're all caught up! Is there anything else I can help you with?",
       );
@@ -1107,19 +1107,19 @@ class RamseyCookingAssistant {
     final dateStr =
         "${_monthName(nextBill.dueDate.month)} ${nextBill.dueDate.day}";
 
-    return RamseyReply(
+    return GabCookingReply(
       "Your upcoming bill is ${nextBill.type} amounting to \u20b1${nextBill.amount.toStringAsFixed(2)} on $dateStr.\n\n"
       "Do you want me to notify you 3 days before the due date?",
       quickReplies: ['Yes, notify me', 'No, thanks'],
     );
   }
 
-  RamseyReply _budgetSummaryReply() {
+  GabCookingReply _budgetSummaryReply() {
     final recent = AppState.recentLists.isNotEmpty
         ? AppState.recentLists.first
         : null;
     if (recent == null) {
-      return const RamseyReply(
+      return const GabCookingReply(
         "Wala pa akong nakitang active budget. Start a shopping list and set a budget so I can help you track it! 💰",
       );
     }
@@ -1127,7 +1127,7 @@ class RamseyCookingAssistant {
     final total = recent.items.fold(0.0, (s, i) => s + _itemTotal(i));
     final remaining = recent.budget - total;
 
-    return RamseyReply(
+    return GabCookingReply(
       "Para sa list mong '${recent.name}':\n\n"
       "Budget: ₱${recent.budget.toStringAsFixed(2)}\n"
       "Spent so far: ₱${total.toStringAsFixed(2)}\n"
@@ -1137,10 +1137,10 @@ class RamseyCookingAssistant {
     );
   }
 
-  RamseyReply _analyticsSummaryReply() {
+  GabCookingReply _analyticsSummaryReply() {
     final trips = AppState.recentLists;
     if (trips.isEmpty) {
-      return const RamseyReply(
+      return const GabCookingReply(
         "Wala pa akong enough data to show analytics. Finish more shopping trips para matulungan kita! 📊",
       );
     }
@@ -1148,7 +1148,7 @@ class RamseyCookingAssistant {
     final topCat = _topCategory(trips);
     final totalSpent = _tripTotal(trips);
 
-    return RamseyReply(
+    return GabCookingReply(
       "I've checked your habits! 📊\n\n"
       "Total Recorded Spend: ₱${totalSpent.toStringAsFixed(2)}\n"
       "Top Category: $topCat\n\n"
@@ -1158,8 +1158,8 @@ class RamseyCookingAssistant {
   }
 }
 
-const List<RamseyDish> _dishes = [
-  RamseyDish(
+const List<GabDish> _dishes = [
+  GabDish(
     name: 'Tortang Talong',
     ingredients: [
       '2 eggplants',
@@ -1182,7 +1182,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast', 'Lunch', 'Dinner'},
     ingredientKeywords: {'egg', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Arroz Caldo',
     ingredients: [
       '1 cup rice',
@@ -1208,7 +1208,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast', 'Snack', 'Midnight Snack'},
     ingredientKeywords: {'rice', 'chicken', 'egg'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Ginisang Ampalaya with Egg',
     ingredients: [
       '1 ampalaya, sliced',
@@ -1232,7 +1232,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast', 'Lunch', 'Dinner'},
     ingredientKeywords: {'egg', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Tinolang Manok',
     ingredients: [
       '500g chicken',
@@ -1257,7 +1257,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'chicken', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Sinigang na Bangus',
     ingredients: [
       'Bangus slices',
@@ -1282,7 +1282,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'fish', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Laing',
     ingredients: [
       'Dried taro leaves',
@@ -1307,7 +1307,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'coconut', 'pork', 'fish', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Bicol Express',
     ingredients: [
       '500g pork belly',
@@ -1332,7 +1332,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork', 'coconut'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Pancit Bihon',
     ingredients: [
       'Bihon noodles',
@@ -1357,7 +1357,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Snack', 'Dinner'},
     ingredientKeywords: {'noodle', 'chicken', 'pork', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Lumpiang Sariwa',
     ingredients: [
       'Fresh lumpia wrappers',
@@ -1380,7 +1380,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Snack', 'Lunch'},
     ingredientKeywords: {'tofu', 'shrimp', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Chicken Adobo',
     ingredients: [
       '500g chicken',
@@ -1405,7 +1405,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'chicken'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Ginisang Munggo',
     ingredients: [
       '1 cup mung beans',
@@ -1429,7 +1429,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'fish', 'pork', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Champorado',
     ingredients: [
       'Glutinous rice',
@@ -1452,7 +1452,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast', 'Snack', 'Midnight Snack'},
     ingredientKeywords: {'rice'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Pandesal Egg Sandwich',
     ingredients: [
       '4 pandesal',
@@ -1474,7 +1474,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast', 'Snack', 'Midnight Snack'},
     ingredientKeywords: {'egg', 'bread'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Tuna Sisig',
     ingredients: [
       'Canned tuna',
@@ -1499,7 +1499,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner', 'Midnight Snack'},
     ingredientKeywords: {'fish'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Tokwa at Baboy',
     ingredients: [
       'Tofu cubes',
@@ -1524,7 +1524,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Snack', 'Dinner', 'Midnight Snack'},
     ingredientKeywords: {'tofu', 'pork'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Chicken Sopas',
     ingredients: [
       'Macaroni',
@@ -1549,7 +1549,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Snack', 'Dinner', 'Midnight Snack'},
     ingredientKeywords: {'chicken', 'noodle', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Batchoy',
     ingredients: [
       'Miki noodles',
@@ -1574,7 +1574,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Snack', 'Dinner', 'Midnight Snack'},
     ingredientKeywords: {'noodle', 'pork'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Spicy Gising-Gising',
     ingredients: [
       'Baguio beans or winged beans',
@@ -1598,7 +1598,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork', 'coconut', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Ensaladang Talong with Salted Egg',
     ingredients: [
       'Grilled eggplant',
@@ -1621,7 +1621,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'egg', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Suman at Mangga',
     ingredients: [
       'Cooked suman',
@@ -1642,7 +1642,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast', 'Snack', 'Midnight Snack'},
     ingredientKeywords: {'rice'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Banana Cue',
     ingredients: ['Saba bananas', 'Brown sugar', 'Cooking oil', 'Skewers'],
     instructions: [
@@ -1658,7 +1658,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Snack', 'Midnight Snack'},
     ingredientKeywords: {'banana'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Nilagang Baka',
     ingredients: [
       'Beef shank or brisket',
@@ -1682,7 +1682,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'beef', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Pinakbet',
     ingredients: [
       'Squash',
@@ -1707,7 +1707,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Sardinas Misua',
     ingredients: [
       'Canned sardines',
@@ -1731,7 +1731,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast', 'Lunch', 'Dinner', 'Midnight Snack'},
     ingredientKeywords: {'fish', 'noodle', 'tomato', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Daing na Bangus with Garlic Rice',
     ingredients: [
       'Daing na bangus',
@@ -1754,7 +1754,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast', 'Lunch'},
     ingredientKeywords: {'fish', 'rice', 'egg', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Ginataang Kalabasa at Sitaw',
     ingredients: [
       'Squash',
@@ -1778,7 +1778,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'coconut', 'shrimp', 'pork', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Pork Sinigang',
     ingredients: [
       'Pork ribs or belly',
@@ -1803,7 +1803,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Spicy Adobong Sitaw',
     ingredients: [
       'String beans',
@@ -1827,7 +1827,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Longsilog',
     shortInfo: 'Sweet longganisa breakfast plate',
     ingredients: [
@@ -1851,7 +1851,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast'},
     ingredientKeywords: {'pork', 'rice', 'egg', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Tapsilog',
     shortInfo: 'Beef tapa with garlic rice and egg',
     ingredients: [
@@ -1875,7 +1875,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Breakfast', 'Lunch'},
     ingredientKeywords: {'beef', 'rice', 'egg'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Paksiw na Isda',
     shortInfo: 'Tangy fish simmered in vinegar',
     ingredients: [
@@ -1900,7 +1900,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'fish', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Pork Giniling',
     shortInfo: 'Saucy ground pork with vegetables',
     ingredients: [
@@ -1925,7 +1925,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Chicken Afritada',
     shortInfo: 'Tomato-based chicken ulam',
     ingredients: [
@@ -1950,7 +1950,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'chicken', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Pesang Tilapia',
     shortInfo: 'Clean ginger fish soup',
     ingredients: [
@@ -1975,7 +1975,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'fish', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Beef Mami',
     shortInfo: 'Warm noodle soup for late cravings',
     ingredients: [
@@ -2000,7 +2000,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Snack', 'Dinner', 'Midnight Snack'},
     ingredientKeywords: {'beef', 'noodle', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Dinengdeng',
     shortInfo: 'Ilocano vegetable soup with fish',
     ingredients: [
@@ -2024,7 +2024,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'fish', 'vegetable', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Filipino Spaghetti',
     shortInfo: 'Sweet-style birthday party classic',
     ingredients: [
@@ -2052,7 +2052,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner', 'Snack'},
     ingredientKeywords: {'noodle', 'pork'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Lumpiang Shanghai',
     shortInfo: 'Crispy spring rolls, fiesta must-have',
     ingredients: [
@@ -2079,7 +2079,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner', 'Snack'},
     ingredientKeywords: {'pork', 'egg'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Beef Caldereta',
     shortInfo: 'Rich tomato beef stew, fiesta favorite',
     ingredients: [
@@ -2109,7 +2109,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'beef', 'tomato'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Kare-Kare',
     shortInfo: 'Peanut-based oxtail stew, special occasion dish',
     ingredients: [
@@ -2139,7 +2139,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'beef', 'vegetable'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Menudo',
     shortInfo: 'Hearty pork and liver tomato stew',
     ingredients: [
@@ -2170,7 +2170,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Bistek Tagalog',
     shortInfo: 'Filipino beef steak with onion rings',
     ingredients: [
@@ -2196,7 +2196,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'beef'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Lechon Kawali',
     shortInfo: 'Crispy deep-fried pork belly',
     ingredients: [
@@ -2222,7 +2222,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'pork'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Pancit Canton',
     shortInfo: 'Stir-fried egg noodles, party staple',
     ingredients: [
@@ -2252,7 +2252,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'noodle', 'pork', 'shrimp'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Sisig',
     shortInfo: 'Sizzling chopped pork, pulutan favorite',
     ingredients: [
@@ -2281,7 +2281,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner', 'Midnight Snack'},
     ingredientKeywords: {'pork', 'egg'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Bulalo',
     shortInfo: 'Beef shank bone marrow soup',
     ingredients: [
@@ -2308,7 +2308,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'beef'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Pancit Palabok',
     shortInfo: 'Rice noodles in orange shrimp sauce',
     ingredients: [
@@ -2338,7 +2338,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Lunch', 'Dinner'},
     ingredientKeywords: {'noodle', 'shrimp', 'pork', 'egg'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Leche Flan',
     shortInfo: 'Creamy caramel custard dessert',
     ingredients: [
@@ -2363,7 +2363,7 @@ const List<RamseyDish> _dishes = [
     meals: {'Snack', 'Dinner'},
     ingredientKeywords: {'egg'},
   ),
-  RamseyDish(
+  GabDish(
     name: 'Buko Salad',
     shortInfo: 'Sweet coconut fruit salad, fiesta dessert',
     ingredients: [

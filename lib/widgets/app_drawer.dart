@@ -8,7 +8,7 @@ import '../pages/recent.dart';
 import '../pages/settings.dart';
 import '../pages/bills.dart';
 import '../pages/wallet.dart';
-import '../pages/bai_chat.dart';
+import '../pages/gab_chat.dart';
 import '../config/app_theme.dart';
 import '../navigation/app_routes.dart';
 
@@ -32,7 +32,7 @@ class AppDrawer extends StatelessWidget {
                 Padding(
                   padding: const EdgeInsets.only(left: 56),
                   child: Text(
-                    'GABAY',
+                    'GABAI',
                     style: GoogleFonts.luckiestGuy(
                       fontSize: 48,
                       color: kTextCharcoal,
@@ -146,16 +146,16 @@ class AppDrawer extends StatelessWidget {
           ),
           _DrawerItem(
             icon: Icons.psychology_rounded,
-            label: 'BAI',
-            isSelected: currentPage == 'BAI',
+            label: 'GAB',
+            isSelected: currentPage == 'GAB',
             onTap: () {
               Navigator.pop(context);
-              if (currentPage != 'BAI') {
+              if (currentPage != 'GAB') {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    settings: const RouteSettings(name: kBaiChatRouteName),
-                    builder: (_) => const BaiChatPage(),
+                    settings: const RouteSettings(name: kGabChatRouteName),
+                    builder: (_) => const GabChatPage(),
                   ),
                 );
               }

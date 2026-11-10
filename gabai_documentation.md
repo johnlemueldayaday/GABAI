@@ -1,6 +1,6 @@
-# Gabay System Documentation and Capstone Reference
+# GABAI System Documentation and Capstone Reference
 
-> **Document purpose:** This file is a complete technical and academic reference for the Gabay system. It is intended to give another AI assistant, developer, researcher, or capstone adviser enough context to understand the project and help develop its proposal, Chapters 1 and 2, system design, and future implementation.
+>Document purpose:** This file is a complete technical and academic reference for the GABAI system. It is intended to give another AI assistant, developer, researcher, or capstone adviser enough context to understand the project and help develop its proposal, Chapters 1 and 2, system design, and future implementation.
 >
 > **Important boundary:** This is **not** a finished capstone paper. The academic sections provide verified project information, research directions, suggested framing, and items that still require validation. They should be converted into the institution's required writing format, supported with current scholarly sources, and reviewed by the adviser before submission.
 >
@@ -17,12 +17,12 @@
 
 | Field | Current information |
 |---|---|
-| Application name | Gabay |
+| Application name | GABAI |
 | Package name | `gabay` |
 | Product concept | A personal grocery, wallet, budgeting, bill, and spending-assistance application |
 | Primary platform | Flutter application with Android, iOS, macOS, Linux, and Windows project targets |
 | Current storage model | Local device storage using `shared_preferences` and JSON serialization |
-| Current AI model | No remote LLM is used by the implemented BAI assistant; BAI is a deterministic, rule-based conversational assistant |
+| Current AI model | No remote LLM is used by the implemented GAB assistant; GAB is a deterministic, rule-based conversational assistant |
 | Currency default | Philippine Peso (`₱`) |
 | Intended users | Individuals or households managing grocery purchases, accounts, expenses, income, bills, and spending limits |
 | Current version in `pubspec.yaml` | `1.0.0+1` |
@@ -30,29 +30,29 @@
 
 ### 1.1 Meaning of the name
 
-“Gabay” is a Filipino word associated with guidance. The name fits the system's intended role as a practical guide for everyday grocery planning and personal financial decisions. The exact official brand explanation should be confirmed by the proponents.
+“GABAI” is the product name, shortened from “Gab AI.” It identifies the application that provides practical guidance for everyday grocery planning and personal financial decisions.
 
 ### 1.2 One-sentence system description
 
-Gabay is a local-first Flutter application that helps users organize grocery lists and prices, manage financial accounts and transactions, monitor bills and future income, calculate safe-to-spend amounts, view spending analytics, and interact with a built-in rule-based assistant.
+GABAI is a local-first Flutter application that helps users organize grocery lists and prices, manage financial accounts and transactions, monitor bills and future income, calculate safe-to-spend amounts, view spending analytics, and interact with the built-in GAB rule-based assistant.
 
 ### 1.3 Capstone framing
 
-The current system can be framed as a **personal financial and grocery management information system with an integrated conversational decision-support assistant**. This framing is more accurate than calling the current BAI implementation a generative-AI system, because the code uses local rule matching, regular expressions, state machines, stored data, and a local cooking engine rather than an external language model.
+The current system can be framed as a **personal financial and grocery management information system with an integrated conversational decision-support assistant**. This framing is more accurate than calling the current GAB implementation a generative-AI system, because the code uses local rule matching, regular expressions, state machines, stored data, and a local cooking engine rather than an external language model.
 
 The final capstone title should be selected after confirming:
 
 1. the target population;
 2. whether the main emphasis is grocery management, personal finance, budgeting, or the integrated system;
-3. whether BAI will remain rule-based or be upgraded to an external AI service;
+3. whether GAB will remain rule-based or be upgraded to an external AI service;
 4. the required platform and evaluation method; and
 5. the academic institution's preferred title structure.
 
 Possible working title directions, **not final titles**, are:
 
-- **Gabay: A Personal Grocery and Financial Management Application with Conversational Decision Support**
-- **Gabay: A Local-First Mobile Application for Grocery Planning, Expense Monitoring, and Budget Guidance**
-- **Gabay: An Integrated Grocery, Wallet, Bill, and Safe-to-Spend Management System**
+- **GABAI: A Personal Grocery and Financial Management Application with Conversational Decision Support**
+- **GABAI: A Local-First Mobile Application for Grocery Planning, Expense Monitoring, and Budget Guidance**
+- **GABAI: An Integrated Grocery, Wallet, Bill, and Safe-to-Spend Management System**
 
 ---
 
@@ -82,8 +82,8 @@ The codebase currently includes the following functional areas:
 18. Device calendar synchronization.
 19. iOS home-widget data publishing.
 20. Speech-to-text support in the grocery workflow.
-21. A unified BAI assistant.
-22. Separate legacy/specialized Ramsey and Tarsi assistant pages.
+21. A unified GAB assistant.
+22. One unified GAB assistant surface.
 
 ### 2.2 Explicitly out of current scope
 
@@ -94,7 +94,7 @@ The repository does not currently demonstrate:
 - cloud synchronization or multi-device data synchronization;
 - a server-side database;
 - durable cloud backup;
-- a remote large language model call from `BaiAssistant`;
+- a remote large language model call from `GABAssistant`;
 - a complete online grocery-price data source;
 - a payment gateway;
 - a bank API or automatic bank transaction import;
@@ -134,10 +134,10 @@ Flutter pages and reusable widgets
   |
   +--> Grocery, wallet, bill, settings, and analytics interactions
   |
-  +--> BaiChatPage
+  +--> GABChatPage
           |
           v
-      BaiAssistant
+      GABAssistant
           |
           +--> intent and phrase matching
           +--> conversation state machine
@@ -146,7 +146,7 @@ Flutter pages and reusable widgets
           +--> BillStorage
           +--> GroceryStorage/AppState
           +--> SettingsService
-          +--> RamseyCookingAssistant
+          +--> GabCookingAssistant
   |
   v
 Local services
@@ -186,7 +186,7 @@ Route constants are defined in [`lib/navigation/app_routes.dart`](./lib/navigati
 - `/cart`
 - `/cart-detail`
 - `/settings`
-- `/bai-chat`
+- `/GAB-chat`
 
 The application uses a mixture of route constants and imperative `Navigator`/`MaterialPageRoute` navigation. The route constants are not currently a complete registered named-route table.
 
@@ -201,7 +201,7 @@ Application launch
   -> AppDrawer and page-level navigation
 ```
 
-The primary drawer is implemented in [`lib/widgets/app_drawer.dart`](./lib/widgets/app_drawer.dart). It provides access to Dashboard, Analytics, Wallet/Accounts, Cart, Recent Groceries, Bills Tracker, BAI, and Settings.
+The primary drawer is implemented in [`lib/widgets/app_drawer.dart`](./lib/widgets/app_drawer.dart). It provides access to Dashboard, Analytics, Wallet/Accounts, Cart, Recent Groceries, Bills Tracker, GAB, and Settings.
 
 ### 3.6 Repository structure
 
@@ -253,7 +253,7 @@ The dashboard loads bills, transactions, accounts, net worth, currency, pay sche
 - transaction access;
 - charts/trend information;
 - a way to add income or expense transactions; and
-- navigation to financial features and BAI.
+- navigation to financial features and GAB.
 
 The dashboard also sends summarized safe-to-spend and weekly spending data to the home-widget service.
 
@@ -437,15 +437,15 @@ Settings include:
 - anchor payday; and
 - related preferences.
 
-### 4.12 BAI chat
+### 4.12 GAB chat
 
 Relevant files:
 
-- [`lib/pages/bai_chat.dart`](./lib/pages/bai_chat.dart)
-- [`lib/services/bai_assistant.dart`](./lib/services/bai_assistant.dart)
-- [`lib/widgets/bai_floating_bubble.dart`](./lib/widgets/bai_floating_bubble.dart)
+- [`lib/pages/gab_chat.dart`](./lib/pages/gab_chat.dart)
+- [`lib/services/gab_assistant.dart`](./lib/services/gab_assistant.dart)
+- [`lib/widgets/gab_floating_bubble.dart`](./lib/widgets/gab_floating_bubble.dart)
 
-BAI is presented as “Brother AI” and can be opened as a dedicated chat page or through the floating assistant bubble.
+GAB is the single built-in assistant and can be opened as a dedicated chat page or through the floating assistant bubble.
 
 The user interface provides:
 
@@ -460,22 +460,19 @@ The user interface provides:
 
 Messages and conversation state are kept in process memory and are not persisted as a durable chat history.
 
-### 4.13 Ramsey and Tarsi assistant pages
+### 4.13 Consolidated GAB assistant
 
 Relevant files:
 
-- [`lib/pages/ramsey_chat.dart`](./lib/pages/ramsey_chat.dart)
-- [`lib/pages/tarsi_chat.dart`](./lib/pages/tarsi_chat.dart)
-- [`lib/services/ramsey_cooking_assistant.dart`](./lib/services/ramsey_cooking_assistant.dart)
-- [`lib/services/tarsi_assistant.dart`](./lib/services/tarsi_assistant.dart)
+- [`lib/pages/gab_chat.dart`](./lib/pages/gab_chat.dart)
+- [`lib/services/gab_cooking_assistant.dart`](./lib/services/gab_cooking_assistant.dart)
+- [`lib/services/gab_assistant.dart`](./lib/services/gab_assistant.dart)
 
-The current repository contains specialized assistant pages in addition to unified BAI:
+The current repository consolidates the former assistant behaviors under GAB:
 
-- Ramsey focuses on cooking, recipes, grocery ingredients, spending summaries, budgets, and bills.
-- Tarsi is an older/local financial assistant implementation.
-- BAI consolidates many assistant behaviors and delegates cooking-related behavior to Ramsey.
-
-The final product documentation should clarify whether Ramsey and Tarsi are user-facing legacy modules, development history, or intended permanent features.
+- GAB handles finance, grocery, budgeting, bills, and conversational workflows.
+- The local cooking engine provides recipes, grocery ingredients, meal planning, and cooking-related spending summaries.
+- Former specialized assistant pages/services are no longer part of the product surface.
 
 ---
 
@@ -557,7 +554,7 @@ Account 1 ---- * FinanceTransaction
 Bill 1 ---- 0..1 device-calendar reference
 Bill 1 ---- * local notification schedules
 
-FutureEvent ---- queried by BAI and dashboard
+FutureEvent ---- queried by GAB and dashboard
 
 PriceHistory item key ---- * PriceRecord ---- store
 ```
@@ -675,11 +672,11 @@ The implementation references iOS home-widget configuration and an app group. Na
 
 ---
 
-## 7. BAI assistant: detailed reference
+## 7. GAB assistant: detailed reference
 
-### 7.1 What BAI is
+### 7.1 What GAB is
 
-BAI is the unified local assistant implemented by [`BaiAssistant`](./lib/services/bai_assistant.dart). It is not currently a cloud-based generative AI model. Its behavior is implemented through:
+GAB is the unified local assistant implemented by [`GabAssistant`](./lib/services/gab_assistant.dart). It is not currently a cloud-based generative AI model. Its behavior is implemented through:
 
 - string normalization;
 - regular expressions;
@@ -688,11 +685,11 @@ BAI is the unified local assistant implemented by [`BaiAssistant`](./lib/service
 - amount/date/frequency extraction;
 - a multi-turn state machine;
 - calls to local storage services; and
-- delegation to `RamseyCookingAssistant`.
+- delegation to `GabCookingAssistant`.
 
 ### 7.2 Public reply contract
 
-`BaiReply` contains:
+`GABReply` contains:
 
 | Field | Purpose |
 |---|---|
@@ -704,7 +701,7 @@ BAI is the unified local assistant implemented by [`BaiAssistant`](./lib/service
 
 ### 7.3 Conversation states
 
-`BaiStep` includes states for:
+`GABStep` includes states for:
 
 - idle;
 - craving, dish, and cart cooking prompts;
@@ -720,27 +717,27 @@ BAI is the unified local assistant implemented by [`BaiAssistant`](./lib/service
 - scheduled-event movement; and
 - scheduled-event amount updates.
 
-These states allow BAI to continue a multi-turn interaction after the initial message.
+These states allow GAB to continue a multi-turn interaction after the initial message.
 
-### 7.4 BAI lifecycle
+### 7.4 GAB lifecycle
 
 ```text
-Open BAI
+Open GAB
   -> getAsyncGreeting()
       -> check due events
       -> either due-event question or normal greeting
 
 User message
-  -> BaiChatPage calls BaiAssistant.handle()
+  -> GABChatPage calls GABAssistant.handle()
   -> normalize and classify input
   -> check current conversation state
   -> extract amount/date/name/category/account
-  -> perform local operation or delegate to Ramsey
-  -> return BaiReply
+  -> perform a local operation or delegate to the cooking engine
+  -> return GABReply
   -> UI shows typing delay and reply
 ```
 
-### 7.5 Implemented BAI capabilities
+### 7.5 Implemented GAB capabilities
 
 The current implementation provides code evidence for:
 
@@ -808,7 +805,7 @@ The current implementation provides code evidence for:
 - ask whether ingredients should be added to the cart; and
 - add selected recipe ingredients to the grocery workflow.
 
-### 7.6 BAI intent strategy
+### 7.6 GAB intent strategy
 
 The assistant checks input using groups of helper methods, including checks for:
 
@@ -830,17 +827,17 @@ The assistant checks input using groups of helper methods, including checks for:
 
 Categories and obligations are interpreted with explicit keyword sets. The implementation includes separate known income categories and outgoing obligation categories.
 
-### 7.7 BAI output and UI behavior
+### 7.7 GAB output and UI behavior
 
-The BAI page stores messages in static in-memory lists, prevents concurrent sends, displays a typing animation, adds a randomized response delay, and supports clearing the conversation.
+The GAB page stores messages in static in-memory lists, prevents concurrent sends, displays a typing animation, adds a randomized response delay, and supports clearing the conversation.
 
-The page may navigate to the cart detail page when `BaiReply.navigateTo` is `cart_detail`.
+The page may navigate to the cart detail page when `GABReply.navigateTo` is `cart_detail`.
 
-### 7.8 BAI limitations and research implications
+### 7.8 GAB limitations and research implications
 
 Current limitations:
 
-1. BAI is deterministic and phrase-dependent.
+1. GAB is deterministic and phrase-dependent.
 2. It does not learn from user behavior.
 3. It does not call a remote LLM.
 4. It does not persist conversation history across application restarts.
@@ -851,7 +848,7 @@ Current limitations:
 9. Current behavior depends on local data being available and correctly serialized.
 10. Conversational quality, intent accuracy, and task completion have not been established by a formal user study in the source code.
 
-For a capstone, BAI may be described as a **rule-based conversational decision-support component**. If the capstone intends to claim artificial-intelligence or natural-language-processing performance, the proponents should define measurable metrics such as intent classification accuracy, slot-extraction accuracy, task completion rate, response appropriateness, and user satisfaction.
+For a capstone, GAB may be described as a **rule-based conversational decision-support component**. If the capstone intends to claim artificial-intelligence or natural-language-processing performance, the proponents should define measurable metrics such as intent classification accuracy, slot-extraction accuracy, task completion rate, response appropriateness, and user satisfaction.
 
 ---
 
@@ -898,7 +895,7 @@ Because the main data is stored locally:
 - grocery, financial, bill, and settings data is intended to remain on the device;
 - there is no demonstrated server-side user account;
 - there is no demonstrated cloud synchronization; and
-- there is no demonstrated remote processing of BAI messages.
+- there is no demonstrated remote processing of GAB messages.
 
 This does not automatically guarantee privacy. Device access, backups, logs, screenshots, platform permissions, and future integrations must still be considered.
 
@@ -911,7 +908,7 @@ Items to document and validate in the capstone:
 - there is no login or user identity layer in the current implementation;
 - local device compromise could expose stored JSON data;
 - calendar and notification permissions expose bill-related information to the operating system;
-- API keys are not part of the current BAI design because no remote AI API is used;
+- API keys are not part of the current GAB design because no remote AI API is used;
 - input parsing must be tested against malformed values and unexpected data;
 - data migration/versioning is not clearly formalized; and
 - error handling in some loaders returns empty collections after malformed JSON, which may conceal data corruption.
@@ -926,7 +923,7 @@ Known technical limitations include:
 - route constants and actual navigation registration are not fully unified;
 - local data has no automatic cloud backup;
 - transaction/account consistency is implemented by sequential local writes rather than a database transaction;
-- BAI behavior depends on current local data and phrase patterns; and
+- GAB behavior depends on current local data and phrase patterns; and
 - no automated test inventory was established from the source review.
 
 These should be treated as engineering limitations, not hidden from a capstone panel.
@@ -941,7 +938,7 @@ The system has several potentially strong capstone characteristics:
 2. **Local-first design:** the app can operate without a demonstrated backend dependency.
 3. **Actionable budgeting:** safe-to-spend translates account and pay-schedule information into a practical daily decision value.
 4. **Future-money awareness:** bills and expected income are represented as scheduled events.
-5. **Conversational access:** users can initiate several financial and grocery operations through BAI.
+5. **Conversational access:** users can initiate several financial and grocery operations through GAB.
 6. **Practical reminders:** local notifications and calendar synchronization connect records to daily routines.
 7. **Price history:** users can build store-specific records from actual shopping observations.
 8. **Platform integration:** home widgets, speech input, notifications, and calendar access extend beyond a basic CRUD application.
@@ -958,7 +955,7 @@ This section is guidance for developing a proposal, not a finished Chapter 1.
 
 Many individuals manage grocery planning, expenses, account balances, bills, and expected income in separate notes, spreadsheets, or applications. This fragmentation can make it difficult to see how a planned grocery purchase affects a user's available spending capacity and upcoming obligations.
 
-The current Gabay implementation responds to that problem by combining:
+The current GABAI implementation responds to that problem by combining:
 
 - grocery lists and budgets;
 - account and transaction records;
@@ -972,7 +969,7 @@ This problem statement must be narrowed to the actual target users and supported
 
 ### 11.2 General objective direction
 
-To design, develop, and evaluate Gabay as an integrated application for grocery planning, personal financial monitoring, bill awareness, and rule-based conversational decision support.
+To design, develop, and evaluate GABAI as an integrated application for grocery planning, personal financial monitoring, bill awareness, and rule-based conversational decision support.
 
 This is a working objective direction only. The final objective should match the chosen scope and evaluation design.
 
@@ -995,8 +992,8 @@ The final objective list should avoid promising live prices, predictive intellig
 Questions that may fit a capstone evaluation:
 
 1. What grocery and personal finance tasks should be integrated for the selected users?
-2. How accurately does BAI classify supported user intents?
-3. How accurately does BAI extract amounts, dates, categories, and account names?
+2. How accurately does GAB classify supported user intents?
+3. How accurately does GAB extract amounts, dates, categories, and account names?
 4. What percentage of representative tasks can users complete using the integrated application?
 5. How usable is the application according to a recognized usability instrument?
 6. How does the integrated workflow compare with the users' current process?
@@ -1024,7 +1021,7 @@ Suggested delimitations:
 - the system records user-entered data;
 - current storage is local to the device;
 - current prices are historical user entries, not live store feeds;
-- current BAI is rule-based rather than a general-purpose LLM;
+- current GAB is rule-based rather than a general-purpose LLM;
 - financial values are informational and not professional financial advice;
 - no automatic bank synchronization is included;
 - no cloud account or multi-device synchronization is included;
@@ -1046,7 +1043,7 @@ The introduction can establish:
 - separate tools may fragment information;
 - users need visibility into spending, upcoming obligations, and available money;
 - mobile applications can consolidate records and reminders; and
-- Gabay combines these functions in a local-first Flutter application.
+- GABAI combines these functions in a local-first Flutter application.
 
 ### 12.2 Background of the study information
 
@@ -1057,7 +1054,7 @@ Include verified system context:
 - local structured data is stored through `SharedPreferences`;
 - safe-to-spend is computed from balance, daily allocation, and pay schedule;
 - bills may be scheduled for local notification and calendar display; and
-- BAI uses deterministic intent and state handling.
+- GAB uses deterministic intent and state handling.
 
 Add external contextual evidence only after researching current scholarly and local sources.
 
@@ -1098,7 +1095,7 @@ Use the implemented scope from Section 2 and the limitations from Section 9. Cle
 
 Terms that may need operational definitions:
 
-- Gabay
+- GABAI
 - grocery list
 - grocery item
 - wallet/account
@@ -1138,7 +1135,7 @@ PROCESS
 - Safe-to-spend calculation
 - Bill/event reminder and calendar synchronization
 - Analytics aggregation
-- BAI intent recognition, state management, and local action execution
+- GAB intent recognition, state management, and local action execution
 
 OUTPUT
 - Organized grocery lists and recent trips
@@ -1179,18 +1176,18 @@ Find current, credible scholarly, government, or industry sources for:
 
 ### 13.2 Related system categories
 
-Compare Gabay with relevant system categories:
+Compare GABAI with relevant system categories:
 
-| Category | What to investigate | Gabay relationship |
+| Category | What to investigate | GABAI relationship |
 |---|---|---|
-| Grocery list systems | List organization, quantities, stores, budgets, completion | Gabay has grocery lists and cart details |
-| Expense trackers | Account, income, expense, categories, history | Gabay has accounts and transactions |
-| Budgeting tools | Daily/period budgets and remaining spending | Gabay has daily allocation and safe-to-spend |
-| Bill reminder tools | Recurrence, notifications, calendar | Gabay has both |
-| Price comparison tools | Current prices, historical records, store comparison | Gabay currently has user-entered history, not live feeds |
-| Conversational assistants | Intent recognition and task execution | BAI provides deterministic conversational task support |
-| Local-first apps | Offline access, privacy, synchronization trade-offs | Gabay is currently local-first |
-| Analytics dashboards | Trends and category breakdowns | Gabay has analytics pages/charts |
+| Grocery list systems | List organization, quantities, stores, budgets, completion | GABAI has grocery lists and cart details |
+| Expense trackers | Account, income, expense, categories, history | GABAI has accounts and transactions |
+| Budgeting tools | Daily/period budgets and remaining spending | GABAI has daily allocation and safe-to-spend |
+| Bill reminder tools | Recurrence, notifications, calendar | GABAI has both |
+| Price comparison tools | Current prices, historical records, store comparison | GABAI currently has user-entered history, not live feeds |
+| Conversational assistants | Intent recognition and task execution | GAB provides deterministic conversational task support |
+| Local-first apps | Offline access, privacy, synchronization trade-offs | GABAI is currently local-first |
+| Analytics dashboards | Trends and category breakdowns | GABAI has analytics pages/charts |
 
 ### 13.3 How to synthesize sources
 
@@ -1207,7 +1204,7 @@ The Chapter 2 synthesis should not merely summarize one source after another. It
 - evaluation method; and
 - limitations.
 
-Then explain which gap Gabay addresses and which gaps remain.
+Then explain which gap GABAI addresses and which gaps remain.
 
 ### 13.4 Possible technology foundations
 
@@ -1239,7 +1236,7 @@ Populate this table with verified sources:
 | Source 1 | To research |  |  |  |  |  |  |  |
 | Source 2 | To research |  |  |  |  |  |  |  |
 | Source 3 | To research |  |  |  |  |  |  |  |
-| Gabay | Selected users | Yes | Yes | Yes | Rule-based BAI | Yes/current design | To conduct | Local-only and phrase-dependent |
+| GABAI | Selected users | Yes | Yes | Yes | Rule-based GAB | Yes/current design | To conduct | Local-only and phrase-dependent |
 
 ### 13.7 Sources still required
 
@@ -1282,7 +1279,7 @@ Test:
 - use assistant-supported workflows; and
 - preserve data after application restart.
 
-### 14.2 BAI testing
+### 14.2 GAB testing
 
 Construct representative test utterances for:
 
@@ -1360,7 +1357,7 @@ This is a suggested roadmap for turning the current application into a capstone-
 - conduct interviews or surveys;
 - confirm the primary problem;
 - decide whether grocery or finance is the central focus;
-- define supported BAI intents;
+- define supported GAB intents;
 - confirm platforms; and
 - agree on evaluation criteria.
 
@@ -1372,7 +1369,7 @@ This is a suggested roadmap for turning the current application into a capstone-
 - improve persistence reliability;
 - document platform permissions;
 - verify native widget configuration; and
-- resolve whether legacy Ramsey/Tarsi pages remain in scope.
+- resolve whether legacy Gab/Gab pages remain in scope.
 
 ### Phase 3: Capstone evidence
 
@@ -1387,7 +1384,7 @@ This is a suggested roadmap for turning the current application into a capstone-
 ### Phase 4: Evaluation
 
 - perform functional testing;
-- perform BAI accuracy/task testing;
+- perform GAB accuracy/task testing;
 - perform usability testing;
 - test platform integrations;
 - analyze findings; and
@@ -1417,18 +1414,18 @@ Possible proposals, clearly labeled as future work:
 
 The following observations help another coding or writing agent avoid incorrect assumptions:
 
-1. BAI is not currently an external generative AI integration.
+1. GAB is not currently an external generative AI integration.
 2. The main data store is local `SharedPreferences`, not a server database.
 3. Grocery price history is manually recorded and store-specific.
 4. Safe-to-spend uses current balance after transactions and does not subtract today's spending twice.
 5. Account balance updates and transaction records are persisted separately through local service operations.
 6. Cash, E-Wallet, and Bank accounts are protected from negative balances by `FinanceStorage`; other account types have different handling implications and need validation.
 7. Bill reminders use local notifications and device calendar synchronization, both of which depend on permissions.
-8. BAI chat messages are not durable across restarts.
-9. BAI can perform local actions, not merely answer questions.
-10. BAI uses a state machine for multi-turn workflows.
-11. Ramsey contains recipe data/logic and is used by BAI for cooking behavior.
-12. Tarsi remains in the repository as a separate assistant implementation.
+8. GAB chat messages are not durable across restarts.
+9. GAB can perform local actions, not merely answer questions.
+10. GAB uses a state machine for multi-turn workflows.
+11. GAB contains or delegates to the local recipe and cooking logic used for cooking behavior.
+12. Former assistant identities are not part of the product surface.
 13. The app contains both named route constants and imperative navigation.
 14. Some declared packages have no confirmed active source usage.
 15. Current source review identified no automatic bank integration or cloud sync.
@@ -1444,8 +1441,8 @@ Before finalizing a capstone proposal, confirm:
 - whether the application is intended for an individual or household;
 - supported language(s);
 - primary platform for the study;
-- whether BAI, Ramsey, and Tarsi are all part of the final product;
-- whether BAI will remain rule-based;
+- whether GAB is the only assistant identity in the final product;
+- whether GAB will remain rule-based;
 - whether a backend is planned;
 - whether actual store-price comparison is required;
 - whether notifications and calendar are mandatory objectives;
@@ -1462,7 +1459,7 @@ Before finalizing a capstone proposal, confirm:
 
 The following compact instruction can be copied together with this document when asking another AI agent for help:
 
-> You are assisting with a capstone project based on the Gabay Flutter application. Use `gabay_documentation.md` as the authoritative project context. Distinguish implemented features from inferred behavior and proposed enhancements. Do not claim that BAI is an LLM: the current assistant is deterministic, rule-based, stateful, and connected to local storage and a local cooking assistant. The current system is local-first and uses SharedPreferences JSON persistence; it has no demonstrated cloud backend, authentication, bank API, or live price feed. Help prepare capstone information, research framing, requirements, diagrams, evaluation plans, and source-backed academic writing, but do not invent citations or present proposed features as implemented. When drafting Chapters 1 or 2, ask for the target population, research methodology, school format, and adviser requirements before producing final prose.
+> You are assisting with a capstone project based on the GABAI Flutter application. Use `gabai_documentation.md` as the authoritative project context. Distinguish implemented features from inferred behavior and proposed enhancements. Do not claim that GAB is an LLM: the current assistant is deterministic, rule-based, stateful, and connected to local storage and a local cooking engine. The current system is local-first and uses SharedPreferences JSON persistence; it has no demonstrated cloud backend, authentication, bank API, or live price feed. Help prepare capstone information, research framing, requirements, diagrams, evaluation plans, and source-backed academic writing, but do not invent citations or present proposed features as implemented. When drafting Chapters 1 or 2, ask for the target population, research methodology, school format, and adviser requirements before producing final prose.
 
 ---
 
@@ -1473,10 +1470,9 @@ Key source files for further verification:
 - [`lib/main.dart`](./lib/main.dart) — startup and restoration
 - [`lib/pages/cart.dart`](./lib/pages/cart.dart) — root application and grocery workflow
 - [`lib/pages/dashboard.dart`](./lib/pages/dashboard.dart) — financial dashboard
-- [`lib/pages/bai_chat.dart`](./lib/pages/bai_chat.dart) — BAI user interface
-- [`lib/services/bai_assistant.dart`](./lib/services/bai_assistant.dart) — unified assistant logic
-- [`lib/services/ramsey_cooking_assistant.dart`](./lib/services/ramsey_cooking_assistant.dart) — local cooking assistant
-- [`lib/services/tarsi_assistant.dart`](./lib/services/tarsi_assistant.dart) — separate financial assistant
+- [`lib/pages/gab_chat.dart`](./lib/pages/gab_chat.dart) — GAB user interface
+- [`lib/services/gab_assistant.dart`](./lib/services/gab_assistant.dart) — unified assistant logic
+- [`lib/services/gab_cooking_assistant.dart`](./lib/services/gab_cooking_assistant.dart) — local cooking assistant
 - [`lib/services/finance_storage.dart`](./lib/services/finance_storage.dart) — accounts and transactions
 - [`lib/services/grocery_storage.dart`](./lib/services/grocery_storage.dart) — grocery persistence
 - [`lib/services/bill_storage.dart`](./lib/services/bill_storage.dart) — bill persistence
@@ -1508,7 +1504,7 @@ This file is a **capstone information and system-reference document**. It intent
 - a submission-ready Chapter 2;
 - invented research citations;
 - unsupported claims about user impact;
-- unsupported claims that BAI uses a large language model; or
+- unsupported claims that GAB uses a large language model; or
 - proposed future features disguised as current functionality.
 
 The next academic step is to validate the target problem and users, gather related literature, select the research methodology, define measurable evaluation criteria, and then convert the verified information in this document into the institution's required capstone format.

@@ -193,7 +193,7 @@ class _SettingsPageState extends State<SettingsPage> {
               _SectionHeader(title: 'About', icon: Icons.info_outline_rounded),
               _SettingsCard(
                 children: [
-                  _InfoTile(label: 'App Name', value: 'GABAY'),
+                  _InfoTile(label: 'App Name', value: 'GABAI'),
                   _Divider(),
                   _InfoTile(label: 'Version', value: '1.42'),
                 ],
@@ -271,7 +271,7 @@ class _SettingsPageState extends State<SettingsPage> {
               '1. Long-press on your Lock Screen\n'
               '2. Tap "Customize" then "Lock Screen"\n'
               '3. Tap "Add Widgets"\n'
-              '4. Find GABAY and select your desired widget',
+              '4. Find GABAI and select your desired widget',
               style: TextStyle(color: kMuted, height: 1.5),
             ),
           ],

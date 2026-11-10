@@ -1,8 +1,8 @@
-# BAI Income Detection Enhancement Guide
+# GAB Income Detection Enhancement Guide
 
 ## Current System Analysis
 
-Your BAI system is well-structured with the following income detection workflow:
+Your GAB system is well-structured with the following income detection workflow:
 
 ```
 User Input 
@@ -264,7 +264,7 @@ Use the provided `income_training_samples.json` and `income_training_samples.md`
 **Quick Test Script** (Add to your test file):
 ```dart
 void testIncomeDetection() {
-  final bai = BaiAssistant();
+  final bai = GabAssistant();
   
   final testCases = [
     ('200 from mom', true),
@@ -285,11 +285,11 @@ void testIncomeDetection() {
 
 ## Next Steps
 
-1. **Test**: Run all 30 training samples through your current BAI system
+1. **Test**: Run all 30 training samples through your current GAB system
 2. **Identify Gaps**: Note which patterns fail or produce unexpected results
 3. **Implement**: Apply the enhancements in priority order
 4. **Validate**: Re-test with the complete dataset
-5. **Deploy**: Release updated BAI with improved income handling
+5. **Deploy**: Release updated GAB with improved income handling
 
 ---
 

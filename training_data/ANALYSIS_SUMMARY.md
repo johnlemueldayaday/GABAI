@@ -1,4 +1,4 @@
-# BAI Chat System - Complete Analysis Summary
+# GAB Chat System - Complete Analysis Summary
 
 **Generated**: 2026-05-24  
 **System**: Grocery-Wallet (Flutter + Dart)
@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-Your **BAI (Brother AI) Chat System** is a well-architected financial AI assistant that uses:
+Your **GAB (Brother AI) Chat System** is a well-architected financial AI assistant that uses:
 
 - ✅ **Intent Recognition**: Multi-level pattern matching for different transaction types
 - ✅ **Multi-Step Conversations**: State machine for handling account selection
@@ -21,7 +21,7 @@ Your **BAI (Brother AI) Chat System** is a well-architected financial AI assista
 
 ```
 ┌─────────────────────────────────────────┐
-│         BaiChatPage (UI Layer)           │
+│         GabChatPage (UI Layer)           │
 │  - Displays conversation                 │
 │  - Handles user input                    │
 │  - Shows typing indicators               │
@@ -29,7 +29,7 @@ Your **BAI (Brother AI) Chat System** is a well-architected financial AI assista
              │
              ↓
 ┌─────────────────────────────────────────┐
-│      BaiAssistant (Business Logic)       │
+│      GabAssistant (Business Logic)       │
 │  - Intent Router                        │
 │  - Finance Handlers (_tryLogIncome)     │
 │  - State Machine Manager                │
@@ -244,7 +244,7 @@ The dataset covers:
 ### Unit Tests (Recommended)
 ```dart
 testWidgets('Income intent detection', (WidgetTester tester) async {
-  final bai = BaiAssistant();
+  final bai = GabAssistant();
   
   // Test each of the 30 samples
   final testCases = [

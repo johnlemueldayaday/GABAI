@@ -231,7 +231,7 @@ struct WeeklyBudgetWidgetView : View {
 // MARK: - Widget bundle
 
 @main
-struct GabayWidgets: WidgetBundle {
+struct GabaiWidgets: WidgetBundle {
     var body: some Widget {
         SafeToSpendWidget()
         WeeklyBudgetWidget()

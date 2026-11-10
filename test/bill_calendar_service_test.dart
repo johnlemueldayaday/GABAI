@@ -143,7 +143,7 @@ void main() {
         isA<StateError>().having(
           (error) => error.message,
           'message',
-          contains('Allow GABAY to access your calendar'),
+          contains('Allow GABAI to access your calendar'),
         ),
       ),
     );

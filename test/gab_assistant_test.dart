@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gabay/models/bill_models.dart';
 import 'package:gabay/models/finance_models.dart';
-import 'package:gabay/services/bai_assistant.dart';
+import 'package:gabay/services/gab_assistant.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/services/future_event_storage.dart';
@@ -47,7 +47,7 @@ void main() {
       ),
     ]);
 
-    final reply = await BaiAssistant().getAsyncGreeting();
+    final reply = await GabAssistant().getAsyncGreeting();
 
     expect(
       reply.text,
@@ -73,7 +73,7 @@ void main() {
           type: 'bill',
         ),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       await assistant.getAsyncGreeting();
       final walletPrompt = await assistant.handle('Yes');
@@ -118,7 +118,7 @@ void main() {
         type: 'income',
       ),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     final reminder = await assistant.getAsyncGreeting();
     expect(
@@ -164,7 +164,7 @@ void main() {
         type: 'bill',
       ),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     await assistant.getAsyncGreeting();
     final walletPrompt = await assistant.handle('Yes');
@@ -199,7 +199,7 @@ void main() {
         type: 'bill',
       ),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
     await assistant.getAsyncGreeting();
 
     final reply = await assistant.handle('No');
@@ -228,7 +228,7 @@ void main() {
         rescheduleCount: 2,
       ),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
     await assistant.getAsyncGreeting();
 
     final limitReply = await assistant.handle('No');
@@ -266,7 +266,7 @@ void main() {
           type: 'bill',
         ),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
       await assistant.getAsyncGreeting();
       await assistant.handle('paid');
 
@@ -328,7 +328,7 @@ void main() {
         ),
       ]);
 
-      final reply = await BaiAssistant().getAsyncGreeting();
+      final reply = await GabAssistant().getAsyncGreeting();
       expect(reply.text, contains('Rent Bill'));
       expect(reply.text, isNot(contains('Water Bill')));
       expect(reply.text, isNot(contains('Internet Bill')));
@@ -359,7 +359,7 @@ void main() {
         'December',
       ];
       final dateText = '${monthNames[date.month - 1]} ${date.day}';
-      final reply = await BaiAssistant().handle(
+      final reply = await GabAssistant().handle(
         'I have electricity bill 300 on ${monthNames[date.month - 1]} ${date.day}',
       );
 
@@ -391,7 +391,7 @@ void main() {
   );
 
   test('upcoming bill flow asks in name amount date order', () async {
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
     final date = DateTime.now().add(const Duration(days: 3));
     const monthNames = [
       'January',
@@ -437,13 +437,13 @@ void main() {
         'November',
         'December',
       ];
-      final labeledReply = await BaiAssistant().handle(
+      final labeledReply = await GabAssistant().handle(
         'Bill: electricity, 300, ${monthNames[today.month - 1]} ${today.day}',
       );
       expect(labeledReply.text, contains('💡 Bill Added to Calendar!'));
       expect(labeledReply.text, contains('P-300.00'));
 
-      final noAmountReply = await BaiAssistant().handle(
+      final noAmountReply = await GabAssistant().handle(
         'I have water bill on ${today.day}',
       );
       expect(noAmountReply.text, 'How much is the Water bill?');
@@ -453,7 +453,7 @@ void main() {
   test(
     'upcoming bill asks for missing name or amount without saving',
     () async {
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final namePrompt = await assistant.handle('I have a bill 300 due on 20');
       expect(namePrompt.text, 'What bill is this?');
@@ -473,7 +473,7 @@ void main() {
         Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
         Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 2000),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final today = DateTime.now();
       const months = [
@@ -534,7 +534,7 @@ void main() {
   test(
     'upcoming income accepts weekday abbreviations and 13th month names',
     () async {
-      final weekdayReply = await BaiAssistant().handle('Salary on Wed 5k');
+      final weekdayReply = await GabAssistant().handle('Salary on Wed 5k');
       expect(
         weekdayReply.text,
         contains('💰 Incoming Transaction Added to Calendar!'),
@@ -542,7 +542,7 @@ void main() {
       expect(weekdayReply.text, contains('Salary'));
       expect(weekdayReply.text, contains('P 5,000.00'));
 
-      final nextMonthReply = await BaiAssistant().handle(
+      final nextMonthReply = await GabAssistant().handle(
         'I will get my 13th month pay on December 15 20k',
       );
       expect(
@@ -556,7 +556,7 @@ void main() {
   );
 
   test('upcoming income accepts a weekday with the article the', () async {
-    final reply = await BaiAssistant().handle(
+    final reply = await GabAssistant().handle(
       'My salary will arrive on the Saturday 5k',
     );
 
@@ -568,7 +568,7 @@ void main() {
   test(
     'future paid statement with amount and date asks for missing income name',
     () async {
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
       final namePrompt = await assistant.handle(
         'I will be paid 12k on December 30',
       );
@@ -587,7 +587,7 @@ void main() {
   test(
     'allocation updates support all periods and accepted phrasing',
     () async {
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
       const confirmations = {
         'Update my daily allocation 500':
             '✅ Done! Your daily budget is now P 500.00.',
@@ -618,7 +618,7 @@ void main() {
   );
 
   test('allocation update asks for period and then amount', () async {
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     final periodPrompt = await assistant.handle('Update my budget');
     expect(
@@ -638,7 +638,7 @@ void main() {
     'budget inquiry reports the current app allocation without changing it',
     () async {
       await SettingsService().setDailySpendingAllocation(500);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final reply = await assistant.handle('What is my budget?');
       final weeklyReply = await assistant.handle(
@@ -654,7 +654,7 @@ void main() {
   test(
     'number alone and vague budget statements do not update allocation',
     () async {
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
       final initialAllocation = SettingsService().dailySpendingAllocation;
 
       await assistant.handle('500');
@@ -667,7 +667,7 @@ void main() {
 
   test('spending statements never update allocation', () async {
     expect(SettingsService().dailySpendingAllocation, 172.30);
-    final reply = await BaiAssistant().handle('I spent 500 today');
+    final reply = await GabAssistant().handle('I spent 500 today');
     expect(SettingsService().dailySpendingAllocation, 172.30);
     expect(reply.text, isNot(contains('✅ Done! Your')));
   });
@@ -678,7 +678,7 @@ void main() {
       Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 1000),
     ]);
 
-    final reply = await BaiAssistant().handle('Spent 500 from my budget');
+    final reply = await GabAssistant().handle('Spent 500 from my budget');
 
     expect(reply.text, 'What did you spend it on?');
     expect(SettingsService().dailySpendingAllocation, 172.30);
@@ -692,7 +692,7 @@ void main() {
         Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
         Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 2000),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final itemPrompt = await assistant.handle('I spent 300');
       expect(itemPrompt.text, 'What did you spend it on?');
@@ -739,7 +739,7 @@ void main() {
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 100),
       Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 1000),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     await assistant.handle('I spent 300');
     await assistant.handle('Shoes');
@@ -775,7 +775,7 @@ void main() {
       await FinanceStorage.saveAccounts([
         Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final anotherExpense = await assistant.handle('➕ Another Expense');
       expect(anotherExpense.text, 'How much did you spend?');
@@ -797,7 +797,7 @@ void main() {
         Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
         Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 1000),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final invalidAmount = await assistant.handle('Bought tea 0');
       expect(
@@ -830,7 +830,7 @@ void main() {
       Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 1000),
     ]);
 
-    final reply = await BaiAssistant().handle('I spend 90 on wax using cash');
+    final reply = await GabAssistant().handle('I spend 90 on wax using cash');
 
     expect(reply.text, contains('Wax  P-90.00'));
     expect(SettingsService().dailySpendingAllocation, 172.30);
@@ -841,7 +841,7 @@ void main() {
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
       Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 1000),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     await assistant.handle('I spent 300');
     final reply = await assistant.handle('I will have my salary on 10');
@@ -855,7 +855,7 @@ void main() {
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
       Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 1000),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     await assistant.handle('Bought coffee 120');
     final reply = await assistant.handle('never mind');
@@ -871,7 +871,7 @@ void main() {
         Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
         Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 2000),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final walletPrompt = await assistant.handle('I got my salary 8000');
       expect(
@@ -907,7 +907,7 @@ void main() {
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
       Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 2000),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     final amountPrompt = await assistant.handle('I got my salary');
     expect(amountPrompt.text, 'How much did you receive?');
@@ -925,7 +925,7 @@ void main() {
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
       Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 2000),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     final sourcePrompt = await assistant.handle('Received 500');
     expect(sourcePrompt.text, 'What was this income from?');
@@ -957,7 +957,7 @@ void main() {
       Account(id: 'gcash', name: 'GCash', type: 'E-Wallet', balance: 3000),
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     final sourcePrompt = await assistant.handle('Received 500');
     expect(sourcePrompt.text, 'What was this income from?');
@@ -984,7 +984,7 @@ void main() {
   test(
     'income flow recognizes earned, just-got, and was-paid wording',
     () async {
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       for (final command in [
         'Earned 500',
@@ -1011,7 +1011,7 @@ void main() {
         Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
         Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 2000),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final invalidAmount = await assistant.handle('Received 0');
       expect(
@@ -1046,7 +1046,7 @@ void main() {
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
       Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 2000),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     await assistant.handle('Received 500');
     final reply = await assistant.handle('cancel');
@@ -1060,7 +1060,7 @@ void main() {
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
       Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 2000),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     await assistant.handle('Received 500');
     final walletPrompt = await assistant.handle('I got my salary 8000');
@@ -1108,7 +1108,7 @@ void main() {
         status: 'paid',
       ),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     final bills = await assistant.handle('Show my upcoming bills');
     expect(bills.text, contains('📅 Upcoming Events'));
@@ -1169,7 +1169,7 @@ void main() {
         ),
       ]);
 
-      final reply = await BaiAssistant().handle('Do I have upcoming bills?');
+      final reply = await GabAssistant().handle('Do I have upcoming bills?');
 
       expect(reply.text, contains('📅 Upcoming Events'));
       expect(reply.text, contains('Car Loan Bill'));
@@ -1188,7 +1188,7 @@ void main() {
       await FinanceStorage.saveAccounts([
         Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
       final prompt = await assistant.handle('I will receive salary');
       expect(prompt.text, contains('How much'));
 
@@ -1204,7 +1204,7 @@ void main() {
     await FinanceStorage.saveAccounts([
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 500),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     final logged = await assistant.handle('Spent 80 on coffee from Cash');
     expect(logged.text, contains('Expense logged'));
@@ -1221,7 +1221,7 @@ void main() {
       await FinanceStorage.saveAccounts([
         Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 500),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
       await assistant.handle('Spent 80 on coffee from Cash');
 
       final balance = await assistant.handle('What is my total balance?');
@@ -1237,7 +1237,7 @@ void main() {
   test(
     'resetting conversation discards pending prompts but keeps stored data',
     () async {
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
       final prompt = await assistant.handle('I will receive salary');
       expect(prompt.text, contains('How much'));
 
@@ -1271,7 +1271,7 @@ void main() {
           isIncome: false,
         ),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final confirmation = await assistant.handle('Cancel my electricity bill');
       expect(
@@ -1309,7 +1309,7 @@ void main() {
         isIncome: false,
       ),
     ]);
-    final assistant = BaiAssistant();
+    final assistant = GabAssistant();
 
     final moved = await assistant.handle(
       'Move my electricity bill to ${_testDateText(movedDate)}',
@@ -1351,7 +1351,7 @@ void main() {
           type: 'income',
         ),
       ]);
-      final assistant = BaiAssistant();
+      final assistant = GabAssistant();
 
       final selection = await assistant.handle('Change my salary to 9k');
       expect(selection.text, contains('Which one do you mean?'));

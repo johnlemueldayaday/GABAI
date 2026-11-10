@@ -9,7 +9,7 @@ import 'package:gabay/models/grocery_models.dart';
 import 'package:gabay/models/finance_models.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/navigation/app_routes.dart';
-import 'package:gabay/pages/bai_chat.dart';
+import 'package:gabay/pages/gab_chat.dart';
 import 'package:gabay/pages/bills.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
@@ -22,6 +22,7 @@ import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:gabay/pages/wallet.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:video_player/video_player.dart';
 
 class DashboardPage extends StatefulWidget {
   const DashboardPage({super.key});
@@ -164,7 +165,7 @@ class _DashboardPageState extends State<DashboardPage>
       weekBudget: weekBudget,
     );
     if (!updated) {
-      debugPrint('GABAY widget data was not updated. Check App Group signing.');
+      debugPrint('GABAI widget data was not updated. Check App Group signing.');
     }
   }
 
@@ -1080,7 +1081,7 @@ class _DashboardPageState extends State<DashboardPage>
                                 fontSize: 10,
                                 fontWeight: FontWeight.w700,
                                 color: spendingPlan.extra < 0
-                                    ? Colors.orange
+                                    ? const Color.fromARGB(255, 37, 37, 37)
                                     : kMuted,
                               ),
                             ),
@@ -2198,6 +2199,8 @@ class _GreetingSectionState extends State<_GreetingSection> {
   Timer? _timer;
   bool _isLoading = true;
   final Random _random = Random();
+  late final VideoPlayerController _greetingAvatarController;
+  late final Future<void> _greetingAvatarReady;
 
   @override
   void didUpdateWidget(covariant _GreetingSection oldWidget) {
@@ -2211,12 +2214,23 @@ class _GreetingSectionState extends State<_GreetingSection> {
   @override
   void initState() {
     super.initState();
+    _greetingAvatarController = VideoPlayerController.asset(
+      'assets/images/greetings_avatar_dashboard.mp4',
+    );
+    _greetingAvatarReady = _initializeGreetingAvatar();
     _loadGreeting();
+  }
+
+  Future<void> _initializeGreetingAvatar() async {
+    await _greetingAvatarController.initialize();
+    await _greetingAvatarController.setLooping(true);
+    await _greetingAvatarController.play();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _greetingAvatarController.dispose();
     super.dispose();
   }
 
@@ -2336,8 +2350,8 @@ class _GreetingSectionState extends State<_GreetingSection> {
         await Navigator.push(
           context,
           PageRouteBuilder<void>(
-            settings: const RouteSettings(name: kBaiChatRouteName),
-            pageBuilder: (_, _, _) => const BaiChatPage(),
+            settings: const RouteSettings(name: kGabChatRouteName),
+            pageBuilder: (_, _, _) => const GabChatPage(),
             transitionDuration: const Duration(milliseconds: 280),
             reverseTransitionDuration: const Duration(milliseconds: 220),
             transitionsBuilder: (_, animation, _, child) {
@@ -2363,23 +2377,41 @@ class _GreetingSectionState extends State<_GreetingSection> {
       },
       child: Semantics(
         button: true,
-        label: 'Open BAI chat',
+        label: 'Open GAB chat',
         child: Center(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // 3D Avatar Image
               Transform.translate(
                 offset: Offset.zero,
                 child: Container(
                   width: 130,
                   height: 130,
-                  decoration: const BoxDecoration(
-                    image: DecorationImage(
-                      image: AssetImage('assets/images/greeting_avatar.png'),
-                      fit: BoxFit.contain,
-                    ),
+                  alignment: Alignment.center,
+                  child: FutureBuilder<void>(
+                    future: _greetingAvatarReady,
+                    builder: (context, snapshot) {
+                      if (snapshot.hasError) {
+                        return Icon(
+                          Icons.account_circle_outlined,
+                          size: 96,
+                          color: kMuted,
+                        );
+                      }
+                      if (snapshot.connectionState != ConnectionState.done) {
+                        return const SizedBox.shrink();
+                      }
+                      final size = _greetingAvatarController.value.size;
+                      return FittedBox(
+                        fit: BoxFit.contain,
+                        child: SizedBox(
+                          width: size.width,
+                          height: size.height,
+                          child: VideoPlayer(_greetingAvatarController),
+                        ),
+                      );
+                    },
                   ),
                 ),
               ),

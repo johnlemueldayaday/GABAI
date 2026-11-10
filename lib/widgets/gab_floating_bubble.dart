@@ -3,15 +3,15 @@ import 'package:google_fonts/google_fonts.dart';
 
 import '../config/app_theme.dart';
 import '../navigation/app_routes.dart';
-import '../pages/bai_chat.dart';
+import '../pages/gab_chat.dart';
 import '../services/settings_service.dart';
 
-final BaiBubbleRouteObserver baiBubbleRouteObserver = BaiBubbleRouteObserver();
-final GlobalKey<NavigatorState> baiBubbleNavigatorKey =
+final GabBubbleRouteObserver gabBubbleRouteObserver = GabBubbleRouteObserver();
+final GlobalKey<NavigatorState> gabBubbleNavigatorKey =
     GlobalKey<NavigatorState>();
 
-class BaiBubbleRouteObserver extends NavigatorObserver {
-  final ValueNotifier<bool> isBaiRouteActive = ValueNotifier(false);
+class GabBubbleRouteObserver extends NavigatorObserver {
+  final ValueNotifier<bool> isGabRouteActive = ValueNotifier(false);
   final ValueNotifier<String?> currentRouteName = ValueNotifier(null);
   int _syncGeneration = 0;
 
@@ -19,7 +19,7 @@ class BaiBubbleRouteObserver extends NavigatorObserver {
     final generation = ++_syncGeneration;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (generation != _syncGeneration) return;
-      isBaiRouteActive.value = route?.settings.name == kBaiChatRouteName;
+      isGabRouteActive.value = route?.settings.name == kGabChatRouteName;
       currentRouteName.value = route?.settings.name;
     });
   }
@@ -49,16 +49,16 @@ class BaiBubbleRouteObserver extends NavigatorObserver {
   }
 }
 
-class BaiFloatingBubbleHost extends StatefulWidget {
+class GabFloatingBubbleHost extends StatefulWidget {
   final Widget child;
 
-  const BaiFloatingBubbleHost({super.key, required this.child});
+  const GabFloatingBubbleHost({super.key, required this.child});
 
   @override
-  State<BaiFloatingBubbleHost> createState() => _BaiFloatingBubbleHostState();
+  State<GabFloatingBubbleHost> createState() => _GabFloatingBubbleHostState();
 }
 
-class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
+class _GabFloatingBubbleHostState extends State<GabFloatingBubbleHost> {
   static const double _bubbleSize = 58;
   static const double _screenMargin = 16;
   static const Set<String> _excludedRouteNames = {
@@ -74,11 +74,11 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
   Offset _panStartPosition = Offset.zero;
   Offset _panDelta = Offset.zero;
 
-  void _openBai() {
-    baiBubbleNavigatorKey.currentState?.push(
+  void _openGab() {
+    gabBubbleNavigatorKey.currentState?.push(
       MaterialPageRoute(
-        settings: const RouteSettings(name: kBaiChatRouteName),
-        builder: (_) => const BaiChatPage(),
+        settings: const RouteSettings(name: kGabChatRouteName),
+        builder: (_) => const GabChatPage(),
       ),
     );
   }
@@ -178,7 +178,7 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
     return AnimatedBuilder(
       animation: SettingsService(),
       builder: (context, _) => ValueListenableBuilder<String?>(
-        valueListenable: baiBubbleRouteObserver.currentRouteName,
+        valueListenable: gabBubbleRouteObserver.currentRouteName,
         builder: (context, currentRoute, _) {
           final mediaQuery = MediaQuery.of(context);
           final constraints = BoxConstraints.tight(mediaQuery.size);
@@ -208,14 +208,14 @@ class _BaiFloatingBubbleHostState extends State<BaiFloatingBubbleHost> {
                   left: position.dx,
                   top: position.dy,
                   child: GestureDetector(
-                    onTap: _openBai,
+                    onTap: _openGab,
                     onPanStart: (details) =>
                         _handlePanStart(details, constraints, padding),
                     onPanUpdate: (details) =>
                         _handlePanUpdate(details, constraints, padding),
                     onPanEnd: (details) =>
                         _handlePanEnd(details, constraints, padding),
-                    child: _BaiBubbleButton(),
+                    child: _GabBubbleButton(),
                   ),
                 ),
             ],
@@ -232,7 +232,7 @@ class _DismissBubbleTarget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: 'Release to remove BAI bubble',
+      label: 'Release to remove GAB bubble',
       child: Container(
         width: 48,
         height: 48,
@@ -254,12 +254,12 @@ class _DismissBubbleTarget extends StatelessWidget {
   }
 }
 
-class _BaiBubbleButton extends StatelessWidget {
+class _GabBubbleButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: _BaiFloatingBubbleHostState._bubbleSize,
-      height: _BaiFloatingBubbleHostState._bubbleSize,
+      width: _GabFloatingBubbleHostState._bubbleSize,
+      height: _GabFloatingBubbleHostState._bubbleSize,
       decoration: BoxDecoration(
         gradient: LinearGradient(colors: [kPrimary, kPrimaryLight]),
         shape: BoxShape.circle,
@@ -273,7 +273,7 @@ class _BaiBubbleButton extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: Text(
-        'BAI',
+        'GAB',
         style: GoogleFonts.plusJakartaSans(
           color: Colors.white,
           fontSize: 13,

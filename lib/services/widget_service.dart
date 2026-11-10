@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 class WidgetService {
   static const String iOSAppGroupId = 'group.com.johnlemueldayaday.gabay';
 
-  // Must match the `kind` strings in GABAY.swift exactly.
+  // Must match the `kind` strings in GABAI.swift exactly.
   static const List<String> _widgetKinds = [
     'SafeToSpendWidget',
     'WeeklyBudgetWidget',
@@ -18,7 +18,7 @@ class WidgetService {
     try {
       final groupConfigured = await HomeWidget.setAppGroupId(iOSAppGroupId);
       if (groupConfigured != true) {
-        throw StateError('iOS did not configure the GABAY widget App Group.');
+        throw StateError('iOS did not configure the GABAI widget App Group.');
       }
 
       final safeToSpendSaved = await HomeWidget.saveWidgetData<double>(
@@ -36,7 +36,7 @@ class WidgetService {
       if (safeToSpendSaved != true ||
           weekSpentSaved != true ||
           weekBudgetSaved != true) {
-        throw StateError('GABAY could not save the widget data.');
+        throw StateError('GABAI could not save the widget data.');
       }
 
       for (final kind in _widgetKinds) {
@@ -47,7 +47,7 @@ class WidgetService {
       }
       return true;
     } catch (error, stackTrace) {
-      debugPrint('Error updating GABAY widgets: $error');
+      debugPrint('Error updating GABAI widgets: $error');
       debugPrintStack(stackTrace: stackTrace);
       return false;
     }

@@ -1,20 +1,20 @@
 import 'package:gabay/models/finance_models.dart';
 import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/services/settings_service.dart';
-import 'package:gabay/services/ramsey_cooking_assistant.dart';
+import 'package:gabay/services/gab_cooking_assistant.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/future_event_storage.dart';
 import 'package:gabay/models/bill_models.dart';
 
-/// Unified reply object for BAI
-class BaiReply {
+/// Unified reply object for GAB
+class GabReply {
   final String text;
   final List<String>? extraTexts;
   final List<String> quickReplies;
   final String? navigateTo;
   final String? highlightColor; // 'red' for expenses, 'green' for income
 
-  const BaiReply(
+  const GabReply(
     this.text, {
     this.extraTexts,
     this.quickReplies = const [],
@@ -23,8 +23,8 @@ class BaiReply {
   });
 }
 
-/// BAI Step state machine for multi-turn cooking conversations
-enum BaiStep {
+/// GAB Step state machine for multi-turn cooking conversations
+enum GabStep {
   idle,
   cravingPrompt,
   dishPrompt,
@@ -53,13 +53,13 @@ enum BaiStep {
   awaitingScheduledAmountUpdate,
 }
 
-/// BAI (Brother AI) - Unified smart assistant merging Ramsey + Tarsi
-class BaiAssistant {
+/// GAB - Unified smart assistant
+class GabAssistant {
   final String _currency = SettingsService().currency;
 
-  // Cooking state (from Ramsey)
-  final RamseyCookingAssistant _cookingEngine = RamseyCookingAssistant();
-  BaiStep _step = BaiStep.idle;
+  // Cooking state (from Gab)
+  final GabCookingAssistant _cookingEngine = GabCookingAssistant();
+  GabStep _step = GabStep.idle;
   List<String> _undoTransactionIds = [];
 
   // Track last spending for breakdown follow-up
@@ -141,11 +141,11 @@ class BaiAssistant {
     return '${account.icon} ${account.name}';
   }
 
-  BaiReply get greeting {
-    final meal = RamseyCookingAssistant.detectMeal(
+  GabReply get greeting {
+    final meal = GabCookingAssistant.detectMeal(
       DateTime.now(),
     ).toLowerCase();
-    return BaiReply(
+    return GabReply(
       "What can I do for you?",
 
       quickReplies: [
@@ -214,12 +214,12 @@ class BaiAssistant {
     );
   }
 
-  Future<BaiReply> getAsyncGreeting() async {
+  Future<GabReply> getAsyncGreeting() async {
     final dueEvents = await FutureEventStorage.getDueEvents();
     if (dueEvents.isNotEmpty) {
       _pendingDueEvent = dueEvents.first;
       _pendingDueAmount = _pendingDueEvent!.amount;
-      _step = BaiStep.awaitingDuePaymentAction;
+      _step = GabStep.awaitingDuePaymentAction;
       final amountStr = _formatNumberWithCommas(
         _pendingDueEvent!.amount.toStringAsFixed(2),
       );
@@ -228,7 +228,7 @@ class BaiAssistant {
       final question = isOutgoing
           ? '📅 Reminder: $name Bill (P-$amountStr) is due today. Did you pay it?'
           : '💰 Reminder: $name (P $amountStr) is expected today. Did you receive it?';
-      return BaiReply(question, quickReplies: const ["Yes", "No"]);
+      return GabReply(question, quickReplies: const ["Yes", "No"]);
     }
     return greeting;
   }
@@ -263,7 +263,7 @@ class BaiAssistant {
     return hasManagementVerb && hasScheduledName;
   }
 
-  Future<BaiReply> _handleScheduledManagementCommand(String input) async {
+  Future<GabReply> _handleScheduledManagementCommand(String input) async {
     _resetState();
     final normalized = input.toLowerCase();
     final events =
@@ -285,7 +285,7 @@ class BaiAssistant {
 
     final action = _scheduledManagementAction(normalized);
     if (action == null) {
-      return const BaiReply("I couldn't find that entry.");
+      return const GabReply("I couldn't find that entry.");
     }
 
     final target = _scheduledManagementTarget(input);
@@ -297,15 +297,15 @@ class BaiAssistant {
           (searchable.contains(target) || target.contains(searchable.trim()));
     }).toList();
     if (matches.isEmpty) {
-      return const BaiReply("I couldn't find that entry.");
+      return const GabReply("I couldn't find that entry.");
     }
 
     _pendingScheduledManagementAction = action;
     _pendingScheduledManagementInput = input;
     if (matches.length > 1) {
       _pendingScheduledMatches = matches;
-      _step = BaiStep.awaitingScheduledSelection;
-      return BaiReply(
+      _step = GabStep.awaitingScheduledSelection;
+      return GabReply(
         'Which one do you mean?\n${_formatScheduledEvents(matches, numbered: true)}',
       );
     }
@@ -365,7 +365,7 @@ class BaiAssistant {
     return target.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
 
-  Future<BaiReply> _beginScheduledManagement(
+  Future<GabReply> _beginScheduledManagement(
     FutureEvent event,
     String action,
     String input,
@@ -374,8 +374,8 @@ class BaiAssistant {
     _pendingScheduledManagementAction = action;
     final name = _scheduledManagementDisplayName(event);
     if (action == 'delete') {
-      _step = BaiStep.awaitingScheduledDeleteConfirmation;
-      return BaiReply(
+      _step = GabStep.awaitingScheduledDeleteConfirmation;
+      return GabReply(
         'Are you sure you want to delete $name?',
         quickReplies: const ['Yes', 'No'],
       );
@@ -383,28 +383,28 @@ class BaiAssistant {
     if (action == 'move') {
       final date = _parseUpcomingBillDate(input, allowBareDay: true);
       if (date == null) {
-        _step = BaiStep.awaitingScheduledMoveDate;
-        return BaiReply('When should I move $name to?');
+        _step = GabStep.awaitingScheduledMoveDate;
+        return GabReply('When should I move $name to?');
       }
       return _moveScheduledEvent(event, date);
     }
     final amount = _parseExpenseAmount(input);
     if (amount == null) {
-      _step = BaiStep.awaitingScheduledAmountUpdate;
-      return BaiReply('What amount should I set for $name?');
+      _step = GabStep.awaitingScheduledAmountUpdate;
+      return GabReply('What amount should I set for $name?');
     }
     if (!amount.isFinite || amount <= 0) {
-      _step = BaiStep.awaitingScheduledAmountUpdate;
-      return const BaiReply('Please enter a valid amount, for example 250.00.');
+      _step = GabStep.awaitingScheduledAmountUpdate;
+      return const GabReply('Please enter a valid amount, for example 250.00.');
     }
     return _updateScheduledEventAmount(event, amount);
   }
 
-  BaiReply _scheduledEventsListReply(List<FutureEvent> events) {
+  GabReply _scheduledEventsListReply(List<FutureEvent> events) {
     if (events.isEmpty) {
-      return const BaiReply('You have no upcoming bills or incoming money.');
+      return const GabReply('You have no upcoming bills or incoming money.');
     }
-    return BaiReply('📅 Upcoming Events\n${_formatScheduledEvents(events)}');
+    return GabReply('📅 Upcoming Events\n${_formatScheduledEvents(events)}');
   }
 
   String _formatScheduledEvents(
@@ -473,9 +473,9 @@ class BaiAssistant {
     return months[month];
   }
 
-  Future<BaiReply> _handleScheduledManagementState(String input) async {
+  Future<GabReply> _handleScheduledManagementState(String input) async {
     final normalized = input.trim().toLowerCase();
-    if (_step == BaiStep.awaitingScheduledSelection) {
+    if (_step == GabStep.awaitingScheduledSelection) {
       final matches = _pendingScheduledMatches;
       FutureEvent? selected;
       final index = int.tryParse(normalized.replaceFirst(RegExp(r'\.$'), ''));
@@ -498,7 +498,7 @@ class BaiAssistant {
         }
       }
       if (selected == null) {
-        return BaiReply(
+        return GabReply(
           'Which one do you mean?\n${_formatScheduledEvents(matches, numbered: true)}',
         );
       }
@@ -507,7 +507,7 @@ class BaiAssistant {
       _pendingScheduledMatches = [];
       return _beginScheduledManagement(selected, action, command);
     }
-    if (_step == BaiStep.awaitingScheduledDeleteConfirmation) {
+    if (_step == GabStep.awaitingScheduledDeleteConfirmation) {
       if (RegExp(r'^(?:yes|y|yeah|yep|sure)\b').hasMatch(normalized)) {
         final event = _pendingManagedEvent!;
         try {
@@ -516,44 +516,44 @@ class BaiAssistant {
           bills.removeWhere((bill) => bill.id == 'future_${event.id}');
           await BillStorage.saveBills(bills);
           _resetState();
-          return BaiReply(
+          return GabReply(
             'Done! I deleted ${_scheduledManagementDisplayName(event)}.',
           );
         } catch (error) {
-          return BaiReply('⚠️ Failed to delete scheduled entry: $error');
+          return GabReply('⚠️ Failed to delete scheduled entry: $error');
         }
       }
       if (RegExp(r'^(?:no|n|nope)\b').hasMatch(normalized)) {
         _resetState();
-        return const BaiReply('Okay, I kept that entry.');
+        return const GabReply('Okay, I kept that entry.');
       }
-      return BaiReply(
+      return GabReply(
         'Are you sure you want to delete ${_scheduledManagementDisplayName(_pendingManagedEvent!)}?',
         quickReplies: const ['Yes', 'No'],
       );
     }
-    if (_step == BaiStep.awaitingScheduledMoveDate) {
+    if (_step == GabStep.awaitingScheduledMoveDate) {
       final date = _parseUpcomingBillDate(input, allowBareDay: true);
       if (date == null) {
-        return BaiReply(
+        return GabReply(
           'When should I move ${_scheduledManagementDisplayName(_pendingManagedEvent!)} to?',
         );
       }
       return _moveScheduledEvent(_pendingManagedEvent!, date);
     }
-    if (_step == BaiStep.awaitingScheduledAmountUpdate) {
+    if (_step == GabStep.awaitingScheduledAmountUpdate) {
       final amount = _parseExpenseAmount(input);
       if (amount == null || !amount.isFinite || amount <= 0) {
-        return const BaiReply(
+        return const GabReply(
           'Please enter a valid amount, for example 250.00.',
         );
       }
       return _updateScheduledEventAmount(_pendingManagedEvent!, amount);
     }
-    return const BaiReply("I couldn't find that entry.");
+    return const GabReply("I couldn't find that entry.");
   }
 
-  Future<BaiReply> _moveScheduledEvent(FutureEvent event, DateTime date) async {
+  Future<GabReply> _moveScheduledEvent(FutureEvent event, DateTime date) async {
     try {
       await FutureEventStorage.updateEvent(event.copyWith(scheduledDate: date));
       final bills = await BillStorage.loadBills();
@@ -564,15 +564,15 @@ class BaiAssistant {
       }
       final dateText = _formatBillDate(date);
       _resetState();
-      return BaiReply(
+      return GabReply(
         'Done! I moved your ${_scheduledManagementDisplayName(event)} to $dateText.',
       );
     } catch (error) {
-      return BaiReply('⚠️ Failed to move scheduled entry: $error');
+      return GabReply('⚠️ Failed to move scheduled entry: $error');
     }
   }
 
-  Future<BaiReply> _updateScheduledEventAmount(
+  Future<GabReply> _updateScheduledEventAmount(
     FutureEvent event,
     double amount,
   ) async {
@@ -589,17 +589,17 @@ class BaiAssistant {
       );
       final name = _scheduledManagementDisplayName(event);
       _resetState();
-      return BaiReply('Done! Your $name is now P $formattedAmount.');
+      return GabReply('Done! Your $name is now P $formattedAmount.');
     } catch (error) {
-      return BaiReply('⚠️ Failed to update scheduled entry: $error');
+      return GabReply('⚠️ Failed to update scheduled entry: $error');
     }
   }
 
   String _scheduledManagementDisplayName(FutureEvent event) =>
       event.type == 'bill' ? event.description : _dueEventDisplayName(event);
 
-  /// Main intent router — the brain of BAI
-  Future<BaiReply> handle(String rawInput) async {
+  /// Main intent router — the brain of GAB
+  Future<GabReply> handle(String rawInput) async {
     final normalized = rawInput.trim().toLowerCase();
     final undoIds = _undoTransactionIds;
     _undoTransactionIds = [];
@@ -607,7 +607,7 @@ class BaiAssistant {
     if (_isUndoCommand(normalized)) {
       if (undoIds.isEmpty) {
         resetConversation();
-        return const BaiReply(
+        return const GabReply(
           'There is no recent transaction to undo.',
           quickReplies: ['What is my total balance?'],
         );
@@ -630,7 +630,7 @@ class BaiAssistant {
     return reply;
   }
 
-  Future<BaiReply> _handleMessage(String rawInput) async {
+  Future<GabReply> _handleMessage(String rawInput) async {
     final input = rawInput.trim();
     final n = input.toLowerCase(); // normalized
 
@@ -647,20 +647,20 @@ class BaiAssistant {
     final quickAction = n.replaceFirst(RegExp(r'^[^a-z]+'), '').trim();
     if (quickAction == 'do something else') {
       resetConversation();
-      return const BaiReply("Sure! What else can I help you with?");
+      return const GabReply("Sure! What else can I help you with?");
     }
     if (quickAction == 'another expense') {
       resetConversation();
-      _step = BaiStep.awaitingExpenseAmount;
-      return const BaiReply(
+      _step = GabStep.awaitingExpenseAmount;
+      return const GabReply(
         'How much did you spend?',
         quickReplies: ['❌ Cancel', '🔄 Do Something Else'],
       );
     }
     if (quickAction == 'log income') {
       resetConversation();
-      _step = BaiStep.awaitingIncomeAmount;
-      return const BaiReply('How much did you receive?');
+      _step = GabStep.awaitingIncomeAmount;
+      return const GabReply('How much did you receive?');
     }
     if (quickAction == 'check balance') {
       resetConversation();
@@ -668,7 +668,7 @@ class BaiAssistant {
     }
     if (quickAction == 'done') {
       resetConversation();
-      return const BaiReply("Okay! Let me know if you need anything else.");
+      return const GabReply("Okay! Let me know if you need anything else.");
     }
 
     if (_isUpcomingBillsInquiry(n)) {
@@ -680,17 +680,17 @@ class BaiAssistant {
       if (!_isExpenseFlowActive) resetConversation();
       return freshBalanceReply;
     }
-    if (_step != BaiStep.idle && _isFreshQuestion(n)) {
+    if (_step != GabStep.idle && _isFreshQuestion(n)) {
       resetConversation();
     }
 
-    if (_step == BaiStep.awaitingScheduledDeleteConfirmation ||
-        _step == BaiStep.awaitingScheduledSelection ||
-        _step == BaiStep.awaitingScheduledMoveDate ||
-        _step == BaiStep.awaitingScheduledAmountUpdate) {
+    if (_step == GabStep.awaitingScheduledDeleteConfirmation ||
+        _step == GabStep.awaitingScheduledSelection ||
+        _step == GabStep.awaitingScheduledMoveDate ||
+        _step == GabStep.awaitingScheduledAmountUpdate) {
       if (_isCancellation(n)) {
         _resetState();
-        return const BaiReply('Okay, I cancelled that. Nothing was saved.');
+        return const GabReply('Okay, I cancelled that. Nothing was saved.');
       }
       if (!_isScheduledManagementCommand(n)) {
         return await _handleScheduledManagementState(input);
@@ -700,19 +700,19 @@ class BaiAssistant {
       return await _handleScheduledManagementCommand(input);
     }
 
-    if (_step == BaiStep.awaitingDuePaymentAction ||
-        _step == BaiStep.awaitingDuePaymentAccount ||
-        _step == BaiStep.awaitingDuePaymentAmountConfirmation ||
-        _step == BaiStep.awaitingDuePaymentAmount ||
-        _step == BaiStep.awaitingDueRescheduleDecision ||
-        _step == BaiStep.awaitingDueRescheduleDate) {
+    if (_step == GabStep.awaitingDuePaymentAction ||
+        _step == GabStep.awaitingDuePaymentAccount ||
+        _step == GabStep.awaitingDuePaymentAmountConfirmation ||
+        _step == GabStep.awaitingDuePaymentAmount ||
+        _step == GabStep.awaitingDueRescheduleDecision ||
+        _step == GabStep.awaitingDueRescheduleDate) {
       return await _handleStateMachine(n);
     }
 
     if (_isExpenseFlowActive) {
       if (_isCancellation(n)) {
         _resetState();
-        return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+        return const GabReply("Okay, I cancelled that. Nothing was saved.");
       }
       final balanceReply = await _tryBalanceCheck(n);
       if (balanceReply != null) return balanceReply;
@@ -724,7 +724,7 @@ class BaiAssistant {
     if (_isIncomeFlowActive) {
       if (_isCancellation(n)) {
         _resetState();
-        return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+        return const GabReply("Okay, I cancelled that. Nothing was saved.");
       }
       if (!_isNewCommandDuringIncome(n)) {
         return await _handleOngoingIncomeFlow(input);
@@ -734,7 +734,7 @@ class BaiAssistant {
     if (_isAllocationFlowActive) {
       if (_isCancellation(n)) {
         _resetState();
-        return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+        return const GabReply("Okay, I cancelled that. Nothing was saved.");
       }
       if (!_isNewCommandDuringAllocation(n)) {
         return await _handleAllocationFlow(input);
@@ -742,12 +742,12 @@ class BaiAssistant {
       _resetState();
     }
     if (_pendingScheduledType == 'bill' &&
-        (_step == BaiStep.awaitingScheduledName ||
-            _step == BaiStep.awaitingScheduledAmount ||
-            _step == BaiStep.awaitingScheduledDate)) {
+        (_step == GabStep.awaitingScheduledName ||
+            _step == GabStep.awaitingScheduledAmount ||
+            _step == GabStep.awaitingScheduledDate)) {
       if (_isCancellation(n)) {
         _resetState();
-        return const BaiReply('Okay, I cancelled that. Nothing was saved.');
+        return const GabReply('Okay, I cancelled that. Nothing was saved.');
       }
       if (RegExp(
             r'\b(?:spent|spend|bought|paid|purchase|purchased|cost\s+me|charged)\b',
@@ -777,7 +777,7 @@ class BaiAssistant {
     if (expenseResult != null) return expenseResult;
 
     // ─── 1. STATE MACHINE (mid-conversation flows take priority) ───
-    if (_step != BaiStep.idle) {
+    if (_step != GabStep.idle) {
       return await _handleStateMachine(n);
     }
 
@@ -805,24 +805,24 @@ class BaiAssistant {
     if (_awaitingBreakdown && _isBreakdownAsk(n)) {
       _awaitingBreakdown = false;
       final reply = _cookingEngine.handle(input);
-      return _fromRamsey(reply);
+      return _fromGab(reply);
     }
     if (_isSpendingAsk(n)) {
       _awaitingBreakdown = true;
       final reply = _cookingEngine.handle(input);
-      return _fromRamsey(reply);
+      return _fromGab(reply);
     }
 
     // ─── 8. GROCERY BUDGET ───
     if (_isBudgetAsk(n)) {
       final reply = _cookingEngine.handle(input);
-      return _fromRamsey(reply);
+      return _fromGab(reply);
     }
 
     // ─── 9. ANALYTICS ───
     if (_isAnalyticsAsk(n)) {
       final reply = _cookingEngine.handle(input);
-      return _fromRamsey(reply);
+      return _fromGab(reply);
     }
 
     // ─── 10. COOKING: direct recipe request ───
@@ -833,12 +833,12 @@ class BaiAssistant {
     // ─── 11. MEAL PLAN ───
     if (_isMealPlanAsk(n)) {
       final reply = _cookingEngine.handle(input);
-      return _fromRamsey(reply);
+      return _fromGab(reply);
     }
 
     // ─── 12. BILL NOTIFICATIONS ───
     if (n.contains('notify me')) {
-      return const BaiReply(
+      return const GabReply(
         "Got it! I've set a reminder for you. I'll make sure to notify you 3 days before the due date so you never miss a payment! 🔔",
         quickReplies: [
           'What is my total balance?',
@@ -860,54 +860,54 @@ class BaiAssistant {
   //  STATE MACHINE (multi-turn cooking flows)
   // ═══════════════════════════════════════════════
 
-  Future<BaiReply> _handleStateMachine(String n) async {
-    if (_step == BaiStep.awaitingScheduledName ||
-        _step == BaiStep.awaitingScheduledAmount ||
-        _step == BaiStep.awaitingScheduledDate) {
+  Future<GabReply> _handleStateMachine(String n) async {
+    if (_step == GabStep.awaitingScheduledName ||
+        _step == GabStep.awaitingScheduledAmount ||
+        _step == GabStep.awaitingScheduledDate) {
       return await _handleScheduledEntryFlow(n);
     }
-    if (_step == BaiStep.awaitingScheduledDeleteConfirmation ||
-        _step == BaiStep.awaitingScheduledSelection ||
-        _step == BaiStep.awaitingScheduledMoveDate ||
-        _step == BaiStep.awaitingScheduledAmountUpdate) {
+    if (_step == GabStep.awaitingScheduledDeleteConfirmation ||
+        _step == GabStep.awaitingScheduledSelection ||
+        _step == GabStep.awaitingScheduledMoveDate ||
+        _step == GabStep.awaitingScheduledAmountUpdate) {
       return await _handleScheduledManagementState(n);
     }
 
     // Handle awaiting expense item/amount states
-    if (_step == BaiStep.awaitingExpenseItem ||
-        _step == BaiStep.awaitingExpenseAmount ||
-        _step == BaiStep.awaitingExpenseAccount) {
+    if (_step == GabStep.awaitingExpenseItem ||
+        _step == GabStep.awaitingExpenseAmount ||
+        _step == GabStep.awaitingExpenseAccount) {
       return await _handleOngoingExpenseFlow(n);
     }
 
     // Handle clarification state
-    if (_step == BaiStep.awaitingClarification) {
+    if (_step == GabStep.awaitingClarification) {
       return await _handleClarification(n);
     }
 
-    if (_step == BaiStep.awaitingIncomeAmount ||
-        _step == BaiStep.awaitingIncomeSource ||
-        _step == BaiStep.awaitingIncomeAccount) {
+    if (_step == GabStep.awaitingIncomeAmount ||
+        _step == GabStep.awaitingIncomeSource ||
+        _step == GabStep.awaitingIncomeAccount) {
       return await _handleOngoingIncomeFlow(n);
     }
 
-    if (_step == BaiStep.awaitingDuePaymentAction) {
+    if (_step == GabStep.awaitingDuePaymentAction) {
       return await _handleDuePaymentActionResponse(n);
     }
 
-    if (_step == BaiStep.awaitingDuePaymentAccount) {
+    if (_step == GabStep.awaitingDuePaymentAccount) {
       return await _handleDuePaymentAccountResponse(n);
     }
-    if (_step == BaiStep.awaitingDuePaymentAmountConfirmation) {
+    if (_step == GabStep.awaitingDuePaymentAmountConfirmation) {
       return _handleDuePaymentAmountConfirmation(n);
     }
-    if (_step == BaiStep.awaitingDuePaymentAmount) {
+    if (_step == GabStep.awaitingDuePaymentAmount) {
       return await _handleDuePaymentAmountResponse(n);
     }
-    if (_step == BaiStep.awaitingDueRescheduleDecision) {
+    if (_step == GabStep.awaitingDueRescheduleDecision) {
       return _handleDueRescheduleDecision(n);
     }
-    if (_step == BaiStep.awaitingDueRescheduleDate) {
+    if (_step == GabStep.awaitingDueRescheduleDate) {
       return await _handleDueRescheduleDate(n);
     }
 
@@ -948,38 +948,38 @@ class BaiAssistant {
       return balanceResult;
     }
 
-    // Otherwise delegate to Ramsey's state machine
+    // Otherwise delegate to Gab's state machine
     final reply = _cookingEngine.handle(n);
     _syncStep();
-    return _fromRamsey(reply);
+    return _fromGab(reply);
   }
 
   void _syncStep() {
-    // Mirror Ramsey's internal step to BAI's step
-    switch (_cookingEngine.stepForBai) {
-      case RamseyStep.mealPrompt:
-        _step = BaiStep.idle;
+    // Mirror the cooking engine state to GAB.s step
+    switch (_cookingEngine.stepForGab) {
+      case GabCookingStep.mealPrompt:
+        _step = GabStep.idle;
         break;
-      case RamseyStep.cravingPrompt:
-        _step = BaiStep.cravingPrompt;
+      case GabCookingStep.cravingPrompt:
+        _step = GabStep.cravingPrompt;
         break;
-      case RamseyStep.dishPrompt:
-        _step = BaiStep.dishPrompt;
+      case GabCookingStep.dishPrompt:
+        _step = GabStep.dishPrompt;
         break;
-      case RamseyStep.cartPrompt:
-        _step = BaiStep.cartPrompt;
+      case GabCookingStep.cartPrompt:
+        _step = GabStep.cartPrompt;
         break;
     }
   }
 
-  BaiReply _delegateToCooking(String input) {
+  GabReply _delegateToCooking(String input) {
     final reply = _cookingEngine.handle(input);
     _syncStep();
-    return _fromRamsey(reply);
+    return _fromGab(reply);
   }
 
   void _resetState() {
-    _step = BaiStep.idle;
+    _step = GabStep.idle;
     _awaitingBreakdown = false;
     _pendingExpenseAmount = null;
     _pendingExpenseDescription = null;
@@ -1005,18 +1005,18 @@ class BaiAssistant {
   }
 
   bool get _isExpenseFlowActive =>
-      _step == BaiStep.awaitingExpenseAmount ||
-      _step == BaiStep.awaitingExpenseItem ||
-      _step == BaiStep.awaitingExpenseAccount;
+      _step == GabStep.awaitingExpenseAmount ||
+      _step == GabStep.awaitingExpenseItem ||
+      _step == GabStep.awaitingExpenseAccount;
 
   bool get _isIncomeFlowActive =>
-      _step == BaiStep.awaitingIncomeAmount ||
-      _step == BaiStep.awaitingIncomeSource ||
-      _step == BaiStep.awaitingIncomeAccount;
+      _step == GabStep.awaitingIncomeAmount ||
+      _step == GabStep.awaitingIncomeSource ||
+      _step == GabStep.awaitingIncomeAccount;
 
   bool get _isAllocationFlowActive =>
-      _step == BaiStep.awaitingAllocationPeriod ||
-      _step == BaiStep.awaitingAllocationAmount;
+      _step == GabStep.awaitingAllocationPeriod ||
+      _step == GabStep.awaitingAllocationAmount;
 
   bool _isCancellation(String input) => const {
     'cancel',
@@ -1189,7 +1189,7 @@ class BaiAssistant {
     return _titleCase(source);
   }
 
-  Future<BaiReply?> _tryLogIncome(String n) async {
+  Future<GabReply?> _tryLogIncome(String n) async {
     if (_hasFutureExpenseSignal(n) || !_isIncomeIntent(n)) return null;
 
     _pendingIncomeAmount = _parseExpenseAmount(n);
@@ -1201,19 +1201,19 @@ class BaiAssistant {
 
     if (_pendingIncomeAmount != null &&
         (!_pendingIncomeAmount!.isFinite || _pendingIncomeAmount! <= 0)) {
-      _step = BaiStep.awaitingIncomeAmount;
-      return const BaiReply(
+      _step = GabStep.awaitingIncomeAmount;
+      return const GabReply(
         'Please enter a valid amount, for example 8,000.00.',
       );
     }
     if (_pendingIncomeAmount == null) {
-      _step = BaiStep.awaitingIncomeAmount;
-      return const BaiReply('How much did you receive?');
+      _step = GabStep.awaitingIncomeAmount;
+      return const GabReply('How much did you receive?');
     }
     if (_pendingIncomeDescription == null ||
         _pendingIncomeDescription!.isEmpty) {
-      _step = BaiStep.awaitingIncomeSource;
-      return const BaiReply('What was this income from?');
+      _step = GabStep.awaitingIncomeSource;
+      return const GabReply('What was this income from?');
     }
     return await _continueIncomeFlow();
   }
@@ -1222,26 +1222,26 @@ class BaiAssistant {
     return _findMentionedAccount(text, accounts);
   }
 
-  Future<BaiReply> _handleOngoingIncomeFlow(String input) async {
+  Future<GabReply> _handleOngoingIncomeFlow(String input) async {
     final accounts = await FinanceStorage.loadAccounts();
-    if (_step == BaiStep.awaitingIncomeAmount) {
+    if (_step == GabStep.awaitingIncomeAmount) {
       final amount = _parseExpenseAmount(input);
       if (amount == null || !amount.isFinite || amount <= 0) {
-        return const BaiReply(
+        return const GabReply(
           'Please enter a valid amount, for example 8,000.00.',
         );
       }
       _pendingIncomeAmount = amount;
-    } else if (_step == BaiStep.awaitingIncomeSource) {
+    } else if (_step == GabStep.awaitingIncomeSource) {
       final source = _extractIncomeSource(input, accounts);
       if (source.isNotEmpty) {
         _pendingIncomeDescription = source;
         _pendingIncomeCategory = _categorizeIncome(source);
       }
-    } else if (_step == BaiStep.awaitingIncomeAccount) {
+    } else if (_step == GabStep.awaitingIncomeAccount) {
       final wallet = _findIncomeWallet(input, accounts);
       if (wallet == null) {
-        return BaiReply(
+        return GabReply(
           _unknownWalletText(accounts),
           quickReplies: _walletNames(accounts),
         );
@@ -1252,20 +1252,20 @@ class BaiAssistant {
     return await _continueIncomeFlow();
   }
 
-  Future<BaiReply> _continueIncomeFlow() async {
+  Future<GabReply> _continueIncomeFlow() async {
     if (_pendingIncomeAmount == null) {
-      _step = BaiStep.awaitingIncomeAmount;
-      return const BaiReply('How much did you receive?');
+      _step = GabStep.awaitingIncomeAmount;
+      return const GabReply('How much did you receive?');
     }
     if (_pendingIncomeDescription == null ||
         _pendingIncomeDescription!.isEmpty) {
-      _step = BaiStep.awaitingIncomeSource;
-      return const BaiReply('What was this income from?');
+      _step = GabStep.awaitingIncomeSource;
+      return const GabReply('What was this income from?');
     }
     if (_pendingIncomeAccount == null) {
       final accounts = await FinanceStorage.loadAccounts();
-      _step = BaiStep.awaitingIncomeAccount;
-      return BaiReply(
+      _step = GabStep.awaitingIncomeAccount;
+      return GabReply(
         'Which wallet did you deposit it to? ${_availableWalletsText(accounts)}',
         quickReplies: _walletNames(accounts),
       );
@@ -1289,7 +1289,7 @@ class BaiAssistant {
       await FinanceStorage.addTransaction(transaction);
       final amountText = _formatExpenseAmount(amount);
       _resetState();
-      return BaiReply(
+      return GabReply(
         '✅ Income logged!\n$source  P +$amountText\nWallet: ${wallet.name}',
         quickReplies: const [
           'What is my total balance?',
@@ -1298,21 +1298,21 @@ class BaiAssistant {
         highlightColor: 'green',
       );
     } catch (error) {
-      return BaiReply(
+      return GabReply(
         '⚠️ Failed to log income: $error',
         quickReplies: const ['Cancel'],
       );
     }
   }
 
-  Future<BaiReply> _handleDuePaymentActionResponse(String n) async {
+  Future<GabReply> _handleDuePaymentActionResponse(String n) async {
     final isOutgoing = _pendingEventIsOutgoing();
     if (isOutgoing &&
         RegExp(r'\bpaid\b').hasMatch(n) &&
         !RegExp(r'\b(?:yes|yeah|yep|done|sure)\b').hasMatch(n)) {
-      _step = BaiStep.awaitingDuePaymentAccount;
+      _step = GabStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
-      return BaiReply(
+      return GabReply(
         'Which wallet did you use to pay for it? ${_availableWalletsText(accounts)}',
         quickReplies: _walletNames(accounts),
       );
@@ -1320,9 +1320,9 @@ class BaiAssistant {
     if (!isOutgoing &&
         RegExp(r'\breceived\b').hasMatch(n) &&
         !RegExp(r'\b(?:yes|yeah|yep|got it|yup|sure|done)\b').hasMatch(n)) {
-      _step = BaiStep.awaitingDuePaymentAccount;
+      _step = GabStep.awaitingDuePaymentAccount;
         final accounts = await FinanceStorage.loadAccounts();
-        return BaiReply(
+        return GabReply(
           'Which wallet did you deposit or transfer it to? ${_availableWalletsText(accounts)}',
           quickReplies: _walletNames(accounts),
         );
@@ -1334,12 +1334,12 @@ class BaiAssistant {
           ).hasMatch(n);
 
     if (confirmed) {
-      _step = BaiStep.awaitingDuePaymentAccount;
+      _step = GabStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
       final prompt = isOutgoing
           ? 'Which wallet did you use to pay for it? ${_availableWalletsText(accounts)}'
           : 'Which wallet did you deposit or transfer it to? ${_availableWalletsText(accounts)}';
-      return BaiReply(prompt, quickReplies: _walletNames(accounts));
+      return GabReply(prompt, quickReplies: _walletNames(accounts));
     }
 
     final denied = RegExp(
@@ -1364,8 +1364,8 @@ class BaiAssistant {
           status: 'pending',
           isCompleted: false,
         );
-        _step = BaiStep.awaitingDueRescheduleDecision;
-        return const BaiReply(
+        _step = GabStep.awaitingDueRescheduleDecision;
+        return const GabReply(
           'This has been moved 3 times. Would you like to set a new date?',
           quickReplies: ['Yes', 'No'],
         );
@@ -1374,7 +1374,7 @@ class BaiAssistant {
           ? 'Okay, I moved your ${_dueEventDisplayName(event)} Bill to $dateStr. I will remind you again tomorrow.'
           : 'Okay, I moved your ${_dueEventDisplayName(event)} to $dateStr. I will ask you again tomorrow.';
       _resetState();
-      return BaiReply(message, highlightColor: isOutgoing ? 'red' : 'green');
+      return GabReply(message, highlightColor: isOutgoing ? 'red' : 'green');
     }
 
     final event = _pendingDueEvent!;
@@ -1383,12 +1383,12 @@ class BaiAssistant {
     final question = isOutgoing
         ? '📅 Reminder: $name Bill (P-$amount) is due today. Did you pay it?'
         : '💰 Reminder: $name (P $amount) is expected today. Did you receive it?';
-    return BaiReply(question, quickReplies: const ['Yes', 'No']);
+    return GabReply(question, quickReplies: const ['Yes', 'No']);
   }
 
-  Future<BaiReply> _handleDuePaymentAccountResponse(String n) async {
+  Future<GabReply> _handleDuePaymentAccountResponse(String n) async {
     if (_isCancellation(n)) {
-      _step = BaiStep.awaitingDuePaymentAction;
+      _step = GabStep.awaitingDuePaymentAction;
       return _duePaymentReminder();
     }
 
@@ -1397,11 +1397,11 @@ class BaiAssistant {
     final amountMentioned = _extractAmountWithSlang(n);
     if (amountMentioned != null &&
         amountMentioned != (_pendingDueAmount ?? event.amount)) {
-      _step = BaiStep.awaitingDuePaymentAmountConfirmation;
+      _step = GabStep.awaitingDuePaymentAmountConfirmation;
       final scheduledAmount = _formatNumberWithCommas(
         (_pendingDueAmount ?? event.amount).toStringAsFixed(2),
       );
-      return BaiReply(
+      return GabReply(
         'Would you like to change the amount? The scheduled amount is P-$scheduledAmount.',
         quickReplies: const ['Yes', 'No'],
       );
@@ -1409,7 +1409,7 @@ class BaiAssistant {
 
     final acc = _findIncomeWallet(n, accounts);
     if (acc == null) {
-      return BaiReply(
+      return GabReply(
         _unknownWalletText(accounts),
         quickReplies: _walletNames(accounts),
       );
@@ -1420,7 +1420,7 @@ class BaiAssistant {
 
     if (isOutgoing && acc.balance < amount) {
       final hasStr = _formatNumberWithCommas(acc.balance.toStringAsFixed(2));
-      return BaiReply(
+      return GabReply(
         'Your ${acc.name} balance is P$hasStr, which is lower than this bill. Would you like to use another wallet?',
         quickReplies: _walletNames(accounts),
       );
@@ -1464,27 +1464,27 @@ class BaiAssistant {
 
       _resetState();
       if (isOutgoing) {
-        return BaiReply(
+        return GabReply(
           '✅ Payment recorded!\n${_dueEventDisplayName(event)} Bill  P-$amountStr was paid from ${acc.name}.\n$balanceLine',
           highlightColor: 'red',
         );
       } else {
-        return BaiReply(
+        return GabReply(
           '✅ ${_dueEventDisplayName(event)} received!\nP $amountStr was added to your ${acc.name} wallet.\n$balanceLine',
           highlightColor: 'green',
         );
       }
     } catch (e) {
-      return BaiReply("⚠️ ${e.toString()}");
+      return GabReply("⚠️ ${e.toString()}");
     }
   }
 
-  BaiReply _duePaymentReminder() {
+  GabReply _duePaymentReminder() {
     final event = _pendingDueEvent!;
     final isOutgoing = _pendingEventIsOutgoing();
     final amount = _formatNumberWithCommas(event.amount.toStringAsFixed(2));
     final name = _dueEventDisplayName(event);
-    return BaiReply(
+    return GabReply(
       isOutgoing
           ? '📅 Reminder: $name Bill (P-$amount) is due today. Did you pay it?'
           : '💰 Reminder: $name (P $amount) is expected today. Did you receive it?',
@@ -1492,35 +1492,35 @@ class BaiAssistant {
     );
   }
 
-  Future<BaiReply> _handleDuePaymentAmountConfirmation(String input) async {
+  Future<GabReply> _handleDuePaymentAmountConfirmation(String input) async {
     final normalized = input.trim().toLowerCase();
     if (RegExp(r'^(?:yes|y|yeah|yep|sure)\b').hasMatch(normalized)) {
-      _step = BaiStep.awaitingDuePaymentAmount;
-      return const BaiReply('What is the new amount?');
+      _step = GabStep.awaitingDuePaymentAmount;
+      return const GabReply('What is the new amount?');
     }
     if (RegExp(r'^(?:no|n|nope)\b').hasMatch(normalized)) {
-      _step = BaiStep.awaitingDuePaymentAccount;
+      _step = GabStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
-      return BaiReply(
+      return GabReply(
         'Which wallet would you like to use? ${_availableWalletsText(accounts)}',
         quickReplies: _walletNames(accounts),
       );
     }
-    return const BaiReply(
+    return const GabReply(
       'Would you like to change the amount? Please answer yes or no.',
       quickReplies: ['Yes', 'No'],
     );
   }
 
-  Future<BaiReply> _handleDuePaymentAmountResponse(String input) async {
+  Future<GabReply> _handleDuePaymentAmountResponse(String input) async {
     final amount = _parseExpenseAmount(input);
     if (amount == null || !amount.isFinite || amount <= 0) {
-      return const BaiReply('Please enter a valid amount, for example 250.00.');
+      return const GabReply('Please enter a valid amount, for example 250.00.');
     }
     _pendingDueAmount = amount;
-    _step = BaiStep.awaitingDuePaymentAccount;
+    _step = GabStep.awaitingDuePaymentAccount;
     final accounts = await FinanceStorage.loadAccounts();
-    return BaiReply(
+    return GabReply(
       'Which wallet would you like to use? ${_availableWalletsText(accounts)}',
       quickReplies: _walletNames(accounts),
     );
@@ -1547,39 +1547,39 @@ class BaiAssistant {
     }
   }
 
-  BaiReply _handleDueRescheduleDecision(String input) {
+  GabReply _handleDueRescheduleDecision(String input) {
     final normalized = input.trim().toLowerCase();
     if (RegExp(r'^(?:yes|y|yeah|yep|sure)\b').hasMatch(normalized)) {
-      _step = BaiStep.awaitingDueRescheduleDate;
-      return const BaiReply('What new date would you like to set?');
+      _step = GabStep.awaitingDueRescheduleDate;
+      return const GabReply('What new date would you like to set?');
     }
     if (RegExp(r'^(?:no|n|nope)\b').hasMatch(normalized)) {
       _resetState();
-      return const BaiReply('Okay, I will keep reminding you on the due date.');
+      return const GabReply('Okay, I will keep reminding you on the due date.');
     }
-    return const BaiReply(
+    return const GabReply(
       'Would you like to set a new date? Please answer yes or no.',
       quickReplies: ['Yes', 'No'],
     );
   }
 
-  Future<BaiReply> _handleDueRescheduleDate(String input) async {
+  Future<GabReply> _handleDueRescheduleDate(String input) async {
     final date = _parseUpcomingBillDate(input, allowBareDay: true);
     if (date == null) {
-      return const BaiReply('What new date would you like to set?');
+      return const GabReply('What new date would you like to set?');
     }
     final event = _pendingDueEvent!;
     await _rescheduleDueEvent(event, date, 0);
     final dateText = _formatBillDate(date);
     _resetState();
-    return BaiReply('Okay, I moved it to $dateText. I will remind you then.');
+    return GabReply('Okay, I moved it to $dateText. I will remind you then.');
   }
 
   // ═══════════════════════════════════════════════
-  //  FINANCE HANDLERS (from Tarsi)
+  //  FINANCE HANDLERS (from Gab)
   // ═══════════════════════════════════════════════
 
-  Future<BaiReply?> _tryTransfer(String n) async {
+  Future<GabReply?> _tryTransfer(String n) async {
     // Check if the message contains explicit transfer keywords
     final explicitRegex = RegExp(
       r'\b(transfer|move|send|transferred|moved|sent)\b',
@@ -1656,22 +1656,22 @@ class BaiAssistant {
     // we fall through to let other intent handlers process it.
     if (from == null) {
       if (!isExplicit) return null;
-      return BaiReply(
+      return GabReply(
         "⚠️ Can't find source account '$leftSide'. Available: ${accounts.map((e) => e.name).join(', ')}",
       );
     }
     if (to == null) {
       if (!isExplicit) return null;
-      return BaiReply(
+      return GabReply(
         "⚠️ Can't find destination account '$rightSide'. Available: ${accounts.map((e) => e.name).join(', ')}",
       );
     }
     if (from.id == to.id) {
       if (!isExplicit) return null;
-      return const BaiReply("⚠️ Source and destination must be different.");
+      return const GabReply("⚠️ Source and destination must be different.");
     }
     if (from.balance < amount) {
-      return BaiReply(
+      return GabReply(
         "⚠️ Insufficient funds in ${_accountLabel(from)}. Balance: $_currency${from.balance.toStringAsFixed(2)}",
       );
     }
@@ -1701,7 +1701,7 @@ class BaiAssistant {
       final fromIcon = _accountIconToken(from);
       final toIcon = _accountIconToken(to);
 
-      return BaiReply(
+      return GabReply(
         "🏛️ Transfer Logged!\n\nMoney Transfer                     +$_currency$amountStrFmt $toIcon\n\n$toIcon prev: $_currency$prevToStr → $_currency$newToStr\n$fromIcon prev: $_currency$prevFromStr → $_currency$newFromStr",
         quickReplies: const [
           "What is my total balance?",
@@ -1709,14 +1709,14 @@ class BaiAssistant {
         ],
       );
     } catch (e) {
-      return BaiReply(
+      return GabReply(
         "⚠️ ${e.toString()}",
         quickReplies: const ["What is my total balance?"],
       );
     }
   }
 
-  Future<BaiReply?> _tryLogExpense(String n) async {
+  Future<GabReply?> _tryLogExpense(String n) async {
     if (_hasFutureExpenseSignal(n) || !_isExpenseIntent(n)) return null;
 
     final accounts = await FinanceStorage.loadAccounts();
@@ -1730,8 +1730,8 @@ class BaiAssistant {
 
     if (_pendingExpenseAmount != null &&
         (!_pendingExpenseAmount!.isFinite || _pendingExpenseAmount! <= 0)) {
-      _step = BaiStep.awaitingExpenseAmount;
-      return const BaiReply('Please enter a valid amount, for example 250.00.');
+      _step = GabStep.awaitingExpenseAmount;
+      return const GabReply('Please enter a valid amount, for example 250.00.');
     }
     if (_pendingExpenseAmount == null ||
         _pendingExpenseDescription == null ||
@@ -1741,7 +1741,7 @@ class BaiAssistant {
     return await _continueExpenseFlow();
   }
 
-  Future<BaiReply?> _tryMultiTransaction(String n) async {
+  Future<GabReply?> _tryMultiTransaction(String n) async {
     // Check if input contains "and" which might indicate multiple transactions
     final l = n.toLowerCase();
 
@@ -1829,7 +1829,7 @@ class BaiAssistant {
       results.add("Failed to log expense: $e");
     }
 
-    return BaiReply(
+    return GabReply(
       results.join('\n\n'),
       quickReplies: const [
         "What is my total balance?",
@@ -1854,7 +1854,7 @@ class BaiAssistant {
     return double.tryParse(amountStr);
   }
 
-  Future<BaiReply?> _tryBalanceCheck(String n) async {
+  Future<GabReply?> _tryBalanceCheck(String n) async {
     // Total balance
     if (n == 'total balance' ||
         n.contains('totalbalance') ||
@@ -1875,7 +1875,7 @@ class BaiAssistant {
                 "${_accountLabel(a)}: $_currency${a.balance.toStringAsFixed(2)}",
           )
           .toList();
-      return BaiReply(
+      return GabReply(
         "💰 Your Total Balance: $_currency${netWorth.toStringAsFixed(2)}\n\n${lines.join('\n')}",
         quickReplies: const ["Check Cash balance", "What can I cook?"],
       );
@@ -1890,7 +1890,7 @@ class BaiAssistant {
           n == 'check $name' ||
           n == 'check $name balance' ||
           (n.contains('how much') && n.contains(name))) {
-        return BaiReply(
+        return GabReply(
           "${_accountLabel(a)} balance: $_currency${a.balance.toStringAsFixed(2)}",
           quickReplies: const ["What is my total balance?"],
         );
@@ -1903,14 +1903,14 @@ class BaiAssistant {
     r'^(?:please\s+)?(?:undo(?:\s+(?:that|last(?:\s+transaction)?|previous(?:\s+transaction)?))?|revert(?:\s+(?:that|last transaction|previous transaction))?|delete last transaction|remove last transaction|erase that|mali|wrong)$',
   ).hasMatch(input.trim());
 
-  Future<BaiReply> _undoTransactions(List<String> transactionIds) async {
+  Future<GabReply> _undoTransactions(List<String> transactionIds) async {
     final deletedTransactions = <FinanceTransaction>[];
     for (final id in transactionIds.reversed) {
       final transaction = await FinanceStorage.deleteTransaction(id);
       if (transaction != null) deletedTransactions.add(transaction);
     }
     if (deletedTransactions.isEmpty) {
-      return const BaiReply(
+      return const GabReply(
         'There is no recent transaction to undo.',
         quickReplies: ['What is my total balance?'],
       );
@@ -1928,7 +1928,7 @@ class BaiAssistant {
       return '${transaction.description} removed.\n$accountLabel balance restored.$balanceLine';
     }).join('\n\n');
 
-    return BaiReply(
+    return GabReply(
       '\u{1F504} Transaction Undo!\n\n$details',
       quickReplies: const [
         'What is my total balance?',
@@ -1937,7 +1937,7 @@ class BaiAssistant {
     );
   }
 
-  Future<BaiReply?> _tryCorrection(String n) async {
+  Future<GabReply?> _tryCorrection(String n) async {
     final l = n.toLowerCase();
 
     // Check for correction keywords
@@ -1959,7 +1959,7 @@ class BaiAssistant {
     // Try to extract the new amount
     final newAmount = _extractAmountWithSlang(n);
     if (newAmount == null) {
-      return BaiReply(
+      return GabReply(
         "⚠️ I couldn't find the new amount. Please specify the correct amount.",
         quickReplies: const ["What is my total balance?"],
       );
@@ -1968,7 +1968,7 @@ class BaiAssistant {
     // Get the last transaction
     final transactions = await FinanceStorage.loadTransactions();
     if (transactions.isEmpty) {
-      return BaiReply(
+      return GabReply(
         "⚠️ No transactions to correct.",
         quickReplies: const ["What is my total balance?"],
       );
@@ -2008,7 +2008,7 @@ class BaiAssistant {
           ? '+$_currency${difference.toStringAsFixed(2)}'
           : '-$_currency${difference.abs().toStringAsFixed(2)}';
 
-      return BaiReply(
+      return GabReply(
         "✅ Corrected!\n\nUpdated $type from $_currency${oldAmount.toStringAsFixed(2)} to $_currency${newAmount.toStringAsFixed(2)}\nAdjustment: $diffText\nAccount: ${account.name}",
         quickReplies: const [
           "What is my total balance?",
@@ -2016,7 +2016,7 @@ class BaiAssistant {
         ],
       );
     } catch (e) {
-      return BaiReply(
+      return GabReply(
         "⚠️ Failed to correct transaction: $e",
         quickReplies: const ["What is my total balance?"],
       );
@@ -2027,14 +2027,14 @@ class BaiAssistant {
   //  BILLS HANDLERS
   // ═══════════════════════════════════════════════
 
-  Future<BaiReply> _weeklyBillsReply() async {
+  Future<GabReply> _weeklyBillsReply() async {
     final bills = await BillStorage.loadBills();
     _cookingEngine.updateBills(bills);
     final reply = _cookingEngine.handle('total bills this week');
-    return _fromRamsey(reply);
+    return _fromGab(reply);
   }
 
-  Future<BaiReply> _billsSummaryReply() async {
+  Future<GabReply> _billsSummaryReply() async {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final bills = (await BillStorage.loadBills())
@@ -2081,9 +2081,9 @@ class BaiAssistant {
     ]..sort((a, b) => a.scheduledDate.compareTo(b.scheduledDate));
 
     if (upcoming.isEmpty) {
-      return const BaiReply('You have no upcoming bills.');
+      return const GabReply('You have no upcoming bills.');
     }
-    return BaiReply('📅 Upcoming Events\n${_formatScheduledEvents(upcoming)}');
+    return GabReply('📅 Upcoming Events\n${_formatScheduledEvents(upcoming)}');
   }
 
   // ═══════════════════════════════════════════════
@@ -2105,7 +2105,7 @@ class BaiAssistant {
     return null;
   }
 
-  Future<BaiReply?> _trySetDailyAllocation(String input) async {
+  Future<GabReply?> _trySetDailyAllocation(String input) async {
     final normalized = input
         .toLowerCase()
         .replaceAll(RegExp(r'\s+'), ' ')
@@ -2139,41 +2139,41 @@ class BaiAssistant {
 
     if (period == null) {
       _pendingAllocationPeriod = null;
-      _step = BaiStep.awaitingAllocationPeriod;
-      return const BaiReply(
+      _step = GabStep.awaitingAllocationPeriod;
+      return const GabReply(
         'Which budget would you like to update: daily, weekly, or monthly?',
       );
     }
     _pendingAllocationPeriod = period;
     if (amount == null || !amount.isFinite || amount <= 0) {
-      _step = BaiStep.awaitingAllocationAmount;
-      return const BaiReply('What amount would you like to set?');
+      _step = GabStep.awaitingAllocationAmount;
+      return const GabReply('What amount would you like to set?');
     }
 
     return await _saveAllocation(period, amount);
   }
 
-  Future<BaiReply> _handleAllocationFlow(String input) async {
-    if (_step == BaiStep.awaitingAllocationPeriod) {
+  Future<GabReply> _handleAllocationFlow(String input) async {
+    if (_step == GabStep.awaitingAllocationPeriod) {
       final period = _allocationPeriodFromText(input.toLowerCase().trim());
       if (period == null) {
-        return const BaiReply(
+        return const GabReply(
           'Which budget would you like to update: daily, weekly, or monthly?',
         );
       }
       _pendingAllocationPeriod = period;
-      _step = BaiStep.awaitingAllocationAmount;
-      return const BaiReply('What amount would you like to set?');
+      _step = GabStep.awaitingAllocationAmount;
+      return const GabReply('What amount would you like to set?');
     }
 
     final amount = _parseExpenseAmount(input);
     if (amount == null || !amount.isFinite || amount <= 0) {
-      return const BaiReply('What amount would you like to set?');
+      return const GabReply('What amount would you like to set?');
     }
     return await _saveAllocation(_pendingAllocationPeriod ?? 'daily', amount);
   }
 
-  Future<BaiReply> _saveAllocation(String period, double amount) async {
+  Future<GabReply> _saveAllocation(String period, double amount) async {
     final dailyAmount = switch (period) {
       'weekly' => amount / 7,
       'monthly' => amount / 30,
@@ -2182,13 +2182,13 @@ class BaiAssistant {
     await SettingsService().setDailySpendingAllocation(dailyAmount);
     _resetState();
     final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
-    return BaiReply(
+    return GabReply(
       '✅ Done! Your $period budget is now P $formattedAmount.',
       quickReplies: const ['Show my budget', 'What is my total balance?'],
     );
   }
 
-  BaiReply? _tryBudgetValueAsk(String input) {
+  GabReply? _tryBudgetValueAsk(String input) {
     final n = input.toLowerCase();
     if (_hasAllocationUpdateWord(n) ||
         !_hasAllocationBudgetWord(n) ||
@@ -2203,25 +2203,25 @@ class BaiAssistant {
       _ => dailyAmount,
     };
     final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
-    return BaiReply('Your $period budget is P $formattedAmount.');
+    return GabReply('Your $period budget is P $formattedAmount.');
   }
 
-  BaiReply? _tryBudgetConcernReply(String input) {
+  GabReply? _tryBudgetConcernReply(String input) {
     final n = input.toLowerCase();
     if (_hasAllocationBudgetWord(n) &&
         RegExp(r'\b(?:too\s+small|too\s+low|not\s+enough)\b').hasMatch(n) &&
         !_hasAllocationUpdateWord(n)) {
-      return const BaiReply('I hear you. Would you like to update it?');
+      return const GabReply('I hear you. Would you like to update it?');
     }
     return null;
   }
 
-  BaiReply? _tryAmbiguousAmount(String n) {
+  GabReply? _tryAmbiguousAmount(String n) {
     // If the message has an amount but slipped past expense, income, and allocation rules,
     // we should explicitly ask the user rather than guessing or letting the fallback catch it.
     final amount = _extractAmountWithSlang(n);
     if (amount != null && amount > 0) {
-      return const BaiReply(
+      return const GabReply(
         "Do you want to log this as an expense, or update your daily allocation?",
         quickReplies: ["Log as expense", "Update allocation"],
       );
@@ -3247,7 +3247,7 @@ class BaiAssistant {
         .join(' ');
   }
 
-  Future<BaiReply?> _tryFutureEvent(String n) async {
+  Future<GabReply?> _tryFutureEvent(String n) async {
     final normalized = _normalizeFutureText(n);
     if (!_isFutureTense(normalized)) return null;
 
@@ -3259,7 +3259,7 @@ class BaiAssistant {
     // Parse date
     final scheduledDate = _parseDateFromText(normalized);
     if (scheduledDate == null) {
-      return BaiReply(
+      return GabReply(
         "⚠️ I couldn't determine the date. Please specify when this event will occur (e.g., 'this 30th', 'on Friday', 'on the 15th').",
         quickReplies: const ["What is my total balance?"],
       );
@@ -3336,7 +3336,7 @@ class BaiAssistant {
             ? ''
             : '\nFrequency: $frequency';
 
-        return BaiReply(
+        return GabReply(
           '📅 Bill Scheduled!\n\n$cleanTitle                                      -$_currency$amountStr\n$accLine\nScheduled for: $dateStr$frequencyNote\n\nNew Balance after execution: $_currency$projectedBalance',
           quickReplies: const [
             "Show upcoming events",
@@ -3358,7 +3358,7 @@ class BaiAssistant {
             ? ''
             : '\nFrequency: $frequency';
 
-        return BaiReply(
+        return GabReply(
           '📅 Income Scheduled!\n\n$cleanTitle                                   +$_currency$amountStr\n$accLine\nScheduled for: $dateStr$frequencyNote\n\nNew Balance after execution: $_currency$projectedBalance',
           quickReplies: const [
             "What is my total balance?",
@@ -3368,7 +3368,7 @@ class BaiAssistant {
         );
       }
     } catch (e) {
-      return BaiReply(
+      return GabReply(
         "⚠️ Failed to schedule future event: $e",
         quickReplies: const ["What is my total balance?"],
       );
@@ -3657,19 +3657,19 @@ class BaiAssistant {
   //  REPLY HELPERS
   // ═══════════════════════════════════════════════
 
-  BaiReply _fromRamsey(RamseyReply r) => BaiReply(
+  GabReply _fromGab(GabCookingReply r) => GabReply(
     r.text,
     extraTexts: r.extraTexts,
     quickReplies: r.quickReplies,
     navigateTo: r.navigateTo,
   );
 
-  BaiReply _noAccountsReply() => const BaiReply(
+  GabReply _noAccountsReply() => const GabReply(
     "You don't have any financial accounts set up yet. Visit the Wallet page to create one first!",
     quickReplies: ["What can I cook?"],
   );
 
-  BaiReply _helpReply() => const BaiReply(
+  GabReply _helpReply() => const GabReply(
     "Here's everything I can help you with:\n\n"
     "🍳 Cooking\n"
     "'What can I cook for dinner?'\n"
@@ -3700,7 +3700,7 @@ class BaiAssistant {
     ],
   );
 
-  BaiReply _fallbackReply() => const BaiReply(
+  GabReply _fallbackReply() => const GabReply(
     "I'm here to help! Just ask me anything about cooking, groceries, bills, or your wallet. Type 'help' to see all my commands. 😊",
     quickReplies: ["Help", "What can I cook?", "What is my total balance?"],
   );
@@ -3708,36 +3708,36 @@ class BaiAssistant {
   // ---------------------------------------------------------
   // NEW ROBUST EXPENSE FLOW
   // ---------------------------------------------------------
-  Future<BaiReply> _handleOngoingExpenseFlow(String input) async {
+  Future<GabReply> _handleOngoingExpenseFlow(String input) async {
     final n = input.toLowerCase();
 
     if (_isCancellation(n)) {
       _resetState();
-      return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+      return const GabReply("Okay, I cancelled that. Nothing was saved.");
     }
 
     final accounts = await FinanceStorage.loadAccounts();
-    if (_step == BaiStep.awaitingExpenseAmount) {
+    if (_step == GabStep.awaitingExpenseAmount) {
       final amount = _parseExpenseAmount(input);
       if (amount == null || !amount.isFinite || amount <= 0) {
-        return const BaiReply(
+        return const GabReply(
           'Please enter a valid amount, for example 250.00.',
         );
       }
       _pendingExpenseAmount = amount;
-    } else if (_step == BaiStep.awaitingExpenseItem) {
+    } else if (_step == GabStep.awaitingExpenseItem) {
       final item = _extractExpenseItemFragment(input, null);
       if (item.isNotEmpty) {
         _pendingExpenseDescription = _titleCase(item);
         _pendingExpenseCategory = _categorizeExpense(item);
       }
-    } else if (_step == BaiStep.awaitingExpenseAccount) {
+    } else if (_step == GabStep.awaitingExpenseAccount) {
       if (const {'ok', 'okay', 'sure'}.contains(n.trim())) {
         return _continueExpenseFlow();
       }
       final wallet = _findExpenseWallet(input, accounts);
       if (wallet == null) {
-        return BaiReply(
+        return GabReply(
           _unknownWalletText(accounts),
           quickReplies: _walletNames(accounts),
         );
@@ -3748,26 +3748,26 @@ class BaiAssistant {
     return await _continueExpenseFlow();
   }
 
-  Future<BaiReply> _continueExpenseFlow() async {
+  Future<GabReply> _continueExpenseFlow() async {
     if (_pendingExpenseAmount == null) {
-      _step = BaiStep.awaitingExpenseAmount;
-      return const BaiReply(
+      _step = GabStep.awaitingExpenseAmount;
+      return const GabReply(
         'How much did you spend from your wallet?',
         quickReplies: ['❌ Cancel', '🔄 Do Something Else'],
       );
     }
     if (_pendingExpenseDescription == null ||
         _pendingExpenseDescription!.trim().isEmpty) {
-      _step = BaiStep.awaitingExpenseItem;
-      return const BaiReply(
+      _step = GabStep.awaitingExpenseItem;
+      return const GabReply(
         'What did you spend it on?',
         quickReplies: ['❌ Cancel', '🔄 Do Something Else'],
       );
     }
     if (_pendingExpenseAccount == null) {
       final accounts = await FinanceStorage.loadAccounts();
-      _step = BaiStep.awaitingExpenseAccount;
-      return BaiReply(
+      _step = GabStep.awaitingExpenseAccount;
+      return GabReply(
         'Which wallet did you spend it from? ${_availableWalletsText(accounts)}',
         quickReplies: [..._walletNames(accounts), '🔄 Do Something Else'],
       );
@@ -3786,7 +3786,7 @@ class BaiAssistant {
       description: item,
     );
 
-    _step = BaiStep.awaitingExpenseAccount;
+    _step = GabStep.awaitingExpenseAccount;
     try {
       await FinanceStorage.addTransaction(transaction);
       final transactions = await FinanceStorage.loadTransactions();
@@ -3805,7 +3805,7 @@ class BaiAssistant {
       final remainingText = _formatExpenseAmount(remaining);
 
       _resetState();
-      return BaiReply(
+      return GabReply(
         '✅ Expense logged!\n$item  P-$amountText\nWallet: ${wallet.name}\nRemaining today: P $remainingText\nAnything else?',
         quickReplies: const [
           '➕ Another Expense',
@@ -3818,12 +3818,12 @@ class BaiAssistant {
     } catch (error) {
       if (error.toString().contains('Insufficient funds')) {
         _pendingExpenseAccount = null;
-        _step = BaiStep.awaitingExpenseAccount;
+        _step = GabStep.awaitingExpenseAccount;
         final accounts = await FinanceStorage.loadAccounts();
         final alternatives = accounts.where(
           (account) => account.id != wallet.id,
         );
-        return BaiReply(
+        return GabReply(
           '⚠️ ${error.toString()}\nPlease choose another wallet.',
           quickReplies: [
             ..._walletNames(alternatives.toList()),
@@ -3831,25 +3831,25 @@ class BaiAssistant {
           ],
         );
       }
-      return BaiReply("⚠️ ${error.toString()}", quickReplies: const ['Cancel']);
+      return GabReply("⚠️ ${error.toString()}", quickReplies: const ['Cancel']);
     }
   }
 
-  Future<BaiReply> _handleClarification(String n) async {
+  Future<GabReply> _handleClarification(String n) async {
     // Uses the raw input for later context
     final raw = _unclearRawInput ?? n;
 
     if (n.contains('expense') || n.contains('spend')) {
-      _step = BaiStep.idle;
-      return const BaiReply("Okay, tracking expense.");
+      _step = GabStep.idle;
+      return const GabReply("Okay, tracking expense.");
     } else if (n.contains('budget') || n.contains('update')) {
-      _step = BaiStep.idle;
-      return const BaiReply("Okay, updating budget.");
+      _step = GabStep.idle;
+      return const GabReply("Okay, updating budget.");
     }
 
     _unclearRawInput = raw;
-    _step = BaiStep.awaitingClarification;
-    return const BaiReply(
+    _step = GabStep.awaitingClarification;
+    return const GabReply(
       "Would you like to log this as an expense, or update your budget?",
       quickReplies: ['Log Expense', 'Update Budget'],
     );
@@ -3858,7 +3858,7 @@ class BaiAssistant {
   // ---------------------------------------------------------
   // SCHEDULED ENTRIES FLOW (BILLS & FUTURE INCOME)
   // ---------------------------------------------------------
-  Future<BaiReply> _handleScheduledEntryFlow(String input) async {
+  Future<GabReply> _handleScheduledEntryFlow(String input) async {
     if (_pendingScheduledType == 'bill') {
       return await _handleUpcomingBillFlow(input);
     }
@@ -3875,7 +3875,7 @@ class BaiAssistant {
         n == 'forget it' ||
         n == 'nevermind') {
       _resetState();
-      return const BaiReply("Okay, I cancelled that. Nothing was saved.");
+      return const GabReply("Okay, I cancelled that. Nothing was saved.");
     }
 
     if (n.contains('update') && n.contains('budget') || n.contains('spent')) {
@@ -3927,8 +3927,8 @@ class BaiAssistant {
 
     // 3. ASK FOR MISSING FIELDS
     if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
-      _step = BaiStep.awaitingScheduledName;
-      return BaiReply(
+      _step = GabStep.awaitingScheduledName;
+      return GabReply(
         _pendingScheduledType == 'bill'
             ? "What bill is this?"
             : "What kind of incoming money is this?",
@@ -3936,8 +3936,8 @@ class BaiAssistant {
     }
 
     if (_pendingScheduledAmount == null) {
-      _step = BaiStep.awaitingScheduledAmount;
-      return BaiReply(
+      _step = GabStep.awaitingScheduledAmount;
+      return GabReply(
         _pendingScheduledType == 'bill'
             ? "How much is the $_pendingScheduledName?"
             : "How much is your $_pendingScheduledName?",
@@ -3945,8 +3945,8 @@ class BaiAssistant {
     }
 
     if (_pendingScheduledDate == null || _pendingScheduledDate!.isEmpty) {
-      _step = BaiStep.awaitingScheduledDate;
-      return BaiReply(
+      _step = GabStep.awaitingScheduledDate;
+      return GabReply(
         _pendingScheduledType == 'bill'
             ? "When is the $_pendingScheduledName due?"
             : "On what date will you receive your $_pendingScheduledName?",
@@ -3963,17 +3963,17 @@ class BaiAssistant {
     final sign = _pendingScheduledType == 'bill' ? 'P-' : 'P ';
 
     _resetState();
-    return BaiReply(
+    return GabReply(
       "$title\n$_pendingScheduledName\t\t$sign${_pendingScheduledAmount!.toStringAsFixed(2)}\nDate:\t\t\t$_pendingScheduledDate\n\n$footer",
       highlightColor: _pendingScheduledType == 'bill' ? 'red' : 'green',
     );
   }
 
-  Future<BaiReply> _handleUpcomingBillFlow(String input) async {
+  Future<GabReply> _handleUpcomingBillFlow(String input) async {
     final normalized = _normalizeFutureText(input);
     if (_isCancellation(normalized)) {
       _resetState();
-      return const BaiReply('Okay, I cancelled that. Nothing was saved.');
+      return const GabReply('Okay, I cancelled that. Nothing was saved.');
     }
 
     if (_pendingBillDateNeedsConfirmation) {
@@ -3987,18 +3987,18 @@ class BaiAssistant {
         _pendingBillDateNeedsConfirmation = false;
         _pendingScheduledDateTime = null;
         _pendingScheduledDate = null;
-        _step = BaiStep.awaitingScheduledDate;
-        return BaiReply('When is the ${_pendingScheduledName!} bill due?');
+        _step = GabStep.awaitingScheduledDate;
+        return GabReply('When is the ${_pendingScheduledName!} bill due?');
       }
-      return BaiReply(
+      return GabReply(
         'Do you mean ${_formatBillDate(_pendingScheduledDateTime!)}?',
       );
     }
 
     if (input.trim().isNotEmpty &&
-        (_step == BaiStep.awaitingScheduledName ||
-            _step == BaiStep.awaitingScheduledAmount ||
-            _step == BaiStep.awaitingScheduledDate)) {
+        (_step == GabStep.awaitingScheduledName ||
+            _step == GabStep.awaitingScheduledAmount ||
+            _step == GabStep.awaitingScheduledDate)) {
       final name = _extractUpcomingBillName(normalized);
       if ((_pendingScheduledName == null || _pendingScheduledName!.isEmpty) &&
           name.isNotEmpty) {
@@ -4015,7 +4015,7 @@ class BaiAssistant {
       if (_pendingScheduledDateTime == null) {
         final date = _parseUpcomingBillDate(
           normalized,
-          allowBareDay: _step == BaiStep.awaitingScheduledDate,
+          allowBareDay: _step == GabStep.awaitingScheduledDate,
         );
         if (date != null) {
           if (_isUpcomingBillDayOnly(normalized) && _isDateBeforeToday(date)) {
@@ -4033,8 +4033,8 @@ class BaiAssistant {
             _pendingScheduledDateTime = nextMonth;
             _pendingScheduledDate = _formatBillDate(nextMonth);
             _pendingBillDateNeedsConfirmation = true;
-            _step = BaiStep.awaitingScheduledDate;
-            return BaiReply('Do you mean ${_formatBillDate(nextMonth)}?');
+            _step = GabStep.awaitingScheduledDate;
+            return GabReply('Do you mean ${_formatBillDate(nextMonth)}?');
           }
           _pendingScheduledDateTime = date;
           _pendingScheduledDate = _formatBillDate(date);
@@ -4043,16 +4043,16 @@ class BaiAssistant {
     }
 
     if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
-      _step = BaiStep.awaitingScheduledName;
-      return const BaiReply('What bill is this?');
+      _step = GabStep.awaitingScheduledName;
+      return const GabReply('What bill is this?');
     }
     if (_pendingScheduledAmount == null) {
-      _step = BaiStep.awaitingScheduledAmount;
-      return BaiReply('How much is the ${_pendingScheduledName!} bill?');
+      _step = GabStep.awaitingScheduledAmount;
+      return GabReply('How much is the ${_pendingScheduledName!} bill?');
     }
     if (_pendingScheduledDateTime == null) {
-      _step = BaiStep.awaitingScheduledDate;
-      return BaiReply('When is the ${_pendingScheduledName!} bill due?');
+      _step = GabStep.awaitingScheduledDate;
+      return GabReply('When is the ${_pendingScheduledName!} bill due?');
     }
     return await _saveUpcomingBill();
   }
@@ -4301,7 +4301,7 @@ class BaiAssistant {
     return '📅';
   }
 
-  Future<BaiReply> _saveUpcomingBill() async {
+  Future<GabReply> _saveUpcomingBill() async {
     final baseName = _pendingScheduledName!;
     final displayName = '$baseName Bill';
     final amount = _pendingScheduledAmount!;
@@ -4340,10 +4340,10 @@ class BaiAssistant {
         'Date:              ${_formatBillDate(date)}\n'
         'I will remind you on the due date.';
     _resetState();
-    return BaiReply(confirmation, highlightColor: 'red');
+    return GabReply(confirmation, highlightColor: 'red');
   }
 
-  Future<BaiReply?> _tryScheduledEntry(String n) async {
+  Future<GabReply?> _tryScheduledEntry(String n) async {
     final hasBillWord = RegExp(
       r'\b(?:bill|due|payment|rent|utilities|electricity|water|internet|wifi|phone|load|loan|credit\s+card|insurance|tuition|subscription|mortgage|amortization|installment)\b',
     ).hasMatch(n);
@@ -4360,7 +4360,7 @@ class BaiAssistant {
     if (hasBillWord && (hasFutureSignal || billPayOnDate) && !pastPayment) {
       _resetState();
       _pendingScheduledType = 'bill';
-      _step = BaiStep.awaitingScheduledName;
+      _step = GabStep.awaitingScheduledName;
       return await _handleUpcomingBillFlow(n);
     }
 
@@ -4390,7 +4390,7 @@ class BaiAssistant {
         !isPastIncome) {
       _resetState();
       _pendingScheduledType = 'income';
-      _step = BaiStep.awaitingScheduledName;
+      _step = GabStep.awaitingScheduledName;
       return await _handleUpcomingIncomeFlow(n);
     }
 
@@ -4401,23 +4401,23 @@ class BaiAssistant {
     final pastSignals = RegExp(r'(spent|bought|paid|received|got|earned)');
     if (futureSignals.hasMatch(n) && !pastSignals.hasMatch(n)) {
       _pendingScheduledType = 'income';
-      _step = BaiStep.awaitingScheduledName;
+      _step = GabStep.awaitingScheduledName;
       return await _handleScheduledEntryFlow(n);
     }
     return null;
   }
 
-  Future<BaiReply> _handleUpcomingIncomeFlow(String input) async {
+  Future<GabReply> _handleUpcomingIncomeFlow(String input) async {
     final normalized = _normalizeFutureText(input);
     if (_isCancellation(normalized)) {
       _resetState();
-      return const BaiReply('Okay, I cancelled that. Nothing was saved.');
+      return const GabReply('Okay, I cancelled that. Nothing was saved.');
     }
 
     if (input.trim().isNotEmpty &&
-        (_step == BaiStep.awaitingScheduledName ||
-            _step == BaiStep.awaitingScheduledAmount ||
-            _step == BaiStep.awaitingScheduledDate)) {
+        (_step == GabStep.awaitingScheduledName ||
+            _step == GabStep.awaitingScheduledAmount ||
+            _step == GabStep.awaitingScheduledDate)) {
       if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
         final name = _extractUpcomingIncomeName(normalized);
         if (name.isNotEmpty) _pendingScheduledName = name;
@@ -4433,7 +4433,7 @@ class BaiAssistant {
       if (_pendingScheduledDateTime == null) {
         final date = _parseUpcomingBillDate(
           normalized,
-          allowBareDay: _step == BaiStep.awaitingScheduledDate,
+          allowBareDay: _step == GabStep.awaitingScheduledDate,
         );
         if (date != null) {
           _pendingScheduledDateTime = date;
@@ -4443,16 +4443,16 @@ class BaiAssistant {
     }
 
     if (_pendingScheduledName == null || _pendingScheduledName!.isEmpty) {
-      _step = BaiStep.awaitingScheduledName;
-      return const BaiReply('What kind of incoming money is this?');
+      _step = GabStep.awaitingScheduledName;
+      return const GabReply('What kind of incoming money is this?');
     }
     if (_pendingScheduledAmount == null) {
-      _step = BaiStep.awaitingScheduledAmount;
-      return BaiReply('How much is your ${_pendingScheduledName!}?');
+      _step = GabStep.awaitingScheduledAmount;
+      return GabReply('How much is your ${_pendingScheduledName!}?');
     }
     if (_pendingScheduledDateTime == null) {
-      _step = BaiStep.awaitingScheduledDate;
-      return BaiReply(
+      _step = GabStep.awaitingScheduledDate;
+      return GabReply(
         'On what date will you receive your ${_pendingScheduledName!}?',
       );
     }
@@ -4486,7 +4486,7 @@ class BaiAssistant {
     return _titleCase(name);
   }
 
-  Future<BaiReply> _saveUpcomingIncome() async {
+  Future<GabReply> _saveUpcomingIncome() async {
     final name = _titleCase(_pendingScheduledName!);
     final amount = _pendingScheduledAmount!;
     final date = _pendingScheduledDateTime!;
@@ -4523,7 +4523,7 @@ class BaiAssistant {
         'Date:             ${_formatBillDate(date)}\n'
         'I will remind you on the day it arrives.';
     _resetState();
-    return BaiReply(confirmation, highlightColor: 'green');
+    return GabReply(confirmation, highlightColor: 'green');
   }
 
   String _incomeEmoji(String name) {
