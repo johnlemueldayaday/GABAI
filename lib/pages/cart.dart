@@ -14,6 +14,7 @@ import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/finance_storage.dart';
+import 'package:gabay/services/safe_to_spend.dart';
 import 'package:gabay/models/finance_models.dart';
 import 'package:gabay/pages/price_comparison.dart';
 
@@ -24,6 +25,8 @@ import 'package:gabay/widgets/home/sections/add_item_sheet.dart';
 
 final GlobalKey<ScaffoldMessengerState> groceryScaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
+final RouteObserver<ModalRoute<dynamic>> groceryRouteObserver =
+    RouteObserver<ModalRoute<dynamic>>();
 
 class GroceryApp extends StatelessWidget {
   const GroceryApp({super.key});
@@ -57,6 +60,7 @@ class GroceryApp extends StatelessWidget {
             useMaterial3: true,
           ),
           initialRoute: kSplashRouteName,
+          navigatorObservers: [groceryRouteObserver],
           routes: {kSplashRouteName: (_) => const SplashScreen()},
         );
       },
@@ -913,7 +917,7 @@ class CartDetailPage extends StatefulWidget {
 }
 
 class _CartDetailPageState extends State<CartDetailPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, RouteAware, WidgetsBindingObserver {
   String get _listName => AppState.currentList?.name ?? _fallbackName;
   set _listName(String v) {
     if (AppState.currentList != null) {
@@ -925,16 +929,8 @@ class _CartDetailPageState extends State<CartDetailPage>
 
   String _fallbackName = 'New List';
 
-  double get _budget => AppState.currentList?.budget ?? _fallbackBudget;
-  set _budget(double v) {
-    if (AppState.currentList != null) {
-      AppState.currentList!.budget = v;
-    } else {
-      _fallbackBudget = v;
-    }
-  }
-
-  double _fallbackBudget = 0;
+  double get _budget => _walletBalance;
+  double _walletBalance = 0;
 
   List<GroceryItem> get _items => AppState.currentList?.items ?? _fallbackItems;
   final List<GroceryItem> _fallbackItems = [];
@@ -946,9 +942,46 @@ class _CartDetailPageState extends State<CartDetailPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _loadWalletBalance();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       setState(() => _isInit = true);
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      groceryRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    groceryRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  @override
+  void didPopNext() {
+    _loadWalletBalance();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadWalletBalance();
+    }
+  }
+
+  Future<void> _loadWalletBalance() async {
+    final balance = await FinanceStorage.getNetWorth();
+    if (mounted) {
+      setState(() => _walletBalance = balance);
+    }
   }
 
   double get _checkedTotal => _items
@@ -1117,22 +1150,6 @@ class _CartDetailPageState extends State<CartDetailPage>
     );
     if (result != null && result.isNotEmpty) {
       setState(() => item.name = result);
-      GroceryStorage.saveAll();
-    }
-  }
-
-  void _editBudget() async {
-    final result = await showModalBottomSheet<double>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _NumericKeypadSheet(
-        initialValue: _budget,
-        itemName: 'Budget Overview',
-      ),
-    );
-    if (result != null) {
-      setState(() => _budget = result);
       GroceryStorage.saveAll();
     }
   }
@@ -1319,7 +1336,6 @@ class _CartDetailPageState extends State<CartDetailPage>
     return result;
   }
 
-
   Future<void> _finishList() async {
     final checkedItems = _items.where((i) => i.isDone).toList();
     if (checkedItems.isEmpty) {
@@ -1369,7 +1385,9 @@ class _CartDetailPageState extends State<CartDetailPage>
               .toDouble();
           return Dialog(
             backgroundColor: kCardBg,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 420),
               child: Padding(
@@ -1595,7 +1613,6 @@ class _CartDetailPageState extends State<CartDetailPage>
                 }
                 _items.clear();
                 _listName = 'New List';
-                _budget = 0.0;
                 GroceryStorage.saveAll();
               });
               Navigator.pop(context);
@@ -1664,48 +1681,37 @@ class _CartDetailPageState extends State<CartDetailPage>
           ),
         ),
         centerTitle: false,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            GestureDetector(
-              onTap: _editListName,
-              child: Text(
-                _listName,
-                style: GoogleFonts.plusJakartaSans(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                  color: kTextCharcoal,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            if (AppState.currentList?.store.isNotEmpty ?? false)
-              GestureDetector(
+        title: (AppState.currentList?.store.isNotEmpty ?? false)
+            ? GestureDetector(
                 onTap: _editStore,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        AppState.currentList!.store,
-                        style: GoogleFonts.plusJakartaSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: kMuted,
+                behavior: HitTestBehavior.opaque,
+                child: SizedBox(
+                  height: 44,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          AppState.currentList!.store,
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: kMuted,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Icon(Icons.edit_rounded, size: 10, color: kMuted),
-                    ],
+                        const SizedBox(width: 4),
+                        Icon(Icons.edit_rounded, size: 18, color: kMuted),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
+              )
+            : const SizedBox.shrink(),
         actions: [
           IconButton(
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+            padding: EdgeInsets.zero,
             icon: Icon(Icons.compare_arrows_rounded, color: kPrimary),
             onPressed: () {
               Navigator.push(
@@ -1716,6 +1722,7 @@ class _CartDetailPageState extends State<CartDetailPage>
             tooltip: 'Compare Prices',
           ),
           PopupMenuButton<String>(
+            constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
             icon: Icon(Icons.more_vert_rounded, color: kMuted, size: 24),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
@@ -1839,16 +1846,18 @@ class _CartDetailPageState extends State<CartDetailPage>
                   delegate: _StickyBudgetDelegate(
                     child: RepaintBoundary(
                       child: _BudgetCard(
+                        title: _listName,
                         budget: _budget,
                         total: _checkedTotal,
                         plannedTotal: _plannedTotal,
                         left: _left,
                         progress: _progress,
-                        onTap: _editBudget,
+                        onTap: _loadWalletBalance,
                       ),
                     ),
                   ),
                 ),
+                const SliverToBoxAdapter(child: SizedBox(height: 12)),
                 // ─── Single List (No Reordering) ─────────────────────
                 if (_items.isEmpty)
                   SliverFillRemaining(
@@ -2021,9 +2030,9 @@ class _StickyBudgetDelegate extends SliverPersistentHeaderDelegate {
   _StickyBudgetDelegate({required this.child});
 
   @override
-  double get minExtent => 220;
+  double get minExtent => 170;
   @override
-  double get maxExtent => 220;
+  double get maxExtent => 170;
 
   @override
   Widget build(
@@ -2031,11 +2040,7 @@ class _StickyBudgetDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) {
-    return Container(
-      color: kBackground, // Match the page background
-      padding: const EdgeInsets.only(bottom: 12),
-      child: child,
-    );
+    return child;
   }
 
   @override
@@ -2068,7 +2073,11 @@ class _TactileButtonState extends State<_TactileButton> {
         scale: _isDown ? 0.98 : 1.0,
         duration: const Duration(milliseconds: 100),
         curve: Curves.easeOut,
-        child: widget.child,
+        child: AnimatedOpacity(
+          opacity: _isDown ? 0.85 : 1.0,
+          duration: const Duration(milliseconds: 100),
+          child: widget.child,
+        ),
       ),
     );
   }
@@ -2076,10 +2085,12 @@ class _TactileButtonState extends State<_TactileButton> {
 
 // ─── Budget Card ─────────────────────────────────────────────────────────────
 class _BudgetCard extends StatelessWidget {
+  final String title;
   final double budget, total, plannedTotal, left, progress;
   final VoidCallback onTap;
 
   const _BudgetCard({
+    required this.title,
     required this.budget,
     required this.total,
     required this.plannedTotal,
@@ -2095,10 +2106,10 @@ class _BudgetCard extends StatelessWidget {
     return _TactileButton(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
         decoration: BoxDecoration(
           gradient: RadialGradient(
-            colors: [kPrimarySoft.withValues(alpha: 0.6), kCardBg],
+            colors: [kPrimarySoft, kCardBg],
             center: Alignment.center,
             radius: 1.5,
           ),
@@ -2131,12 +2142,16 @@ class _BudgetCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  'Budget Overview',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                    color: kTextCharcoal,
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                      color: kTextCharcoal,
+                    ),
                   ),
                 ),
               ],
@@ -2145,19 +2160,16 @@ class _BudgetCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _BudgetCol(
-                  label: 'BUDGET',
-                  value: '₱${budget.toStringAsFixed(2)}',
-                ),
+                _BudgetCol(label: 'BUDGET', value: formatPeso(budget)),
                 _BudgetCol(
                   label: 'TOTAL',
-                  value: '₱${total.toStringAsFixed(2)}',
-                  subValue: '₱${plannedTotal.toStringAsFixed(2)}',
+                  value: formatPeso(total),
+                  subValue: formatPeso(plannedTotal),
                   valueColor: kPrimary,
                 ),
                 _BudgetCol(
                   label: 'LEFT',
-                  value: '₱${left.toStringAsFixed(2)}',
+                  value: formatPeso(left),
                   valueColor: overBudget ? Colors.red : kTextCharcoal,
                 ),
               ],
@@ -2255,22 +2267,32 @@ class _BudgetCol extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            color: valueColor ?? kTextCharcoal,
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 112),
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: valueColor ?? kTextCharcoal,
+            ),
           ),
         ),
         if (subValue != null) ...[
           const SizedBox(height: 2),
-          Text(
-            subValue!,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
-              color: kMuted,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 112),
+            child: Text(
+              subValue!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: kMuted,
+              ),
             ),
           ),
         ],
@@ -2470,10 +2492,10 @@ class _ItemTile extends StatelessWidget {
                     if (!item.isDone) ...[
                       // Interactive Quantity controls
                       Container(
-                        height: 32,
+                        height: 44,
                         decoration: BoxDecoration(
                           color: kBackground,
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(12),
                           border: Border.all(color: kBorder),
                         ),
                         child: Row(
@@ -2481,14 +2503,16 @@ class _ItemTile extends StatelessWidget {
                           children: [
                             _TactileButton(
                               onTap: () => onQtyChange(-1),
-                              child: Container(
-                                width: 30,
-                                height: 32,
+                              child: Align(
                                 alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.remove,
-                                  size: 14,
-                                  color: kTextCharcoal,
+                                child: SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Icon(
+                                    Icons.remove,
+                                    size: 20,
+                                    color: kTextCharcoal,
+                                  ),
                                 ),
                               ),
                             ),
@@ -2506,14 +2530,16 @@ class _ItemTile extends StatelessWidget {
                             ),
                             _TactileButton(
                               onTap: () => onQtyChange(1),
-                              child: Container(
-                                width: 30,
-                                height: 32,
+                              child: Align(
                                 alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.add,
-                                  size: 14,
-                                  color: kTextCharcoal,
+                                child: SizedBox(
+                                  width: 44,
+                                  height: 44,
+                                  child: Icon(
+                                    Icons.add,
+                                    size: 20,
+                                    color: kTextCharcoal,
+                                  ),
                                 ),
                               ),
                             ),

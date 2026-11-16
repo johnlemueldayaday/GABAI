@@ -47,8 +47,12 @@ class NotificationService {
           >();
       final notificationsGranted =
           await androidPlugin?.requestNotificationsPermission() ?? false;
-      final exactAlarmsGranted =
-          await androidPlugin?.requestExactAlarmsPermission() ?? false;
+      var exactAlarmsGranted =
+          await androidPlugin?.canScheduleExactNotifications() ?? true;
+      if (!exactAlarmsGranted) {
+        exactAlarmsGranted =
+            await androidPlugin?.requestExactAlarmsPermission() ?? false;
+      }
       if (!notificationsGranted || !exactAlarmsGranted) {
         throw StateError(
           'Allow notifications and exact alarms in Android settings to receive bill reminders.',

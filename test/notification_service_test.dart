@@ -21,6 +21,7 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       ..setMockMethodCallHandler(notificationChannel, (call) async {
         calls.add(call);
+        if (call.method == 'canScheduleExactNotifications') return false;
         return true;
       })
       ..setMockMethodCallHandler(
@@ -40,11 +41,12 @@ void main() {
     'schedules stable idle-safe reminders after requesting Android access',
     () async {
       final service = NotificationService();
+      final dueDate = DateTime.now().add(const Duration(days: 30));
       final bill = Bill(
         id: 'rent-reminder',
         type: 'Rent',
         amount: 12000,
-        dueDate: DateTime(2026, 11, 10),
+        dueDate: dueDate,
       );
 
       await service.scheduleBillNotification(bill);
