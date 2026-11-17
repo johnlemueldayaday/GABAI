@@ -5,6 +5,7 @@ import 'package:gabay/services/gab_cooking_assistant.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/future_event_storage.dart';
 import 'package:gabay/models/bill_models.dart';
+import 'package:gabay/services/bill_expense_classifier.dart';
 
 /// Unified reply object for GAB
 class GabReply {
@@ -2321,6 +2322,8 @@ class GabAssistant {
 
   String _categorizeExpense(String desc) {
     final l = desc.toLowerCase();
+    final billLabel = billLabelForExpense(desc);
+    if (billLabel != null) return billLabel;
     if (_matchAny(l, [
       'coffee',
       'food',

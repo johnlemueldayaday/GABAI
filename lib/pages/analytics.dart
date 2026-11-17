@@ -12,6 +12,7 @@ import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/services/bill_expense_classifier.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
@@ -390,6 +391,17 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           if (b.isIncome) continue;
           final t = b.type.trim().isEmpty ? 'Other' : b.type.trim();
           billTotals[t] = (billTotals[t] ?? 0) + b.amount;
+        }
+        for (final transaction in _filteredTxns.where(
+          (tx) =>
+              tx.isExpense && !isScheduledBillTransactionCategory(tx.category),
+        )) {
+          final label = billLabelForExpense(
+            '${transaction.category} ${transaction.description}',
+          );
+          if (label != null) {
+            billTotals[label] = (billTotals[label] ?? 0) + transaction.amount;
+          }
         }
         final total = billTotals.values.fold(0.0, (a, b) => a + b);
         subtitle = '$_currency${total.toStringAsFixed(2)}';

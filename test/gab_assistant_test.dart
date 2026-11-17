@@ -6,6 +6,7 @@ import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/services/future_event_storage.dart';
 import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/services/bill_expense_classifier.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 String _testDateText(DateTime date) {
@@ -733,6 +734,23 @@ void main() {
       expect(transactions.single.description, 'Shoes');
     },
   );
+
+  test('direct water bill expense is saved with a bill label', () async {
+    await FinanceStorage.saveAccounts([
+      Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
+    ]);
+
+    final reply = await GabAssistant().handle(
+      'I paid 300 water bill from cash',
+    );
+
+    expect(reply.text, contains('Water'));
+    final transaction = (await FinanceStorage.loadTransactions()).single;
+    expect(
+      billLabelForExpense('${transaction.category} ${transaction.description}'),
+      'Water',
+    );
+  });
 
   test('expense flow offers another wallet after insufficient funds', () async {
     await FinanceStorage.saveAccounts([
