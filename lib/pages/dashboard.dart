@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:gabay/models/bill_models.dart';
@@ -15,9 +16,11 @@ import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/safe_to_spend.dart';
+import 'package:gabay/services/bill_expense_classifier.dart';
 import 'package:gabay/services/widget_service.dart';
 import 'package:gabay/widgets/account_icon.dart';
 import 'package:gabay/widgets/app_drawer.dart';
+import 'package:gabay/widgets/gab_picker_sheet.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:gabay/pages/wallet.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -169,14 +172,16 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
-  void _showAddTransactionSheet() {
+  void _showAddTransactionSheet({String initialType = 'EXPENSE'}) {
     final amountCtrl = TextEditingController();
     final descCtrl = TextEditingController();
-    String selectedType = 'EXPENSE';
+    String selectedType = initialType;
     String? selectedAccountId = _accounts.isNotEmpty
         ? _accounts.first.id
         : null;
-    String selectedCategory = expenseCategories.first;
+    String selectedCategory = initialType == 'INCOME'
+        ? incomeCategories.first
+        : expenseCategories.first;
 
     showModalBottomSheet(
       context: context,
@@ -231,6 +236,7 @@ class _DashboardPageState extends State<DashboardPage>
                   children: [
                     Expanded(
                       child: GestureDetector(
+                        key: const ValueKey('transaction_expense_tab'),
                         onTap: () => setSheetState(() {
                           selectedType = 'EXPENSE';
                           selectedCategory = expenseCategories.first;
@@ -260,6 +266,7 @@ class _DashboardPageState extends State<DashboardPage>
                     const SizedBox(width: 12),
                     Expanded(
                       child: GestureDetector(
+                        key: const ValueKey('transaction_income_tab'),
                         onTap: () => setSheetState(() {
                           selectedType = 'INCOME';
                           selectedCategory = incomeCategories.first;
@@ -314,64 +321,76 @@ class _DashboardPageState extends State<DashboardPage>
                   ),
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: selectedAccountId,
-                  dropdownColor: kCardBg,
-                  style: TextStyle(color: kTextCharcoal, fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: 'Account',
-                    labelStyle: TextStyle(color: kMuted),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: kBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: kPrimary),
-                    ),
-                  ),
-                  items: _accounts
-                      .map(
-                        (a) => DropdownMenuItem(
-                          value: a.id,
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              AccountIconImage(
+                _GabPickerTile(
+                  label: 'Account',
+                  value: selectedAccountId != null
+                      ? _accounts
+                            .firstWhere(
+                              (a) => a.id == selectedAccountId,
+                              orElse: () => _accounts.first,
+                            )
+                            .name
+                      : null,
+                  leading: selectedAccountId != null
+                      ? AccountIconImage(
+                          name: _accounts
+                              .firstWhere(
+                                (a) => a.id == selectedAccountId,
+                                orElse: () => _accounts.first,
+                              )
+                              .name,
+                          icon: _accounts
+                              .firstWhere(
+                                (a) => a.id == selectedAccountId,
+                                orElse: () => _accounts.first,
+                              )
+                              .icon,
+                          size: 22,
+                        )
+                      : null,
+                  onTap: () async {
+                    final picked = await showGabPicker<String>(
+                      context: context,
+                      title: 'Select Account',
+                      selectedValue: selectedAccountId,
+                      items: _accounts
+                          .map(
+                            (a) => GabPickerItem<String>(
+                              value: a.id,
+                              label: a.name,
+                              leading: AccountIconImage(
                                 name: a.name,
                                 icon: a.icon,
-                                size: 18,
+                                size: 24,
                               ),
-                              const SizedBox(width: 8),
-                              Text(a.name),
-                            ],
-                          ),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: (v) => setSheetState(() => selectedAccountId = v),
+                            ),
+                          )
+                          .toList(),
+                    );
+                    if (picked != null) {
+                      setSheetState(() => selectedAccountId = picked.value);
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: selectedCategory,
-                  dropdownColor: kCardBg,
-                  style: TextStyle(color: kTextCharcoal, fontSize: 14),
-                  decoration: InputDecoration(
-                    labelText: 'Category',
-                    labelStyle: TextStyle(color: kMuted),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: kBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: kPrimary),
-                    ),
-                  ),
-                  items: currentCategories
-                      .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                      .toList(),
-                  onChanged: (v) => setSheetState(() => selectedCategory = v!),
+                _GabPickerTile(
+                  label: 'Category',
+                  value: selectedCategory,
+                  onTap: () async {
+                    final picked = await showGabPicker<String>(
+                      context: context,
+                      title: 'Select Category',
+                      selectedValue: selectedCategory,
+                      showSearch: true,
+                      searchHint: 'Search categories…',
+                      items: currentCategories
+                          .map((c) => GabPickerItem<String>(value: c, label: c))
+                          .toList(),
+                    );
+                    if (picked != null) {
+                      setSheetState(() => selectedCategory = picked.value);
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -442,206 +461,6 @@ class _DashboardPageState extends State<DashboardPage>
     );
   }
 
-  void _showTransferSheet() {
-    final amountCtrl = TextEditingController();
-    String? fromAccountId = _accounts.isNotEmpty ? _accounts.first.id : null;
-    String? toAccountId = _accounts.length > 1 ? _accounts[1].id : null;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setSheetState) => Container(
-          decoration: BoxDecoration(
-            color: kCardBg,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-          ),
-          padding: EdgeInsets.fromLTRB(
-            24,
-            24,
-            24,
-            24 + MediaQuery.of(context).viewInsets.bottom,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Transfer Funds',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      color: kTextCharcoal,
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: Icon(Icons.close, color: kMuted),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              TextField(
-                controller: amountCtrl,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                style: TextStyle(color: kTextCharcoal),
-                decoration: InputDecoration(
-                  labelText: 'Amount',
-                  labelStyle: TextStyle(color: kMuted),
-                  prefixText: '$_currency ',
-                  prefixStyle: TextStyle(
-                    color: kTextCharcoal,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: kBorder),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: kPrimary),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: fromAccountId,
-                dropdownColor: kCardBg,
-                style: TextStyle(color: kTextCharcoal, fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: 'From Account',
-                  labelStyle: TextStyle(color: kMuted),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: kBorder),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: kPrimary),
-                  ),
-                ),
-                items: _accounts
-                    .map(
-                      (a) => DropdownMenuItem(
-                        value: a.id,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AccountIconImage(
-                              name: a.name,
-                              icon: a.icon,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(a.name),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) => setSheetState(() {
-                  fromAccountId = v;
-                  if (fromAccountId == toAccountId) {
-                    toAccountId = _accounts
-                        .firstWhere((a) => a.id != fromAccountId)
-                        .id;
-                  }
-                }),
-              ),
-              const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: toAccountId,
-                dropdownColor: kCardBg,
-                style: TextStyle(color: kTextCharcoal, fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: 'To Account',
-                  labelStyle: TextStyle(color: kMuted),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: kBorder),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: kPrimary),
-                  ),
-                ),
-                items: _accounts
-                    .where((a) => a.id != fromAccountId)
-                    .map(
-                      (a) => DropdownMenuItem(
-                        value: a.id,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            AccountIconImage(
-                              name: a.name,
-                              icon: a.icon,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(a.name),
-                          ],
-                        ),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) => setSheetState(() => toAccountId = v),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: () async {
-                    final amount = double.tryParse(amountCtrl.text);
-                    if (amount != null &&
-                        fromAccountId != null &&
-                        toAccountId != null) {
-                      final from = _accounts.firstWhere(
-                        (a) => a.id == fromAccountId,
-                      );
-                      final to = _accounts.firstWhere(
-                        (a) => a.id == toAccountId,
-                      );
-                      await FinanceStorage.transferMoney(
-                        fromAccount: from,
-                        toAccount: to,
-                        amount: amount,
-                      );
-                      if (context.mounted) {
-                        Navigator.pop(context);
-                        _loadData();
-                      }
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kPrimary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                  ),
-                  child: Text(
-                    'Transfer Funds',
-                    style: GoogleFonts.plusJakartaSans(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   String _getGreeting() {
     final hour = DateTime.now().hour;
     if (hour < 12) return 'Good morning';
@@ -655,6 +474,7 @@ class _DashboardPageState extends State<DashboardPage>
       builder: (_) => _DailyAllocationDialog(
         currency: _currency,
         initialAmount: _dailyAllocation,
+        totalBalance: _netWorth,
         initialFrequency: _payFrequency,
         initialPayday1: _payday1,
         initialPayday2: _payday2,
@@ -687,7 +507,7 @@ class _DashboardPageState extends State<DashboardPage>
     var total = 0.0;
     for (final transaction in _transactions) {
       if (!transaction.isExpense ||
-          transaction.category.trim().toLowerCase() == 'transfer' ||
+          transaction.isTransfer ||
           transaction.date.isBefore(start) ||
           !transaction.date.isBefore(end)) {
         continue;
@@ -909,66 +729,22 @@ class _DashboardPageState extends State<DashboardPage>
                   Row(
                     children: [
                       Expanded(
-                        child: InkWell(
-                          onTap: _showAddTransactionSheet,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.add_rounded,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Transaction',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        child: _BalanceActionButton(
+                          key: const ValueKey('dashboard_income_action'),
+                          onTap: () =>
+                              _showAddTransactionSheet(initialType: 'INCOME'),
+                          icon: Icons.add_rounded,
+                          label: 'Income',
                         ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: InkWell(
-                          onTap: _showTransferSheet,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(
-                                  Icons.swap_horiz_rounded,
-                                  color: Colors.white,
-                                  size: 18,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'Transfer',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                        child: _BalanceActionButton(
+                          key: const ValueKey('dashboard_expense_action'),
+                          onTap: () =>
+                              _showAddTransactionSheet(initialType: 'EXPENSE'),
+                          icon: Icons.arrow_upward_rounded,
+                          label: 'Expense',
                         ),
                       ),
                     ],
@@ -1208,6 +984,7 @@ class _SpendingScheduleResult {
 class _DailyAllocationDialog extends StatefulWidget {
   final String currency;
   final double initialAmount;
+  final double totalBalance;
   final PayFrequency initialFrequency;
   final int initialPayday1;
   final int? initialPayday2;
@@ -1217,6 +994,7 @@ class _DailyAllocationDialog extends StatefulWidget {
   const _DailyAllocationDialog({
     required this.currency,
     required this.initialAmount,
+    required this.totalBalance,
     required this.initialFrequency,
     required this.initialPayday1,
     required this.initialPayday2,
@@ -1309,6 +1087,16 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
     );
   }
 
+  double? get _suggestedDailyBudget {
+    final payday = _resolvedPayday;
+    if (payday == null) return null;
+    return calculateSuggestedDailyBudget(
+      balance: widget.totalBalance,
+      today: _today,
+      payday: payday,
+    );
+  }
+
   bool get _valid {
     if (_parseAmount(_dailyBudgetController.text) == null) return false;
     if (_frequency == PayFrequency.twiceMonthly && _payday1 == _payday2) {
@@ -1351,6 +1139,10 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final suggestedBudget = _suggestedDailyBudget;
+    final suggestedBudgetLabel = suggestedBudget == null
+        ? 'Suggest'
+        : 'Suggest ${widget.currency}${NumberFormat('#,##0.00').format(suggestedBudget)}';
     return AlertDialog(
       title: const Text('Spending schedule'),
       content: Column(
@@ -1372,13 +1164,45 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
             },
           ),
           const SizedBox(height: 8),
-          TextField(
-            controller: _dailyBudgetController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              labelText: 'Daily budget',
-              prefixText: '${widget.currency} ',
-            ),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: TextField(
+                  key: const ValueKey('daily_budget_input'),
+                  controller: _dailyBudgetController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Daily budget',
+                    prefixText: '${widget.currency} ',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                key: const ValueKey('suggested_daily_budget_button'),
+                onPressed: suggestedBudget == null
+                    ? null
+                    : () {
+                        final value = suggestedBudget.toStringAsFixed(2);
+                        _dailyBudgetController.value = TextEditingValue(
+                          text: value,
+                          selection: TextSelection.collapsed(
+                            offset: value.length,
+                          ),
+                        );
+                      },
+                icon: const Icon(Icons.lightbulb_outline_rounded, size: 16),
+                label: Text(suggestedBudgetLabel),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(0, 44),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  shape: const StadiumBorder(),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           if (_frequency == PayFrequency.monthly)
@@ -1444,8 +1268,17 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
               alignment: Alignment.centerLeft,
               child: Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Next payday: ${DateFormat('MMM d').format(resolved)}',
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text:
+                            '${calculateDaysLeft(today: _today, payday: resolved) - 1}',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      const TextSpan(text: ' days until next payday'),
+                    ],
+                  ),
                   style: TextStyle(fontSize: 12, color: kMuted),
                 ),
               ),
@@ -1585,7 +1418,7 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
     }
 
     for (final txn in widget.transactions) {
-      if (!txn.isExpense) continue;
+      if (!txn.isExpense || txn.isTransfer) continue;
       final difference = txn.date.difference(startOfWeek).inDays;
       if (difference >= 0 && difference < 7) {
         weeklyData[difference] += txn.amount;
@@ -1822,17 +1655,11 @@ class _UpcomingEventsList extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.event_note_rounded,
-                      color: Colors.orange,
-                      size: 20,
-                    ),
+                  Image.asset(
+                    'assets/images/events_logged.png',
+                    width: 44,
+                    height: 44,
+                    fit: BoxFit.contain,
                   ),
                   const SizedBox(width: 16),
                   Expanded(
@@ -1905,9 +1732,32 @@ class _TransactionList extends StatelessWidget {
   String _displayTitle(FinanceTransaction transaction) {
     final description = transaction.description.trim();
     final category = transaction.category.trim();
+    if (!isIncome &&
+        (description.startsWith('Bill Paid:') ||
+            description.startsWith('Paid:'))) {
+      return cleanBillName(description);
+    }
     if (description.isEmpty) return category;
     if (!isIncome || category.isEmpty || category == 'Others') {
       return description;
+    }
+    if (category.toLowerCase() == 'reimbursement' &&
+        RegExp(
+          r'\b(?:debt|loan|utang)\b',
+          caseSensitive: false,
+        ).hasMatch(description)) {
+      final withoutCategory = description
+          .replaceAll(RegExp(r'\breimbursement\b', caseSensitive: false), '')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
+      final leadingDebtTerm = RegExp(
+        r'^(debt|loan|utang)\s+(.+)$',
+        caseSensitive: false,
+      ).firstMatch(withoutCategory);
+      if (leadingDebtTerm != null) {
+        return '${leadingDebtTerm.group(2)} ${leadingDebtTerm.group(1)}';
+      }
+      return withoutCategory;
     }
     if (description.toLowerCase().contains(category.toLowerCase())) {
       return description;
@@ -2023,21 +1873,13 @@ class _TransactionList extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: (isIncome ? kPrimary : Colors.red).withValues(
-                      alpha: 0.1,
-                    ),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    isIncome
-                        ? Icons.south_west_rounded
-                        : Icons.north_east_rounded,
-                    color: isIncome ? kPrimary : Colors.red,
-                    size: 20,
-                  ),
+                Image.asset(
+                  isIncome
+                      ? 'assets/images/income_logged.png'
+                      : 'assets/images/expense_logged.png',
+                  width: 44,
+                  height: 44,
+                  fit: BoxFit.contain,
                 ),
                 const SizedBox(width: 16),
                 Expanded(
@@ -2325,7 +2167,6 @@ class _GreetingSectionState extends State<_GreetingSection> {
     }
 
     final percentText = percentUsed.round().toString();
-    final amountFormat = NumberFormat('#,##0.00');
     final preferences = await SharedPreferences.getInstance();
     final lastTemplate = preferences.getString(_lastBudgetMessageKey);
     final candidates = variants
@@ -2334,12 +2175,9 @@ class _GreetingSectionState extends State<_GreetingSection> {
     final selectedTemplate = candidates[_random.nextInt(candidates.length)];
     await preferences.setString(_lastBudgetMessageKey, selectedTemplate);
     return selectedTemplate
-        .replaceAll('{remaining}', 'P ${amountFormat.format(remaining)}')
+        .replaceAll('{remaining}', formatPeso(remaining))
         .replaceAll('{percent}', percentText)
-        .replaceAll(
-          '{over_amount}',
-          'P ${amountFormat.format(spent - budget)}',
-        );
+        .replaceAll('{over_amount}', formatPeso(spent - budget));
   }
 
   @override
@@ -2473,6 +2311,84 @@ class _GreetingSectionState extends State<_GreetingSection> {
   }
 }
 
+class _BalanceActionButton extends StatefulWidget {
+  final VoidCallback onTap;
+  final IconData icon;
+  final String label;
+
+  const _BalanceActionButton({
+    super.key,
+    required this.onTap,
+    required this.icon,
+    required this.label,
+  });
+
+  @override
+  State<_BalanceActionButton> createState() => _BalanceActionButtonState();
+}
+
+class _BalanceActionButtonState extends State<_BalanceActionButton> {
+  bool _isDown = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) {
+        setState(() => _isDown = true);
+        unawaited(HapticFeedback.mediumImpact());
+      },
+      onTapUp: (_) => setState(() => _isDown = false),
+      onTapCancel: () => setState(() => _isDown = false),
+      onTap: () {
+        setState(() => _isDown = false);
+        unawaited(HapticFeedback.heavyImpact());
+        widget.onTap();
+      },
+      child: AnimatedScale(
+        scale: _isDown ? 0.96 : 1.0,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOutCubic,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.white.withValues(alpha: _isDown ? 0.20 : 0.28),
+                Colors.white.withValues(alpha: _isDown ? 0.13 : 0.18),
+                Colors.white.withValues(alpha: _isDown ? 0.06 : 0.09),
+              ],
+              stops: const [0.0, 0.45, 1.0],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: _isDown ? 0.16 : 0.22),
+              width: 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(widget.icon, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                widget.label,
+                style: GoogleFonts.plusJakartaSans(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BubblePainter extends CustomPainter {
   final Color color;
   _BubblePainter(this.color);
@@ -2534,4 +2450,68 @@ class _BubblePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Tappable field that opens a [GabPickerSheet] bottom sheet.
+/// Used in place of [DropdownButtonFormField] inside the transaction sheet.
+class _GabPickerTile extends StatelessWidget {
+  final String label;
+  final String? value;
+  final Widget? leading;
+  final VoidCallback onTap;
+
+  const _GabPickerTile({
+    required this.label,
+    required this.onTap,
+    this.value,
+    this.leading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: kCardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: kBorder),
+        ),
+        child: Row(
+          children: [
+            if (leading != null) ...[leading!, const SizedBox(width: 10)],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: kMuted,
+                    ),
+                  ),
+                  if (value != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      value!,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down_rounded, color: kMuted, size: 22),
+          ],
+        ),
+      ),
+    );
+  }
 }

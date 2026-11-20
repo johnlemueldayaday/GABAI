@@ -9,6 +9,7 @@ class GroceryItemTile extends StatelessWidget {
   final GroceryItem item;
   final VoidCallback onToggle, onDelete;
   final void Function(int delta) onQtyChange;
+  final VoidCallback onQtyEdit;
   final VoidCallback onPriceEdit;
   final VoidCallback onUnitEdit;
   final VoidCallback? onNameEdit;
@@ -18,6 +19,7 @@ class GroceryItemTile extends StatelessWidget {
     required this.onToggle,
     required this.onDelete,
     required this.onQtyChange,
+    required this.onQtyEdit,
     required this.onPriceEdit,
     required this.onUnitEdit,
     this.onNameEdit,
@@ -144,56 +146,41 @@ class GroceryItemTile extends StatelessWidget {
                     children: [
                       const SizedBox(width: 38), // align with text above
                       // Quantity controls
-                      Container(
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: kBackground,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: kBorder),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            TactileButton(
-                              onTap: () => onQtyChange(-1),
-                              child: Container(
-                                width: 30,
-                                height: 32,
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.remove,
-                                  size: 14,
-                                  color: kTextCharcoal,
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          QuantityStepButton(
+                            onTap: () => onQtyChange(-1),
+                            icon: Icons.remove,
+                            semanticLabel: 'Decrease quantity',
+                          ),
+                          Semantics(
+                            button: true,
+                            label: 'Edit quantity, ${formatQty(item.qty)}',
+                            child: TactileButton(
+                              onTap: onQtyEdit,
+                              child: SizedBox(
+                                width: 52,
+                                height: 44,
+                                child: Center(
+                                  child: Text(
+                                    formatQty(item.qty),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                      color: kTextCharcoal,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
-                            Container(
-                              width: 52,
-                              alignment: Alignment.center,
-                              child: Text(
-                                formatQty(item.qty),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                  color: kTextCharcoal,
-                                ),
-                              ),
-                            ),
-                            TactileButton(
-                              onTap: () => onQtyChange(1),
-                              child: Container(
-                                width: 30,
-                                height: 32,
-                                alignment: Alignment.center,
-                                child: Icon(
-                                  Icons.add,
-                                  size: 14,
-                                  color: kTextCharcoal,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                          QuantityStepButton(
+                            onTap: () => onQtyChange(1),
+                            icon: Icons.add,
+                            semanticLabel: 'Increase quantity',
+                          ),
+                        ],
                       ),
                       const SizedBox(width: 8),
                       GestureDetector(

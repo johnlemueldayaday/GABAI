@@ -155,17 +155,19 @@ class Account {
   );
 }
 
-/// Represents a single financial transaction (income or expense)
+/// Represents a single financial transaction.
 class FinanceTransaction {
   final String id;
   final double amount;
   final String accountId; // links to Account.id
   final String accountName; // denormalized for easy display
-  final String type; // "INCOME" or "EXPENSE"
+  final String type; // "INCOME", "EXPENSE", or "TRANSFER"
   final String category;
   final String description;
   final DateTime date;
   final double? previousBalance;
+  final String? destinationAccountId;
+  final String? destinationAccountName;
 
   FinanceTransaction({
     required this.id,
@@ -177,6 +179,8 @@ class FinanceTransaction {
     this.description = '',
     DateTime? date,
     this.previousBalance,
+    this.destinationAccountId,
+    this.destinationAccountName,
   }) : date = date ?? DateTime.now();
 
   FinanceTransaction copyWith({
@@ -189,6 +193,8 @@ class FinanceTransaction {
     String? description,
     DateTime? date,
     double? previousBalance,
+    String? destinationAccountId,
+    String? destinationAccountName,
   }) {
     return FinanceTransaction(
       id: id ?? this.id,
@@ -200,6 +206,9 @@ class FinanceTransaction {
       description: description ?? this.description,
       date: date ?? this.date,
       previousBalance: previousBalance ?? this.previousBalance,
+      destinationAccountId: destinationAccountId ?? this.destinationAccountId,
+      destinationAccountName:
+          destinationAccountName ?? this.destinationAccountName,
     );
   }
 
@@ -213,6 +222,8 @@ class FinanceTransaction {
     'description': description,
     'date': date.toIso8601String(),
     'previousBalance': previousBalance,
+    'destinationAccountId': destinationAccountId,
+    'destinationAccountName': destinationAccountName,
   };
 
   factory FinanceTransaction.fromJson(Map<String, dynamic> json) =>
@@ -226,15 +237,20 @@ class FinanceTransaction {
         description: json['description'] ?? '',
         date: DateTime.parse(json['date']),
         previousBalance: (json['previousBalance'] as num?)?.toDouble(),
+        destinationAccountId: json['destinationAccountId'] as String?,
+        destinationAccountName: json['destinationAccountName'] as String?,
       );
 
+  bool get isTransfer =>
+      type == 'TRANSFER' || category.trim().toLowerCase() == 'transfer';
+
   /// Returns true if this is an income transaction
 
   /// Returns true if this is an income transaction
-  bool get isIncome => type == 'INCOME';
+  bool get isIncome => type == 'INCOME' && !isTransfer;
 
   /// Returns true if this is an expense transaction
-  bool get isExpense => type == 'EXPENSE';
+  bool get isExpense => type == 'EXPENSE' && !isTransfer;
 }
 
 /// Represents a future scheduled financial event (not yet executed)

@@ -15,31 +15,41 @@ String formatQty(double q) {
       .replaceAll(RegExp(r'\.$'), '');
 }
 
+const _kgQtySteps = [
+  0.125,
+  0.25,
+  0.5,
+  0.75,
+  1.0,
+  1.25,
+  1.5,
+  1.75,
+  2.0,
+  2.5,
+  3.0,
+  4.0,
+  5.0,
+];
+
+bool isValidQty(double qty, String unit) {
+  if (!qty.isFinite) return false;
+  if (unit == 'kg') {
+    return _kgQtySteps.contains(qty) ||
+        (qty >= 6 && qty == qty.roundToDouble());
+  }
+  return qty >= 1 && qty <= 999 && qty == qty.roundToDouble();
+}
+
 double stepQty(double current, int dir, String unit) {
   if (unit == 'kg') {
-    const steps = [
-      0.125,
-      0.25,
-      0.5,
-      0.75,
-      1.0,
-      1.25,
-      1.5,
-      1.75,
-      2.0,
-      2.5,
-      3.0,
-      4.0,
-      5.0,
-    ];
     if (dir > 0) {
-      for (double s in steps) {
+      for (double s in _kgQtySteps) {
         if (s > current + 0.001) return s;
       }
       return current + 1.0;
     } else {
-      for (int i = steps.length - 1; i >= 0; i--) {
-        if (steps[i] < current - 0.001) return steps[i];
+      for (int i = _kgQtySteps.length - 1; i >= 0; i--) {
+        if (_kgQtySteps[i] < current - 0.001) return _kgQtySteps[i];
       }
       return current > 1.0 ? current - 1.0 : 0.125;
     }

@@ -12,6 +12,8 @@ class GabReply {
   final String text;
   final List<String>? extraTexts;
   final List<String> quickReplies;
+  final List<Account> walletChoices;
+  final GabTransactionNotification? transactionNotification;
   final String? navigateTo;
   final String? highlightColor; // 'red' for expenses, 'green' for income
 
@@ -19,8 +21,20 @@ class GabReply {
     this.text, {
     this.extraTexts,
     this.quickReplies = const [],
+    this.walletChoices = const [],
+    this.transactionNotification,
     this.navigateTo,
     this.highlightColor,
+  });
+}
+
+class GabTransactionNotification {
+  final String title;
+  final String subtitle;
+
+  const GabTransactionNotification({
+    required this.title,
+    required this.subtitle,
   });
 }
 
@@ -48,15 +62,22 @@ enum GabStep {
   awaitingScheduledName,
   awaitingScheduledAmount,
   awaitingScheduledDate,
+  awaitingScheduledWallet,
   awaitingScheduledDeleteConfirmation,
   awaitingScheduledSelection,
   awaitingScheduledMoveDate,
   awaitingScheduledAmountUpdate,
+  awaitingTransferAmount,
+  awaitingTransferSource,
+  awaitingTransferDestination,
 }
 
 /// GAB - Unified smart assistant
 class GabAssistant {
+  final DateTime Function() _clock;
   final String _currency = SettingsService().currency;
+
+  GabAssistant({DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
 
   // Cooking state (from Gab)
   final GabCookingAssistant _cookingEngine = GabCookingAssistant();
@@ -85,6 +106,8 @@ class GabAssistant {
   String? _pendingAllocationPeriod;
   DateTime? _pendingScheduledDateTime;
   bool _pendingBillDateNeedsConfirmation = false;
+  bool _pendingBillRequiresWallet = false;
+  String? _pendingScheduledWallet;
   String? _pendingScheduledManagementAction;
   String? _pendingScheduledManagementInput;
   List<FutureEvent> _pendingScheduledMatches = [];
@@ -95,6 +118,10 @@ class GabAssistant {
   String? _pendingIncomeDescription;
   String? _pendingIncomeCategory;
   Account? _pendingIncomeAccount;
+
+  double? _pendingTransferAmount;
+  Account? _pendingTransferFrom;
+  Account? _pendingTransferTo;
 
   // Track pending due event when processing past-due events
   FutureEvent? _pendingDueEvent;
@@ -143,17 +170,9 @@ class GabAssistant {
   }
 
   GabReply get greeting {
-    final meal = GabCookingAssistant.detectMeal(
-      DateTime.now(),
-    ).toLowerCase();
-    return GabReply(
+    return const GabReply(
       "What can I do for you?",
-
-      quickReplies: [
-        'What can I cook for $meal?',
-        'What is my total balance?',
-        'Do I have upcoming bills?',
-      ],
+      quickReplies: ['Expense', 'Income', 'Upcoming Bill'],
     );
   }
 
@@ -243,9 +262,11 @@ class GabAssistant {
   String _dueEventDisplayName(FutureEvent event) {
     final description = event.description.trim();
     if (description.toLowerCase().endsWith(' bill')) {
-      return description.substring(0, description.length - 5).trim();
+      return cleanBillName(
+        description.substring(0, description.length - 5).trim(),
+      );
     }
-    return description;
+    return cleanBillName(description);
   }
 
   bool _isScheduledManagementCommand(String input) {
@@ -619,9 +640,13 @@ class GabAssistant {
 
     final transactionsBefore = await FinanceStorage.loadTransactions();
     final reply = await _handleMessage(rawInput);
-    final existingIds = transactionsBefore.map((transaction) => transaction.id).toSet();
+    final existingIds = transactionsBefore
+        .map((transaction) => transaction.id)
+        .toSet();
     final transactionsAfter = await FinanceStorage.loadTransactions();
-    final resultingIds = transactionsAfter.map((transaction) => transaction.id).toSet();
+    final resultingIds = transactionsAfter
+        .map((transaction) => transaction.id)
+        .toSet();
     if (existingIds.every(resultingIds.contains)) {
       _undoTransactionIds = transactionsAfter
           .where((transaction) => !existingIds.contains(transaction.id))
@@ -655,7 +680,7 @@ class GabAssistant {
       _step = GabStep.awaitingExpenseAmount;
       return const GabReply(
         'How much did you spend?',
-        quickReplies: ['❌ Cancel', '🔄 Do Something Else'],
+        quickReplies: ['❌ Cancel', '🔄'],
       );
     }
     if (quickAction == 'log income') {
@@ -685,6 +710,16 @@ class GabAssistant {
       resetConversation();
     }
 
+    if (_isScheduledManagementCommand(n)) {
+      return await _handleScheduledManagementCommand(input);
+    }
+
+    final transferResult = await _tryTransfer(n);
+    if (transferResult != null) return transferResult;
+    if (_isTransferStep) {
+      return await _handlePendingTransfer(input);
+    }
+
     if (_step == GabStep.awaitingScheduledDeleteConfirmation ||
         _step == GabStep.awaitingScheduledSelection ||
         _step == GabStep.awaitingScheduledMoveDate ||
@@ -697,10 +732,6 @@ class GabAssistant {
         return await _handleScheduledManagementState(input);
       }
     }
-    if (_isScheduledManagementCommand(n)) {
-      return await _handleScheduledManagementCommand(input);
-    }
-
     if (_step == GabStep.awaitingDuePaymentAction ||
         _step == GabStep.awaitingDuePaymentAccount ||
         _step == GabStep.awaitingDuePaymentAmountConfirmation ||
@@ -745,7 +776,8 @@ class GabAssistant {
     if (_pendingScheduledType == 'bill' &&
         (_step == GabStep.awaitingScheduledName ||
             _step == GabStep.awaitingScheduledAmount ||
-            _step == GabStep.awaitingScheduledDate)) {
+            _step == GabStep.awaitingScheduledDate ||
+            _step == GabStep.awaitingScheduledWallet)) {
       if (_isCancellation(n)) {
         _resetState();
         return const GabReply('Okay, I cancelled that. Nothing was saved.');
@@ -781,10 +813,6 @@ class GabAssistant {
     if (_step != GabStep.idle) {
       return await _handleStateMachine(n);
     }
-
-    // ─── 3. FINANCE: transfers (highest specificity regex) ───
-    final transferResult = await _tryTransfer(n);
-    if (transferResult != null) return transferResult;
 
     // ─── 5. FINANCE: income logging ───
     final incomeResult = await _tryLogIncome(n);
@@ -862,9 +890,12 @@ class GabAssistant {
   // ═══════════════════════════════════════════════
 
   Future<GabReply> _handleStateMachine(String n) async {
+    if (_isTransferStep) return await _handlePendingTransfer(n);
+
     if (_step == GabStep.awaitingScheduledName ||
         _step == GabStep.awaitingScheduledAmount ||
-        _step == GabStep.awaitingScheduledDate) {
+        _step == GabStep.awaitingScheduledDate ||
+        _step == GabStep.awaitingScheduledWallet) {
       return await _handleScheduledEntryFlow(n);
     }
     if (_step == GabStep.awaitingScheduledDeleteConfirmation ||
@@ -990,6 +1021,9 @@ class GabAssistant {
     _pendingIncomeDescription = null;
     _pendingIncomeCategory = null;
     _pendingIncomeAccount = null;
+    _pendingTransferAmount = null;
+    _pendingTransferFrom = null;
+    _pendingTransferTo = null;
     _pendingDueEvent = null;
     _pendingDueAmount = null;
     _pendingScheduledName = null;
@@ -999,6 +1033,8 @@ class GabAssistant {
     _pendingAllocationPeriod = null;
     _pendingScheduledDateTime = null;
     _pendingBillDateNeedsConfirmation = false;
+    _pendingBillRequiresWallet = false;
+    _pendingScheduledWallet = null;
     _pendingScheduledManagementAction = null;
     _pendingScheduledManagementInput = null;
     _pendingScheduledMatches = [];
@@ -1010,6 +1046,11 @@ class GabAssistant {
       _step == GabStep.awaitingExpenseItem ||
       _step == GabStep.awaitingExpenseAccount;
 
+  bool get _isTransferStep =>
+      _step == GabStep.awaitingTransferAmount ||
+      _step == GabStep.awaitingTransferSource ||
+      _step == GabStep.awaitingTransferDestination;
+
   bool get _isIncomeFlowActive =>
       _step == GabStep.awaitingIncomeAmount ||
       _step == GabStep.awaitingIncomeSource ||
@@ -1019,19 +1060,10 @@ class GabAssistant {
       _step == GabStep.awaitingAllocationPeriod ||
       _step == GabStep.awaitingAllocationAmount;
 
-  bool _isCancellation(String input) => const {
-    'cancel',
-    'stop',
-    'never mind',
-    'nevermind',
-    'forget it',
-  }.contains(
-    input
-        .trim()
-        .toLowerCase()
-        .replaceFirst(RegExp(r'^[^a-z]+'), '')
-        .trim(),
-  );
+  bool _isCancellation(String input) =>
+      const {'cancel', 'stop', 'never mind', 'nevermind', 'forget it'}.contains(
+        input.trim().toLowerCase().replaceFirst(RegExp(r'^[^a-z]+'), '').trim(),
+      );
 
   bool _isNewCommandDuringExpense(String input) {
     final n = input.toLowerCase().trim();
@@ -1152,6 +1184,44 @@ class GabAssistant {
   List<String> _walletNames(List<Account> accounts) =>
       _walletsInPromptOrder(accounts).map((account) => account.name).toList();
 
+  GabReply _walletSelectionReply(
+    String prompt,
+    List<Account> accounts, {
+    List<String> extraQuickReplies = const [],
+  }) {
+    final wallets = _walletsInPromptOrder(accounts);
+    if (wallets.isEmpty) {
+      return GabReply(
+        '$prompt ${_availableWalletsText(accounts)}',
+        quickReplies: extraQuickReplies,
+      );
+    }
+
+    return GabReply(
+      prompt,
+      quickReplies: [
+        ...wallets.map((wallet) => wallet.name),
+        ...extraQuickReplies,
+      ],
+      walletChoices: wallets,
+    );
+  }
+
+  GabTransactionNotification _transactionNotification({
+    required bool isIncome,
+    required double amount,
+    required String walletName,
+    required double balance,
+  }) {
+    final amountText = _formatNumberWithCommas(amount.toStringAsFixed(2));
+    final balanceText = _formatNumberWithCommas(balance.toStringAsFixed(2));
+    return GabTransactionNotification(
+      title:
+          '${isIncome ? 'Added' : 'Spent'} ₱$amountText ${isIncome ? 'to' : 'from'} $walletName',
+      subtitle: 'Your wallet balance is now ₱$balanceText',
+    );
+  }
+
   String _availableWalletsText(List<Account> accounts) {
     final names = _walletNames(accounts);
     return names.isEmpty
@@ -1159,15 +1229,21 @@ class GabAssistant {
         : 'Available wallets: ${names.join(', ')}.';
   }
 
-  String _unknownWalletText(List<Account> accounts) =>
-      "I couldn't find that wallet. ${_availableWalletsText(accounts)} Which one would you like to use?";
-
   String _formatExpenseAmount(double amount) {
     final formatted = _formatNumberWithCommas(amount.abs().toStringAsFixed(2));
     return amount < 0 ? '-$formatted' : formatted;
   }
 
   String _extractIncomeSource(String input, List<Account> accounts) {
+    final isDebtRepayment =
+        RegExp(
+          r'\b(?:debt|loan|utang)\b',
+          caseSensitive: false,
+        ).hasMatch(input) ||
+        RegExp(
+          r'\b(?:paid|pay|repaid|repay|settled)\s+(?:me\s+)?back\b',
+          caseSensitive: false,
+        ).hasMatch(input);
     var source = input.toLowerCase();
     source = source.replaceAll(
       RegExp(r'(?<![\w/])-?\d+(?:,\d{3})*(?:\.\d+)?\s*[km]?\b'),
@@ -1181,12 +1257,34 @@ class GabAssistant {
     }
     source = source.replaceAll(
       RegExp(
-        r'\b(?:received|recieved|got\s+paid|earned|just\s+got|was\s+paid|got|paid|income|money|from|to|in|into|through|with|via|my|me|i|as|the|a|an|deposit(?:ed)?)\b',
+        r'\b(?:received|recieved|got\s+paid|earned|just\s+got|was\s+paid|got|paid|income|money|from|to|in|into|through|with|via|my|me|his|i|as|the|a|an|deposit(?:ed)?)\b',
       ),
       ' ',
     );
     source = source.replaceAll(RegExp(r'[^\w\s-]'), ' ');
     source = source.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (isDebtRepayment) {
+      const debtTerms = {
+        'back',
+        'debt',
+        'loan',
+        'utang',
+        'reimbursement',
+        'repayment',
+        'repayments',
+        'payment',
+        'payments',
+        'paid',
+        'pay',
+        'repaid',
+        'settled',
+      };
+      final person = source
+          .split(' ')
+          .where((word) => word.isNotEmpty && !debtTerms.contains(word))
+          .join(' ');
+      return person.isEmpty ? 'Debt Repayment' : '${_titleCase(person)} Debt';
+    }
     return _titleCase(source);
   }
 
@@ -1242,9 +1340,9 @@ class GabAssistant {
     } else if (_step == GabStep.awaitingIncomeAccount) {
       final wallet = _findIncomeWallet(input, accounts);
       if (wallet == null) {
-        return GabReply(
-          _unknownWalletText(accounts),
-          quickReplies: _walletNames(accounts),
+        return _walletSelectionReply(
+          "I couldn't find that wallet. Which one would you like to use?",
+          accounts,
         );
       }
       _pendingIncomeAccount = wallet;
@@ -1266,9 +1364,9 @@ class GabAssistant {
     if (_pendingIncomeAccount == null) {
       final accounts = await FinanceStorage.loadAccounts();
       _step = GabStep.awaitingIncomeAccount;
-      return GabReply(
-        'Which wallet did you deposit it to? ${_availableWalletsText(accounts)}',
-        quickReplies: _walletNames(accounts),
+      return _walletSelectionReply(
+        'Which wallet did you deposit it to?',
+        accounts,
       );
     }
 
@@ -1288,14 +1386,21 @@ class GabAssistant {
 
     try {
       await FinanceStorage.addTransaction(transaction);
+      final updatedWallet = (await FinanceStorage.loadAccounts()).firstWhere(
+        (account) => account.id == wallet.id,
+      );
       final amountText = _formatExpenseAmount(amount);
+      final balanceText = _formatExpenseAmount(updatedWallet.balance);
       _resetState();
       return GabReply(
-        '✅ Income logged!\n$source  P +$amountText\nWallet: ${wallet.name}',
-        quickReplies: const [
-          'What is my total balance?',
-          'Check account balances',
-        ],
+        '💵 Income logged!\n$source  +₱$amountText\nNew ${wallet.name} balance: ₱$balanceText',
+        quickReplies: const ['What is my total balance?', 'Help'],
+        transactionNotification: _transactionNotification(
+          isIncome: true,
+          amount: amount,
+          walletName: wallet.name,
+          balance: updatedWallet.balance,
+        ),
         highlightColor: 'green',
       );
     } catch (error) {
@@ -1313,20 +1418,20 @@ class GabAssistant {
         !RegExp(r'\b(?:yes|yeah|yep|done|sure)\b').hasMatch(n)) {
       _step = GabStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
-      return GabReply(
-        'Which wallet did you use to pay for it? ${_availableWalletsText(accounts)}',
-        quickReplies: _walletNames(accounts),
+      return _walletSelectionReply(
+        'Which wallet did you use to pay for it?',
+        accounts,
       );
     }
     if (!isOutgoing &&
         RegExp(r'\breceived\b').hasMatch(n) &&
         !RegExp(r'\b(?:yes|yeah|yep|got it|yup|sure|done)\b').hasMatch(n)) {
       _step = GabStep.awaitingDuePaymentAccount;
-        final accounts = await FinanceStorage.loadAccounts();
-        return GabReply(
-          'Which wallet did you deposit or transfer it to? ${_availableWalletsText(accounts)}',
-          quickReplies: _walletNames(accounts),
-        );
+      final accounts = await FinanceStorage.loadAccounts();
+      return _walletSelectionReply(
+        'Which wallet did you deposit or transfer it to?',
+        accounts,
+      );
     }
     final confirmed = isOutgoing
         ? RegExp(r'\b(?:yes|yeah|yep|paid|done|sure)\b').hasMatch(n)
@@ -1338,9 +1443,9 @@ class GabAssistant {
       _step = GabStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
       final prompt = isOutgoing
-          ? 'Which wallet did you use to pay for it? ${_availableWalletsText(accounts)}'
-          : 'Which wallet did you deposit or transfer it to? ${_availableWalletsText(accounts)}';
-      return GabReply(prompt, quickReplies: _walletNames(accounts));
+          ? 'Which wallet did you use to pay for it?'
+          : 'Which wallet did you deposit or transfer it to?';
+      return _walletSelectionReply(prompt, accounts);
     }
 
     final denied = RegExp(
@@ -1410,9 +1515,9 @@ class GabAssistant {
 
     final acc = _findIncomeWallet(n, accounts);
     if (acc == null) {
-      return GabReply(
-        _unknownWalletText(accounts),
-        quickReplies: _walletNames(accounts),
+      return _walletSelectionReply(
+        "I couldn't find that wallet. Which one would you like to use?",
+        accounts,
       );
     }
 
@@ -1424,22 +1529,38 @@ class GabAssistant {
       return GabReply(
         'Your ${acc.name} balance is P$hasStr, which is lower than this bill. Would you like to use another wallet?',
         quickReplies: _walletNames(accounts),
+        walletChoices: _walletsInPromptOrder(accounts),
       );
     }
 
     try {
+      final cleanName = _dueEventDisplayName(event);
       final txn = FinanceTransaction(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: 'bill_future_${event.id}_${event.scheduledDate.year}${event.scheduledDate.month}${event.scheduledDate.day}',
         amount: amount,
         accountId: acc.id,
         accountName: acc.name,
         type: isOutgoing ? 'EXPENSE' : 'INCOME',
-        category: isOutgoing ? 'Bills' : event.category,
-        description: isOutgoing
-            ? '${_dueEventDisplayName(event)} Bill'
-            : event.description,
+        category: isOutgoing
+            ? (billLabelForExpense(cleanName) ?? 'Bills')
+            : event.category,
+        description: isOutgoing ? 'Paid: $cleanName' : event.description,
       );
-      await FinanceStorage.addTransaction(txn);
+      final existingTransactions = await FinanceStorage.loadTransactions();
+      final alreadyLogged = existingTransactions.any(
+        (existing) =>
+            existing.id == txn.id ||
+            (existing.type == txn.type &&
+                existing.accountId == txn.accountId &&
+                existing.amount == txn.amount &&
+                existing.description == txn.description),
+      );
+      if (!alreadyLogged) {
+        await FinanceStorage.addTransaction(txn);
+      }
+      final updatedWallet = (await FinanceStorage.loadAccounts()).firstWhere(
+        (account) => account.id == acc.id,
+      );
 
       final updatedEvent = event.copyWith(
         isCompleted: true,
@@ -1455,9 +1576,7 @@ class GabAssistant {
       await BillStorage.saveBills(bills);
 
       final amountStr = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final newBalance = isOutgoing
-          ? acc.balance - amount
-          : acc.balance + amount;
+      final newBalance = updatedWallet.balance;
       final newBalanceStr = _formatNumberWithCommas(
         newBalance.toStringAsFixed(2),
       );
@@ -1467,11 +1586,23 @@ class GabAssistant {
       if (isOutgoing) {
         return GabReply(
           '✅ Payment recorded!\n${_dueEventDisplayName(event)} Bill  P-$amountStr was paid from ${acc.name}.\n$balanceLine',
+          transactionNotification: _transactionNotification(
+            isIncome: false,
+            amount: amount,
+            walletName: acc.name,
+            balance: newBalance,
+          ),
           highlightColor: 'red',
         );
       } else {
         return GabReply(
           '✅ ${_dueEventDisplayName(event)} received!\nP $amountStr was added to your ${acc.name} wallet.\n$balanceLine',
+          transactionNotification: _transactionNotification(
+            isIncome: true,
+            amount: amount,
+            walletName: acc.name,
+            balance: newBalance,
+          ),
           highlightColor: 'green',
         );
       }
@@ -1503,8 +1634,9 @@ class GabAssistant {
       _step = GabStep.awaitingDuePaymentAccount;
       final accounts = await FinanceStorage.loadAccounts();
       return GabReply(
-        'Which wallet would you like to use? ${_availableWalletsText(accounts)}',
+        'Which wallet would you like to use?',
         quickReplies: _walletNames(accounts),
+        walletChoices: _walletsInPromptOrder(accounts),
       );
     }
     return const GabReply(
@@ -1522,8 +1654,9 @@ class GabAssistant {
     _step = GabStep.awaitingDuePaymentAccount;
     final accounts = await FinanceStorage.loadAccounts();
     return GabReply(
-      'Which wallet would you like to use? ${_availableWalletsText(accounts)}',
+      'Which wallet would you like to use?',
       quickReplies: _walletNames(accounts),
+      walletChoices: _walletsInPromptOrder(accounts),
     );
   }
 
@@ -1581,138 +1714,240 @@ class GabAssistant {
   // ═══════════════════════════════════════════════
 
   Future<GabReply?> _tryTransfer(String n) async {
-    // Check if the message contains explicit transfer keywords
-    final explicitRegex = RegExp(
-      r'\b(transfer|move|send|transferred|moved|sent)\b',
+    final transferKeyword = RegExp(
+      r'\b(?:transfer|transmit(?:ted)?|move|moved|send|sent|cash[\s-]*out)\b',
       caseSensitive: false,
     );
-    final bool isExplicit = explicitRegex.hasMatch(n);
-
-    // 1. Check if "to" is present in the string as a separator
-    final toIndex = n.toLowerCase().indexOf(' to ');
-    if (toIndex == -1) return null;
-
-    // 2. Locate the amount anywhere in the string.
-    // Supports numbers with optional decimals and optional suffix like 'k' or 'm'.
-    // e.g. "500", "500.50", "500k", "500 cash"
-    final amountRegex = RegExp(
-      r'(\d+(?:\.\d+)?)\s*([km]?\b|[km]?(?=\D|$))',
+    final isExplicit = transferKeyword.hasMatch(n);
+    final amountMatch = RegExp(
+      r'\d[\d,]*(?:\.\d+)?(?:\s*[km]\b)?',
       caseSensitive: false,
-    );
-    final amountMatch = amountRegex.firstMatch(n);
-    if (amountMatch == null) return null;
-
-    final amountStr = amountMatch.group(1)!;
-    final suffixStr = amountMatch.group(2) ?? '';
-    double? amount = double.tryParse(amountStr);
-    if (amount == null || amount <= 0) return null;
-
-    if (suffixStr.toLowerCase() == 'k') {
-      amount *= 1000;
-    } else if (suffixStr.toLowerCase() == 'm') {
-      amount *= 1000000;
-    }
-
-    // 3. Remove the parsed amount chunk from the string to get clean parts
-    final amountFullMatch = amountMatch.group(0)!;
-    final cleanedText = n.replaceFirst(amountFullMatch, ' ');
-
-    // 4. Split by the word "to"
-    final splitParts = cleanedText.split(
-      RegExp(r'\s+to\s+', caseSensitive: false),
-    );
-    if (splitParts.length < 2) return null;
-
-    // The left part contains the source account name and optional noise
-    // The right part contains the destination account name and optional noise
-    String leftSide = splitParts[0].trim();
-    String rightSide = splitParts.sublist(1).join(' to ').trim();
-
-    // Remove noise words from leftSide and rightSide
-    final noiseWords = RegExp(
-      r'\b(transfer|move|send|transferred|moved|sent|from|pesos|php|₱)\b',
+    ).firstMatch(n);
+    final hasToSeparator = RegExp(
+      r'\s+to\s+',
       caseSensitive: false,
-    );
-    leftSide = leftSide
-        .replaceAll(noiseWords, ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
-    rightSide = rightSide
-        .replaceAll(noiseWords, ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    ).hasMatch(n);
+    if (!isExplicit && (!hasToSeparator || amountMatch == null)) return null;
 
     final accounts = await FinanceStorage.loadAccounts();
     if (accounts.isEmpty) return _noAccountsReply();
 
-    // 5. Detect accounts
+    final amountToken = amountMatch?.group(0);
+    final amount = amountToken == null
+        ? null
+        : _extractAmountWithSlang(amountToken);
+    final cleanedText = n
+        .replaceFirst(amountToken ?? '', ' ')
+        .replaceAll(transferKeyword, ' ')
+        .replaceAll(
+          RegExp(
+            r'\b(?:from|account|wallet|pesos|php)\b|₱',
+            caseSensitive: false,
+          ),
+          ' ',
+        )
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    final splitParts = cleanedText.split(
+      RegExp(r'\s+to\s+', caseSensitive: false),
+    );
+    final leftSide = splitParts.first.trim();
+    final rightSide = splitParts.length > 1
+        ? splitParts.sublist(1).join(' to ').trim()
+        : '';
     final from =
         _findAccount(leftSide, accounts) ??
         _detectAccountFromText(leftSide, accounts);
-    final to =
-        _findAccount(rightSide, accounts) ??
-        _detectAccountFromText(rightSide, accounts);
+    final to = rightSide.isEmpty
+        ? null
+        : _findAccount(rightSide, accounts) ??
+              _detectAccountFromText(rightSide, accounts);
 
-    // If it's not an explicit request and we can't find one of the accounts,
-    // we fall through to let other intent handlers process it.
+    if (!isExplicit && (from == null || to == null)) return null;
+    if (amount != null && (!amount.isFinite || amount <= 0)) {
+      return const GabReply(
+        'Please enter a transfer amount greater than zero.',
+      );
+    }
+
+    _resetState();
+    _pendingTransferAmount = amount;
+    _pendingTransferFrom = from;
+    _pendingTransferTo = to;
+
+    if (amount == null) {
+      _step = GabStep.awaitingTransferAmount;
+      return const GabReply(
+        'How much would you like to transfer?',
+        quickReplies: ['❌ Cancel'],
+      );
+    }
     if (from == null) {
-      if (!isExplicit) return null;
-      return GabReply(
-        "⚠️ Can't find source account '$leftSide'. Available: ${accounts.map((e) => e.name).join(', ')}",
+      _step = GabStep.awaitingTransferSource;
+      return _transferAccountPrompt(
+        'Which account should I transfer from?',
+        accounts,
       );
     }
     if (to == null) {
-      if (!isExplicit) return null;
-      return GabReply(
-        "⚠️ Can't find destination account '$rightSide'. Available: ${accounts.map((e) => e.name).join(', ')}",
+      _step = GabStep.awaitingTransferDestination;
+      return _transferAccountPrompt(
+        'Which account should I transfer to?',
+        accounts.where((account) => account.id != from.id).toList(),
       );
     }
     if (from.id == to.id) {
-      if (!isExplicit) return null;
-      return const GabReply("⚠️ Source and destination must be different.");
+      _resetState();
+      return const GabReply(
+        '⚠️ Choose two different accounts to transfer between.',
+      );
     }
-    if (from.balance < amount) {
-      return GabReply(
-        "⚠️ Insufficient funds in ${_accountLabel(from)}. Balance: $_currency${from.balance.toStringAsFixed(2)}",
+
+    return await _completeTransfer(from, to, amount);
+  }
+
+  GabReply _transferAccountPrompt(String prompt, List<Account> accounts) =>
+      GabReply(
+        prompt,
+        quickReplies: accounts.map((account) => account.name).toList(),
+      );
+
+  Future<GabReply> _handlePendingTransfer(String input) async {
+    if (_isCancellation(input.toLowerCase().trim())) {
+      _resetState();
+      return const GabReply(
+        'Okay, I cancelled the transfer. Nothing was saved.',
+      );
+    }
+
+    final accounts = await FinanceStorage.loadAccounts();
+    if (_step == GabStep.awaitingTransferAmount) {
+      final amount = _extractAmountWithSlang(input);
+      if (amount == null || !amount.isFinite || amount <= 0) {
+        return const GabReply('Enter a valid transfer amount.');
+      }
+      _pendingTransferAmount = amount;
+      if (_pendingTransferFrom == null) {
+        _step = GabStep.awaitingTransferSource;
+        return _transferAccountPrompt(
+          'Which account should I transfer from?',
+          accounts,
+        );
+      }
+      if (_pendingTransferTo == null) {
+        _step = GabStep.awaitingTransferDestination;
+        return _transferAccountPrompt(
+          'Which account should I transfer to?',
+          accounts
+              .where((account) => account.id != _pendingTransferFrom!.id)
+              .toList(),
+        );
+      }
+    } else if (_step == GabStep.awaitingTransferSource) {
+      final account =
+          _findAccount(input, accounts) ??
+          _detectAccountFromText(input, accounts);
+      if (account == null) {
+        return _transferAccountPrompt(
+          'Choose one of your accounts as the source.',
+          accounts,
+        );
+      }
+      if (_pendingTransferTo?.id == account.id) {
+        return const GabReply('Choose a different source account.');
+      }
+      _pendingTransferFrom = account;
+      _step = _pendingTransferTo == null
+          ? GabStep.awaitingTransferDestination
+          : GabStep.awaitingTransferAmount;
+      if (_pendingTransferAmount != null && _pendingTransferTo != null) {
+        return await _completeTransfer(
+          _pendingTransferFrom!,
+          _pendingTransferTo!,
+          _pendingTransferAmount!,
+        );
+      }
+      if (_pendingTransferAmount != null) {
+        return _transferAccountPrompt(
+          'Which account should I transfer to?',
+          accounts.where((item) => item.id != account.id).toList(),
+        );
+      }
+      return const GabReply('How much would you like to transfer?');
+    } else if (_step == GabStep.awaitingTransferDestination) {
+      final account =
+          _findAccount(input, accounts) ??
+          _detectAccountFromText(input, accounts);
+      if (account == null) {
+        return _transferAccountPrompt(
+          'Choose one of your accounts as the destination.',
+          accounts
+              .where((item) => item.id != _pendingTransferFrom?.id)
+              .toList(),
+        );
+      }
+      if (_pendingTransferFrom?.id == account.id) {
+        return const GabReply('Choose a different destination account.');
+      }
+      _pendingTransferTo = account;
+      if (_pendingTransferAmount == null) {
+        _step = GabStep.awaitingTransferAmount;
+        return const GabReply('How much would you like to transfer?');
+      }
+      return await _completeTransfer(
+        _pendingTransferFrom!,
+        account,
+        _pendingTransferAmount!,
+      );
+    }
+
+    return const GabReply('Tell me the amount and accounts for the transfer.');
+  }
+
+  Future<GabReply> _completeTransfer(
+    Account from,
+    Account to,
+    double amount,
+  ) async {
+    if (from.id == to.id) {
+      _resetState();
+      return const GabReply(
+        '⚠️ Choose two different accounts to transfer between.',
       );
     }
 
     try {
-      final prevFromBal = from.balance;
-      final prevToBal = to.balance;
-
       await FinanceStorage.transferMoney(
         fromAccount: from,
         toAccount: to,
         amount: amount,
       );
-
-      final amountStrFmt = _formatNumberWithCommas(amount.toStringAsFixed(2));
-      final prevFromStr = _formatNumberWithCommas(
-        prevFromBal.toStringAsFixed(2),
+      final accounts = await FinanceStorage.loadAccounts();
+      final updatedFrom = accounts.firstWhere(
+        (account) => account.id == from.id,
       );
-      final prevToStr = _formatNumberWithCommas(prevToBal.toStringAsFixed(2));
-      final newFromStr = _formatNumberWithCommas(
-        (prevFromBal - amount).toStringAsFixed(2),
+      final updatedTo = accounts.firstWhere((account) => account.id == to.id);
+      final formattedAmount = _formatNumberWithCommas(
+        amount.toStringAsFixed(2),
       );
-      final newToStr = _formatNumberWithCommas(
-        (prevToBal + amount).toStringAsFixed(2),
-      );
-
-      final fromIcon = _accountIconToken(from);
-      final toIcon = _accountIconToken(to);
-
+      final fromIcon = _accountIconToken(updatedFrom);
+      final toIcon = _accountIconToken(updatedTo);
+      _resetState();
       return GabReply(
-        "🏛️ Transfer Logged!\n\nMoney Transfer                     +$_currency$amountStrFmt $toIcon\n\n$toIcon prev: $_currency$prevToStr → $_currency$newToStr\n$fromIcon prev: $_currency$prevFromStr → $_currency$newFromStr",
+        '🏦 Transfer Logged!\n'
+        'Transferred $_currency$formattedAmount from $fromIcon ${updatedFrom.name} to $toIcon ${updatedTo.name}.\n'
+        'New ${updatedFrom.name} balance: $_currency${_formatNumberWithCommas(updatedFrom.balance.toStringAsFixed(2))}\n'
+        'New ${updatedTo.name} balance: $_currency${_formatNumberWithCommas(updatedTo.balance.toStringAsFixed(2))}',
         quickReplies: const [
-          "What is my total balance?",
-          "Check account balances",
+          'What is my total balance?',
+          'Check account balances',
         ],
       );
-    } catch (e) {
+    } catch (error) {
+      _resetState();
       return GabReply(
-        "⚠️ ${e.toString()}",
-        quickReplies: const ["What is my total balance?"],
+        '⚠️ $error',
+        quickReplies: const ['What is my total balance?'],
       );
     }
   }
@@ -1722,7 +1957,10 @@ class GabAssistant {
 
     final accounts = await FinanceStorage.loadAccounts();
     _pendingExpenseAccount = _findExpenseWallet(n, accounts);
-    final item = _extractExpenseItemFragment(n, _pendingExpenseAccount);
+    var item = _extractExpenseItemFragment(n, _pendingExpenseAccount);
+    if (_isUserDebtRepayment(n)) {
+      item = _extractDebtRepaymentDescription(n);
+    }
     if (item.isNotEmpty) {
       _pendingExpenseDescription = _titleCase(item);
       _pendingExpenseCategory = _categorizeExpense(item);
@@ -1873,11 +2111,11 @@ class GabAssistant {
       final lines = accounts
           .map(
             (a) =>
-                "${_accountLabel(a)}: $_currency${a.balance.toStringAsFixed(2)}",
+                "${_accountLabel(a)}: $_currency${_formatNumberWithCommas(a.balance.toStringAsFixed(2))}",
           )
           .toList();
       return GabReply(
-        "💰 Your Total Balance: $_currency${netWorth.toStringAsFixed(2)}\n\n${lines.join('\n')}",
+        "💰 Your Total Balance: $_currency${_formatNumberWithCommas(netWorth.toStringAsFixed(2))}\n\n${lines.join('\n')}",
         quickReplies: const ["Check Cash balance", "What can I cook?"],
       );
     }
@@ -1892,7 +2130,7 @@ class GabAssistant {
           n == 'check $name balance' ||
           (n.contains('how much') && n.contains(name))) {
         return GabReply(
-          "${_accountLabel(a)} balance: $_currency${a.balance.toStringAsFixed(2)}",
+          "${_accountLabel(a)} balance: $_currency${_formatNumberWithCommas(a.balance.toStringAsFixed(2))}",
           quickReplies: const ["What is my total balance?"],
         );
       }
@@ -1918,16 +2156,32 @@ class GabAssistant {
     }
 
     final accounts = await FinanceStorage.loadAccounts();
-    final details = deletedTransactions.map((transaction) {
-      final account = accounts.where((item) => item.id == transaction.accountId);
-      final accountLabel = account.isEmpty
-          ? transaction.accountName
-          : _accountLabel(account.first);
-      final balanceLine = account.isEmpty
-          ? ''
-          : '\nNew balance: $_currency${_formatNumberWithCommas(account.first.balance.toStringAsFixed(2))}';
-      return '${transaction.description} removed.\n$accountLabel balance restored.$balanceLine';
-    }).join('\n\n');
+    final details = deletedTransactions
+        .map((transaction) {
+          if (transaction.isTransfer &&
+              transaction.destinationAccountId != null) {
+            final source = accounts.firstWhere(
+              (item) => item.id == transaction.accountId,
+            );
+            final destination = accounts.firstWhere(
+              (item) => item.id == transaction.destinationAccountId,
+            );
+            return '${transaction.description} transfer reversed.\n'
+                '${_accountLabel(source)} balance: $_currency${_formatNumberWithCommas(source.balance.toStringAsFixed(2))}\n'
+                '${_accountLabel(destination)} balance: $_currency${_formatNumberWithCommas(destination.balance.toStringAsFixed(2))}';
+          }
+          final account = accounts.where(
+            (item) => item.id == transaction.accountId,
+          );
+          final accountLabel = account.isEmpty
+              ? transaction.accountName
+              : _accountLabel(account.first);
+          final balanceLine = account.isEmpty
+              ? ''
+              : '\nNew balance: $_currency${_formatNumberWithCommas(account.first.balance.toStringAsFixed(2))}';
+          return '${transaction.description} removed.\n$accountLabel balance restored.$balanceLine';
+        })
+        .join('\n\n');
 
     return GabReply(
       '\u{1F504} Transaction Undo!\n\n$details',
@@ -1976,6 +2230,12 @@ class GabAssistant {
     }
 
     final lastTxn = transactions.last;
+    if (lastTxn.isTransfer) {
+      return const GabReply(
+        '⚠️ Transfers cannot be corrected as income or expenses. Undo the transfer and record it again with the correct details.',
+        quickReplies: ['What is my total balance?'],
+      );
+    }
 
     // Calculate the difference
     final oldAmount = lastTxn.amount;
@@ -2650,8 +2910,54 @@ class GabAssistant {
         .join(' ');
   }
 
+  String _extractDebtRepaymentDescription(String text) {
+    final lower = text.toLowerCase();
+    final toMatch = RegExp(
+      r"\b(?:to|for)\s+([a-z][\w'-]*)",
+      caseSensitive: false,
+    ).firstMatch(lower);
+    final backMatch = RegExp(
+      r"\b(?:paid|pay|repaid|repay)\s+([a-z][\w'-]*)",
+      caseSensitive: false,
+    ).firstMatch(lower);
+    final name = toMatch?.group(1) ?? backMatch?.group(1);
+    if (name != null) {
+      final blocked = {'the', 'my', 'a', 'an', 'back'};
+      if (!blocked.contains(name)) return '${_titleCase(name)} Debt';
+    }
+    return 'Debt Repayment';
+  }
+
+  bool _isUserDebtRepayment(String text) {
+    final l = text.toLowerCase();
+    if (RegExp(
+      r'\b(?:paid|pay|repaid|repay|settled)\s+(?:me|his|her|their)\b',
+    ).hasMatch(l)) {
+      return false;
+    }
+    final hasDebtTerm = RegExp(
+      r'\b(?:debt|loan|utang)\b',
+      caseSensitive: false,
+    ).hasMatch(l);
+    final hasRepaymentVerb = RegExp(
+      r'\b(?:paid|pay|repaid|repay|settled)\b',
+      caseSensitive: false,
+    ).hasMatch(l);
+    if (!hasRepaymentVerb) return false;
+    if (hasDebtTerm &&
+        RegExp(r'\b(?:i|my|mine)\b', caseSensitive: false).hasMatch(l)) {
+      return true;
+    }
+    return RegExp(
+      r'\b(?:paid|pay|repaid|repay)\b.{0,30}\b(?:back|settled|to)\b',
+      caseSensitive: false,
+    ).hasMatch(l);
+  }
+
   bool _isIncomeIntent(String text) {
     final l = text.toLowerCase();
+    if (_isUserDebtRepayment(l)) return false;
+
     // Strongly classified income indicators
     final List<String> strongIncomeKeywords = [
       'received',
@@ -3157,28 +3463,34 @@ class GabAssistant {
     final l = _normalizeFutureText(text);
 
     if (_matchAny(l, ['car loan', 'auto loan', 'vehicle loan'])) {
-      return 'Car Loan';
+      return 'car loan';
     }
     if (_matchAny(l, ['debt'])) {
-      return 'Debt';
+      return 'debt';
     }
     if (_matchAny(l, ['loan'])) {
-      return 'Loan';
+      return 'loan';
     }
     if (_matchAny(l, ['insurance'])) {
-      return 'Insurance';
+      return 'insurance';
     }
     if (_matchAny(l, ['meralco'])) {
-      return 'Meralco Bill';
+      return 'meralco bill';
+    }
+    if (_matchAny(l, ['aneco'])) {
+      return 'ANECO Electricity';
+    }
+    if (_matchAny(l, ['cepalco'])) {
+      return 'CEPALCO Electricity';
     }
     if (_matchAny(l, ['electric', 'electricity', 'power'])) {
-      return 'Electricity Bill';
+      return 'electricity Bill';
     }
     if (_matchAny(l, ['water'])) {
-      return 'Water';
+      return 'water bill';
     }
     if (_matchAny(l, ['internet', 'wifi'])) {
-      return 'Internet';
+      return 'internet bill';
     }
     if (_matchAny(l, ['rent'])) {
       return 'Rent';
@@ -3193,10 +3505,10 @@ class GabAssistant {
       return 'Subscription';
     }
     if (_matchAny(l, ['credit card'])) {
-      return 'Credit Card';
+      return 'credit card';
     }
     if (_matchAny(l, ['home credit'])) {
-      return 'Home Credit';
+      return 'home credit';
     }
 
     return _cleanFutureOutgoingTitle(text);
@@ -3675,36 +3987,24 @@ class GabAssistant {
   GabReply _helpReply() => const GabReply(
     "Here's everything I can help you with:\n\n"
     "🍳 Cooking\n"
-    "'What can I cook for dinner?'\n"
-    "'Recipe for adobo'\n"
-    "'Suggest a weekly meal plan'\n\n"
-    "🛒 Grocery Tracking\n"
-    "'How much did I spend this week?'\n"
-    "'Show my budget'\n"
-    "'My daily spending is 500'\n"
-    "'My monthly budget is 15000'\n"
-    "'Show analytics'\n\n"
-    "📋 Bills\n"
-    "'Do I have upcoming bills?'\n"
-    "'How much are my bills this week?'\n\n"
+    "'I wanna cook pansit'\n"
+    "'Recipe for adobo'\n\n"
     "💰 Finance & Wallet\n"
     "'What is my total balance?'\n"
     "'Spent 150 on coffee from Cash'\n"
     "'Received 25000 salary to Bank Account'\n"
-    "'Transfer 500 from Bank to GCash'\n\n"
+    "'Transfer 500 from Bank to GCash'\n"
+    "'Move 300 BDO to Cash'\n"
+    "'Transmit 300 GCash' then choose a destination\n"
+    "'Cashout 300 GCash to Cash'\n\n"
     "📅 Future Events\n"
-    "'Lance is going to pay me back 500 this 30th'\n"
-    "'Expect my 25k salary to clear on the 15th'\n"
-    "'Client will transfer 15k freelance milestone on Friday'",
-    quickReplies: [
-      "What can I cook?",
-      "What is my total balance?",
-      "Do I have upcoming bills?",
-    ],
+    "'I have an upcoming rent this 28'\n"
+    "'Expect my 25k salary on the 15th'\n"
+    "'I have upcoming shopee this Friday'\n",
   );
 
   GabReply _fallbackReply() => const GabReply(
-    "I'm here to help! Just ask me anything about cooking, groceries, bills, or your wallet. Type 'help' to see all my commands. 😊",
+    "I'm here to help! Just ask me anything. Type 'help' to see all my commands. 😊",
     quickReplies: ["Help", "What can I cook?", "What is my total balance?"],
   );
 
@@ -3735,14 +4035,24 @@ class GabAssistant {
         _pendingExpenseCategory = _categorizeExpense(item);
       }
     } else if (_step == GabStep.awaitingExpenseAccount) {
-      if (const {'ok', 'okay', 'sure'}.contains(n.trim())) {
+      if (const {
+        'ok',
+        'okay',
+        'sure',
+        'kk',
+        'ge',
+        'aight',
+        'sge',
+        'g',
+        'oks',
+      }.contains(n.trim())) {
         return _continueExpenseFlow();
       }
       final wallet = _findExpenseWallet(input, accounts);
       if (wallet == null) {
-        return GabReply(
-          _unknownWalletText(accounts),
-          quickReplies: _walletNames(accounts),
+        return _walletSelectionReply(
+          "I couldn't find that wallet. Which one would you like to use?",
+          accounts,
         );
       }
       _pendingExpenseAccount = wallet;
@@ -3770,9 +4080,10 @@ class GabAssistant {
     if (_pendingExpenseAccount == null) {
       final accounts = await FinanceStorage.loadAccounts();
       _step = GabStep.awaitingExpenseAccount;
-      return GabReply(
-        'Which wallet did you spend it from? ${_availableWalletsText(accounts)}',
-        quickReplies: [..._walletNames(accounts), '🔄 Do Something Else'],
+      return _walletSelectionReply(
+        'Which wallet did you spend it from?',
+        accounts,
+        extraQuickReplies: const ['🔄 Do Something Else'],
       );
     }
 
@@ -3792,12 +4103,16 @@ class GabAssistant {
     _step = GabStep.awaitingExpenseAccount;
     try {
       await FinanceStorage.addTransaction(transaction);
+      final updatedWallet = (await FinanceStorage.loadAccounts()).firstWhere(
+        (account) => account.id == wallet.id,
+      );
       final transactions = await FinanceStorage.loadTransactions();
       final now = DateTime.now();
       final spentToday = transactions
           .where(
             (entry) =>
-                entry.type == 'EXPENSE' &&
+                entry.isExpense &&
+                !entry.isTransfer &&
                 entry.date.year == now.year &&
                 entry.date.month == now.month &&
                 entry.date.day == now.day,
@@ -3809,13 +4124,19 @@ class GabAssistant {
 
       _resetState();
       return GabReply(
-        '✅ Expense logged!\n$item  P-$amountText\nWallet: ${wallet.name}\nRemaining today: P $remainingText\nAnything else?',
+        '💸 Expense logged!\n$item  -₱ $amountText\nNew ${wallet.name} Balance: ₱ ${_formatExpenseAmount(updatedWallet.balance)}\nRemaining today: ₱ $remainingText\nAnything else?',
         quickReplies: const [
           '➕ Another Expense',
           '💰 Log Income',
           '💼 Check Balance',
           '👍 Done',
         ],
+        transactionNotification: _transactionNotification(
+          isIncome: false,
+          amount: amount,
+          walletName: wallet.name,
+          balance: updatedWallet.balance,
+        ),
         highlightColor: 'red',
       );
     } catch (error) {
@@ -3963,7 +4284,7 @@ class GabAssistant {
     final footer = _pendingScheduledType == 'bill'
         ? 'I will remind you on the due date.'
         : 'I will remind you on the day it arrives.';
-    final sign = _pendingScheduledType == 'bill' ? 'P-' : 'P ';
+    final sign = _pendingScheduledType == 'bill' ? '-₱' : '+₱';
 
     _resetState();
     return GabReply(
@@ -3996,6 +4317,19 @@ class GabAssistant {
       return GabReply(
         'Do you mean ${_formatBillDate(_pendingScheduledDateTime!)}?',
       );
+    }
+
+    if (_step == GabStep.awaitingScheduledWallet) {
+      final accounts = await FinanceStorage.loadAccounts();
+      final wallet = _findMentionedAccount(normalized, accounts);
+      if (wallet == null) {
+        return _walletSelectionReply(
+          "I couldn't find that wallet. Which wallet are you going to use?",
+          accounts,
+        );
+      }
+      _pendingScheduledWallet = wallet.name;
+      return await _saveUpcomingBill();
     }
 
     if (input.trim().isNotEmpty &&
@@ -4053,6 +4387,14 @@ class GabAssistant {
       _step = GabStep.awaitingScheduledAmount;
       return GabReply('How much is the ${_pendingScheduledName!} bill?');
     }
+    if (_pendingBillRequiresWallet && _pendingScheduledWallet == null) {
+      _step = GabStep.awaitingScheduledWallet;
+      final accounts = await FinanceStorage.loadAccounts();
+      return _walletSelectionReply(
+        'Which wallet are you going to use?',
+        accounts,
+      );
+    }
     if (_pendingScheduledDateTime == null) {
       _step = GabStep.awaitingScheduledDate;
       return GabReply('When is the ${_pendingScheduledName!} bill due?');
@@ -4073,14 +4415,14 @@ class GabAssistant {
     );
     name = name.replaceAll(
       RegExp(
-        r'\b(?:i\s+have|my|need\s+to\s+pay|have\s+to\s+pay|remind\s+me(?:\s+to\s+pay)?|pay|is|are|will\s+be|due|on|by|this|the|a|an|of|bill|payment)\b',
+        r'\b(?:i\s+have|my|need\s+to\s+pay|have\s+to\s+pay|remind\s+me(?:\s+to\s+pay)?|pay|is|are|will\s+be|due|on|by|this|the|a|an|of|upcoming|bill|payment)\b',
         caseSensitive: false,
       ),
       ' ',
     );
     name = name.replaceAll(RegExp(r'[^\w\s-]'), ' ');
     name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return _titleCase(name);
+    return name.toLowerCase();
   }
 
   double? _extractUpcomingIncomeAmount(String text) {
@@ -4109,7 +4451,7 @@ class GabAssistant {
 
   DateTime? _parseUpcomingBillDate(String text, {bool allowBareDay = false}) {
     final normalized = _normalizeFutureText(text);
-    final now = DateTime.now();
+    final now = _clock();
     final monthNames = {
       'january': 1,
       'jan': 1,
@@ -4144,12 +4486,18 @@ class GabAssistant {
       if (match != null) {
         final day = int.parse(match.group(1)!);
         final year = int.tryParse(match.group(2) ?? '') ?? now.year;
-        final date = _validCalendarDate(year, entry.value, day);
-        if (date == null) return null;
-        if (match.group(2) == null && _isDateBeforeToday(date)) {
-          return DateTime(year + 1, entry.value, day);
-        }
-        return date;
+        return _validCalendarDate(year, entry.value, day);
+      }
+
+      final dayFirstMatch = RegExp(
+        r'\b(\d{1,2})(?:st|nd|rd|th)?\s+of\s+' +
+            entry.key +
+            r'(?:,?\s+(\d{4}))?\b',
+      ).firstMatch(normalized);
+      if (dayFirstMatch != null) {
+        final day = int.parse(dayFirstMatch.group(1)!);
+        final year = int.tryParse(dayFirstMatch.group(2) ?? '') ?? now.year;
+        return _validCalendarDate(year, entry.value, day);
       }
     }
 
@@ -4161,12 +4509,7 @@ class GabAssistant {
       final day = int.parse(numericDate.group(2)!);
       var year = int.tryParse(numericDate.group(3) ?? '') ?? now.year;
       if (year < 100) year += 2000;
-      final date = _validCalendarDate(year, month, day);
-      if (date == null) return null;
-      if (numericDate.group(3) == null && _isDateBeforeToday(date)) {
-        return DateTime(year + 1, month, day);
-      }
-      return date;
+      return _validCalendarDate(year, month, day);
     }
 
     if (normalized.contains('tomorrow')) {
@@ -4195,7 +4538,8 @@ class GabAssistant {
       final token = weekdayMatch.group(1)!;
       final target = weekdayPrefixes[token.substring(0, 3)]!;
       var daysUntil = (target - now.weekday + 7) % 7;
-      if (daysUntil == 0 || weekdayMatch.group(0)!.startsWith('next ')) {
+      if (daysUntil == 0 &&
+          weekdayMatch.group(0)!.trimLeft().startsWith('next ')) {
         daysUntil += 7;
       }
       return DateTime(now.year, now.month, now.day + daysUntil);
@@ -4209,9 +4553,23 @@ class GabAssistant {
         : null;
     final day = int.tryParse(markedDay?.group(1) ?? bareDay?.group(1) ?? '');
     if (day != null && day >= 1 && day <= 31) {
-      return _validCalendarDate(now.year, now.month, day);
+      return _resolveUpcomingDay(day, now);
     }
     return null;
+  }
+
+  DateTime _resolveUpcomingDay(int day, DateTime now) {
+    var year = now.year;
+    var month = now.month;
+    final currentMonthLength = DateTime(year, month + 1, 0).day;
+    if (day < now.day || day > currentMonthLength) {
+      final nextMonth = DateTime(year, month + 1, 1);
+      year = nextMonth.year;
+      month = nextMonth.month;
+    }
+
+    final targetMonthLength = DateTime(year, month + 1, 0).day;
+    return DateTime(year, month, day.clamp(1, targetMonthLength));
   }
 
   DateTime? _validCalendarDate(int year, int month, int day) {
@@ -4237,7 +4595,7 @@ class GabAssistant {
   }
 
   bool _isDateBeforeToday(DateTime date) {
-    final now = DateTime.now();
+    final now = _clock();
     return DateTime(
       date.year,
       date.month,
@@ -4250,6 +4608,13 @@ class GabAssistant {
     final monthPattern =
         r'\b(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?\b';
     result = result.replaceAll(RegExp(monthPattern, caseSensitive: false), ' ');
+    result = result.replaceAll(
+      RegExp(
+        r'\b\d{1,2}(?:st|nd|rd|th)?\s+of\s+(?:january|jan|february|feb|march|mar|april|apr|may|june|jun|july|jul|august|aug|september|sep|sept|october|oct|november|nov|december|dec)(?:,?\s+\d{4})?\b',
+        caseSensitive: false,
+      ),
+      ' ',
+    );
     result = result.replaceAll(
       RegExp(r'\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b'),
       ' ',
@@ -4306,7 +4671,7 @@ class GabAssistant {
 
   Future<GabReply> _saveUpcomingBill() async {
     final baseName = _pendingScheduledName!;
-    final displayName = '$baseName Bill';
+    final displayName = cleanBillName(baseName);
     final amount = _pendingScheduledAmount!;
     final date = _pendingScheduledDateTime!;
     final billId = DateTime.now().microsecondsSinceEpoch.toString();
@@ -4320,6 +4685,7 @@ class GabAssistant {
       type: 'bill',
       status: 'pending',
       frequency: 'Once',
+      wallet: _pendingScheduledWallet,
     );
 
     await FutureEventStorage.addEvent(event);
@@ -4337,16 +4703,47 @@ class GabAssistant {
     await BillStorage.saveBills(bills);
 
     final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
+    final walletLine = _pendingScheduledWallet == null
+        ? ''
+        : '\nWallet: $_pendingScheduledWallet';
     final confirmation =
         '${_billEmoji(displayName)} Bill Added to Calendar!\n'
-        '$displayName        P-$formattedAmount\n'
-        'Date:              ${_formatBillDate(date)}\n'
+        '$displayName\n'
+        'Amount: -₱ $formattedAmount\n'
+        'Date: ${_formatBillDate(date)}'
+        '$walletLine'
+        '\n\n'
         'I will remind you on the due date.';
     _resetState();
     return GabReply(confirmation, highlightColor: 'red');
   }
 
   Future<GabReply?> _tryScheduledEntry(String n) async {
+    final incomeNamePattern = RegExp(
+      r'\b(?:salary|allowance|commission|bonus|13th\s+month(?:\s+pay)?|refund|freelance\s+payment|business\s+income|rental\s+income|pension|cashback)\b',
+    );
+    final hasUpcomingMerchant = RegExp(
+      r'\bi\s+have\s+(?:an?\s+)?upcoming\s+\w+',
+    ).hasMatch(n);
+    if (hasUpcomingMerchant && !incomeNamePattern.hasMatch(n)) {
+      final name = _extractUpcomingBillName(n);
+      if (name.isNotEmpty) {
+        _resetState();
+        _pendingScheduledType = 'bill';
+        _pendingScheduledName = name;
+        _pendingBillRequiresWallet = true;
+        final now = DateTime.now();
+        // "Upcoming" without a due date defaults to tomorrow.
+        final dueDate =
+            _parseUpcomingBillDate(n) ??
+            DateTime(now.year, now.month, now.day + 1);
+        _pendingScheduledDateTime = dueDate;
+        _pendingScheduledDate = _formatBillDate(dueDate);
+        _step = GabStep.awaitingScheduledAmount;
+        return await _handleUpcomingBillFlow(n);
+      }
+    }
+
     final hasBillWord = RegExp(
       r'\b(?:bill|due|payment|rent|utilities|electricity|water|internet|wifi|phone|load|loan|credit\s+card|insurance|tuition|subscription|mortgage|amortization|installment)\b',
     ).hasMatch(n);
@@ -4367,9 +4764,6 @@ class GabAssistant {
       return await _handleUpcomingBillFlow(n);
     }
 
-    final incomeNamePattern = RegExp(
-      r'\b(?:salary|allowance|commission|bonus|13th\s+month(?:\s+pay)?|refund|freelance\s+payment|business\s+income|rental\s+income|pension|cashback)\b',
-    );
     final incomeFuturePattern = RegExp(
       r'\b(?:will\s+have|will\s+receive|will\s+get|will\s+be\s+paid|expect(?:ing)?|incoming|coming\s+on|on|by)\b',
     );
@@ -4522,7 +4916,7 @@ class GabAssistant {
     final formattedAmount = _formatNumberWithCommas(amount.toStringAsFixed(2));
     final confirmation =
         '${_incomeEmoji(name)} Incoming Transaction Added to Calendar!\n'
-        '$name            P $formattedAmount\n'
+        '$name             +₱ $formattedAmount\n'
         'Date:             ${_formatBillDate(date)}\n'
         'I will remind you on the day it arrives.';
     _resetState();

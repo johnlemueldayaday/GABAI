@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:speech_to_text/speech_recognition_error.dart';
@@ -10,10 +13,12 @@ import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/widgets/account_icon.dart';
 import 'package:gabay/widgets/app_drawer.dart';
 import 'package:gabay/navigation/app_routes.dart';
+import 'package:gabay/navigation/gab_deep_link_observer.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/price_storage.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/finance_storage.dart';
+import 'package:gabay/services/notification_service.dart';
 import 'package:gabay/services/safe_to_spend.dart';
 import 'package:gabay/models/finance_models.dart';
 import 'package:gabay/pages/price_comparison.dart';
@@ -22,14 +27,35 @@ import 'package:gabay/pages/splash_screen.dart';
 import 'package:gabay/data/grocery_database.dart';
 import 'package:gabay/widgets/home/sections/store_picker_sheet.dart';
 import 'package:gabay/widgets/home/sections/add_item_sheet.dart';
+import 'package:gabay/widgets/home/sections/numeric_keypad_sheet.dart';
+import 'package:gabay/widgets/home/tactile_button.dart';
 
 final GlobalKey<ScaffoldMessengerState> groceryScaffoldMessengerKey =
     GlobalKey<ScaffoldMessengerState>();
 final RouteObserver<ModalRoute<dynamic>> groceryRouteObserver =
     RouteObserver<ModalRoute<dynamic>>();
 
-class GroceryApp extends StatelessWidget {
+class GroceryApp extends StatefulWidget {
   const GroceryApp({super.key});
+
+  @override
+  State<GroceryApp> createState() => _GroceryAppState();
+}
+
+class _GroceryAppState extends State<GroceryApp> {
+  final GabDeepLinkObserver _gabDeepLinkObserver = GabDeepLinkObserver();
+
+  @override
+  void initState() {
+    super.initState();
+    _gabDeepLinkObserver.start();
+  }
+
+  @override
+  void dispose() {
+    _gabDeepLinkObserver.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,6 +66,7 @@ class GroceryApp extends StatelessWidget {
         updateAppTheme(SettingsService().themeMode);
 
         return MaterialApp(
+          navigatorKey: NotificationService.navigatorKey,
           scaffoldMessengerKey: groceryScaffoldMessengerKey,
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
@@ -60,7 +87,7 @@ class GroceryApp extends StatelessWidget {
             useMaterial3: true,
           ),
           initialRoute: kSplashRouteName,
-          navigatorObservers: [groceryRouteObserver],
+          navigatorObservers: [groceryRouteObserver, _gabDeepLinkObserver],
           routes: {kSplashRouteName: (_) => const SplashScreen()},
         );
       },
@@ -86,39 +113,6 @@ String _formatQty(double q) {
       .toStringAsFixed(3)
       .replaceAll(RegExp(r'0*$'), '')
       .replaceAll(RegExp(r'\.$'), '');
-}
-
-double _stepQty(double current, int dir, String unit) {
-  if (unit == 'kg') {
-    const steps = [
-      0.125,
-      0.25,
-      0.5,
-      0.75,
-      1.0,
-      1.25,
-      1.5,
-      1.75,
-      2.0,
-      2.5,
-      3.0,
-      4.0,
-      5.0,
-    ];
-    if (dir > 0) {
-      for (double s in steps) {
-        if (s > current + 0.001) return s;
-      }
-      return current + 1.0;
-    } else {
-      for (int i = steps.length - 1; i >= 0; i--) {
-        if (steps[i] < current - 0.001) return steps[i];
-      }
-      return current > 1.0 ? current - 1.0 : 0.125;
-    }
-  } else {
-    return (current + dir).clamp(1.0, 999.0);
-  }
 }
 
 // ─── ShoppingPage ─────────────────────────────────────────────────────────────
@@ -1201,9 +1195,26 @@ class _CartDetailPageState extends State<CartDetailPage>
 
   void _changeQty(GroceryItem item, int delta) {
     setState(() {
-      item.qty = _stepQty(item.qty, delta, item.unit);
+      item.qty = stepQty(item.qty, delta, item.unit);
     });
     GroceryStorage.saveAll();
+  }
+
+  void _editQty(GroceryItem item) async {
+    final result = await showModalBottomSheet<double>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => NumericKeypadSheet(
+        initialValue: item.qty,
+        itemName: item.name,
+        quantityUnit: item.unit,
+      ),
+    );
+    if (result != null) {
+      setState(() => item.qty = result);
+      GroceryStorage.saveAll();
+    }
   }
 
   void _editPrice(GroceryItem item) async {
@@ -1876,6 +1887,7 @@ class _CartDetailPageState extends State<CartDetailPage>
                             onDelete: () => _deleteItem(_items[index]),
                             onQtyChange: (delta) =>
                                 _changeQty(_items[index], delta),
+                            onQtyEdit: () => _editQty(_items[index]),
                             onPriceEdit: () => _editPrice(_items[index]),
                             onUnitEdit: () => _showUnitPicker(_items[index]),
                             onNameEdit: () => _editItemName(_items[index]),
@@ -2051,7 +2063,12 @@ class _StickyBudgetDelegate extends SliverPersistentHeaderDelegate {
 class _TactileButton extends StatefulWidget {
   final VoidCallback onTap;
   final Widget child;
-  const _TactileButton({required this.onTap, required this.child});
+  final bool hapticFeedback;
+  const _TactileButton({
+    required this.onTap,
+    required this.child,
+    this.hapticFeedback = false,
+  });
 
   @override
   State<_TactileButton> createState() => _TactileButtonState();
@@ -2066,6 +2083,9 @@ class _TactileButtonState extends State<_TactileButton> {
       onTapDown: (_) => setState(() => _isDown = true),
       onTapUp: (_) {
         setState(() => _isDown = false);
+        if (widget.hapticFeedback) {
+          unawaited(HapticFeedback.selectionClick());
+        }
         widget.onTap();
       },
       onTapCancel: () => setState(() => _isDown = false),
@@ -2358,6 +2378,7 @@ class _ItemTile extends StatelessWidget {
   final GroceryItem item;
   final VoidCallback onToggle, onDelete;
   final void Function(int delta) onQtyChange;
+  final VoidCallback onQtyEdit;
   final VoidCallback onPriceEdit;
   final VoidCallback onUnitEdit;
   final VoidCallback? onNameEdit;
@@ -2366,6 +2387,7 @@ class _ItemTile extends StatelessWidget {
     required this.onToggle,
     required this.onDelete,
     required this.onQtyChange,
+    required this.onQtyEdit,
     required this.onPriceEdit,
     required this.onUnitEdit,
     this.onNameEdit,
@@ -2416,6 +2438,7 @@ class _ItemTile extends StatelessWidget {
                 children: [
                   _TactileButton(
                     onTap: onToggle,
+                    hapticFeedback: true,
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       width: 24,
@@ -2428,13 +2451,33 @@ class _ItemTile extends StatelessWidget {
                           width: 2,
                         ),
                       ),
-                      child: item.isDone
-                          ? const Icon(
-                              Icons.check,
-                              color: Colors.white,
-                              size: 14,
-                            )
-                          : null,
+                      child: AnimatedSwitcher(
+                        duration: const Duration(milliseconds: 160),
+                        transitionBuilder: (child, animation) {
+                          final curvedAnimation = CurvedAnimation(
+                            parent: animation,
+                            curve: Curves.easeOutCubic,
+                          );
+                          return FadeTransition(
+                            opacity: animation,
+                            child: ScaleTransition(
+                              scale: Tween<double>(
+                                begin: 0.85,
+                                end: 1,
+                              ).animate(curvedAnimation),
+                              child: child,
+                            ),
+                          );
+                        },
+                        child: item.isDone
+                            ? const Icon(
+                                Icons.check,
+                                key: ValueKey(true),
+                                color: Colors.white,
+                                size: 14,
+                              )
+                            : const SizedBox.shrink(key: ValueKey(false)),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -2491,60 +2534,41 @@ class _ItemTile extends StatelessWidget {
                     const SizedBox(width: 38), // align with text above
                     if (!item.isDone) ...[
                       // Interactive Quantity controls
-                      Container(
-                        height: 44,
-                        decoration: BoxDecoration(
-                          color: kBackground,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: kBorder),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _TactileButton(
-                              onTap: () => onQtyChange(-1),
-                              child: Align(
-                                alignment: Alignment.center,
-                                child: SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: Icon(
-                                    Icons.remove,
-                                    size: 20,
-                                    color: kTextCharcoal,
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          QuantityStepButton(
+                            onTap: () => onQtyChange(-1),
+                            icon: Icons.remove,
+                            semanticLabel: 'Decrease quantity',
+                          ),
+                          Semantics(
+                            button: true,
+                            label: 'Edit quantity, ${_formatQty(item.qty)}',
+                            child: TactileButton(
+                              onTap: onQtyEdit,
+                              child: SizedBox(
+                                width: 52,
+                                height: 44,
+                                child: Center(
+                                  child: Text(
+                                    _formatQty(item.qty),
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13,
+                                      color: kTextCharcoal,
+                                    ),
                                   ),
                                 ),
                               ),
                             ),
-                            Container(
-                              width: 52,
-                              alignment: Alignment.center,
-                              child: Text(
-                                _formatQty(item.qty),
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 13,
-                                  color: kTextCharcoal,
-                                ),
-                              ),
-                            ),
-                            _TactileButton(
-                              onTap: () => onQtyChange(1),
-                              child: Align(
-                                alignment: Alignment.center,
-                                child: SizedBox(
-                                  width: 44,
-                                  height: 44,
-                                  child: Icon(
-                                    Icons.add,
-                                    size: 20,
-                                    color: kTextCharcoal,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
+                          ),
+                          QuantityStepButton(
+                            onTap: () => onQtyChange(1),
+                            icon: Icons.add,
+                            semanticLabel: 'Increase quantity',
+                          ),
+                        ],
                       ),
                       const SizedBox(width: 8),
                       GestureDetector(
@@ -3397,7 +3421,7 @@ class _AddItemSheetState extends State<_AddItemSheet>
                                 children: [
                                   IconButton(
                                     onPressed: () => setState(
-                                      () => _qty = _stepQty(_qty, -1, _unit),
+                                      () => _qty = stepQty(_qty, -1, _unit),
                                     ),
                                     icon: Icon(
                                       Icons.remove,
@@ -3422,7 +3446,7 @@ class _AddItemSheetState extends State<_AddItemSheet>
                                   ),
                                   IconButton(
                                     onPressed: () => setState(
-                                      () => _qty = _stepQty(_qty, 1, _unit),
+                                      () => _qty = stepQty(_qty, 1, _unit),
                                     ),
                                     icon: Icon(
                                       Icons.add,

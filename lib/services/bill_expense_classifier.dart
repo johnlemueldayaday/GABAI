@@ -3,7 +3,9 @@ String? billLabelForExpense(String text) {
   if (normalized.isEmpty) return null;
 
   if (normalized.contains('water')) return 'Water';
-  if (normalized.contains('aneco')) return 'ANECO Electricity';
+  if (normalized.contains('aneco')) return 'Aneco';
+  if (normalized.contains('meralco')) return 'Meralco';
+  if (normalized.contains('cepalco')) return 'Electricity';
   if (RegExp(r'\b(?:electricity|electric|power)\b').hasMatch(normalized)) {
     return 'Electricity';
   }
@@ -33,6 +35,39 @@ String? billLabelForExpense(String text) {
 
   return null;
 }
+
+String cleanBillName(String text) {
+  var name = text
+      .replaceAll(RegExp(r'^Bill\s+Paid\s*:\s*', caseSensitive: false), '')
+      .replaceAll(RegExp(r'^Received\s*:\s*', caseSensitive: false), '')
+      .replaceAll(RegExp(r'\bbill(s)?\b', caseSensitive: false), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  final lower = name.toLowerCase();
+  if (lower.contains('aneco')) return 'Aneco';
+  if (lower.contains('meralco')) return 'Meralco';
+  if (lower.contains('cepalco')) return 'Cepalco';
+  if (RegExp(r'\b(?:electricity|electric|power)\b').hasMatch(lower)) {
+    return 'Electricity';
+  }
+  if (lower.contains('netflix')) return 'Netflix';
+  if (lower.contains('spotify')) return 'Spotify';
+  if (lower.contains('subscription')) return 'Subscription';
+  if (lower.isEmpty) return 'Bill';
+  return name;
+}
+
+bool isPaidBillTransaction(String category, String description) =>
+    RegExp(
+      r'\b(?:Bill\s+)?Paid\s*:',
+      caseSensitive: false,
+    ).hasMatch(description) ||
+    RegExp(
+      r'^(?:Bill\s+)?Paid\b',
+      caseSensitive: false,
+    ).hasMatch(description) ||
+    category.trim().toLowerCase() == 'bills';
 
 bool isScheduledBillTransactionCategory(String category) =>
     category.trim().toLowerCase() == 'bills';

@@ -27,6 +27,14 @@ String _testDateText(DateTime date) {
   return '${months[date.month - 1]} ${date.day}';
 }
 
+Future<void> _saveTransferAccounts() async {
+  await FinanceStorage.saveAccounts([
+    Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 2200),
+    Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 9600),
+    Account(id: 'gcash', name: 'GCash', type: 'E-Wallet', balance: 1000),
+  ]);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -78,10 +86,11 @@ void main() {
 
       await assistant.getAsyncGreeting();
       final walletPrompt = await assistant.handle('Yes');
-      expect(
-        walletPrompt.text,
-        'Which wallet did you use to pay for it? Available wallets: Cash, BDO.',
-      );
+      expect(walletPrompt.text, 'Which wallet did you use to pay for it?');
+      expect(walletPrompt.walletChoices.map((wallet) => wallet.name), [
+        'Cash',
+        'BDO',
+      ]);
 
       final confirmation = await assistant.handle('Cash');
       expect(confirmation.text, contains('✅ Payment recorded!'));
@@ -100,6 +109,15 @@ void main() {
       expect(transaction.type, 'EXPENSE');
       expect(transaction.amount, 1200);
       expect((await FinanceStorage.loadAccounts()).first.balance, 1800);
+      expect(confirmation.transactionNotification, isNotNull);
+      expect(
+        confirmation.transactionNotification!.title,
+        'Spent ₱1,200.00 from Cash',
+      );
+      expect(
+        confirmation.transactionNotification!.subtitle,
+        'Your wallet balance is now ₱1,800.00',
+      );
     },
   );
 
@@ -129,8 +147,12 @@ void main() {
     final walletPrompt = await assistant.handle('yes');
     expect(
       walletPrompt.text,
-      'Which wallet did you deposit or transfer it to? Available wallets: Cash, BDO.',
+      'Which wallet did you deposit or transfer it to?',
     );
+    expect(walletPrompt.walletChoices.map((wallet) => wallet.name), [
+      'Cash',
+      'BDO',
+    ]);
 
     final confirmation = await assistant.handle('BDO');
     expect(confirmation.text, contains('✅ Salary received!'));
@@ -146,6 +168,15 @@ void main() {
     final transaction = (await FinanceStorage.loadTransactions()).single;
     expect(transaction.type, 'INCOME');
     expect(transaction.amount, 8000);
+    expect(confirmation.transactionNotification, isNotNull);
+    expect(
+      confirmation.transactionNotification!.title,
+      'Added ₱8,000.00 to BDO',
+    );
+    expect(
+      confirmation.transactionNotification!.subtitle,
+      'Your wallet balance is now ₱10,000.00',
+    );
     expect((await FinanceStorage.loadAccounts()).last.balance, 10000);
   });
 
@@ -169,11 +200,12 @@ void main() {
 
     await assistant.getAsyncGreeting();
     final walletPrompt = await assistant.handle('Yes');
-    expect(
-      walletPrompt.text,
-      'Which wallet did you use to pay for it? Available wallets: Cash, GCash.',
-    );
+    expect(walletPrompt.text, 'Which wallet did you use to pay for it?');
     expect(walletPrompt.quickReplies, ['Cash', 'GCash']);
+    expect(walletPrompt.walletChoices.map((wallet) => wallet.name), [
+      'Cash',
+      'GCash',
+    ]);
 
     final confirmation = await assistant.handle('GCash');
     expect(confirmation.text, contains('was paid from GCash.'));
@@ -274,14 +306,22 @@ void main() {
       final unknownWallet = await assistant.handle('GCash');
       expect(
         unknownWallet.text,
-        "I couldn't find that wallet. Available wallets: Cash, BDO. Which one would you like to use?",
+        "I couldn't find that wallet. Which one would you like to use?",
       );
+      expect(unknownWallet.walletChoices.map((wallet) => wallet.name), [
+        'Cash',
+        'BDO',
+      ]);
 
       final insufficient = await assistant.handle('Cash');
       expect(
         insufficient.text,
         'Your Cash balance is P100.00, which is lower than this bill. Would you like to use another wallet?',
       );
+      expect(insufficient.walletChoices.map((wallet) => wallet.name), [
+        'Cash',
+        'BDO',
+      ]);
 
       final amountQuestion = await assistant.handle('BDO 600');
       expect(
@@ -365,15 +405,15 @@ void main() {
       );
 
       expect(reply.text, contains('💡 Bill Added to Calendar!'));
-      expect(reply.text, contains('Electricity Bill        P-300.00'));
-      expect(reply.text, contains('Date:              $dateText'));
+      expect(reply.text, contains('Electricity\nAmount: -₱ 300.00'));
+      expect(reply.text, contains('Date: $dateText'));
       expect(reply.text, contains('I will remind you on the due date.'));
       expect(reply.highlightColor, 'red');
 
       final events = await FutureEventStorage.loadEvents();
       expect(events, hasLength(1));
       expect(events.single.amount, 300);
-      expect(events.single.description, 'Electricity Bill');
+      expect(events.single.description, 'Electricity');
       expect(
         events.single.scheduledDate,
         DateTime(date.year, date.month, date.day),
@@ -381,7 +421,7 @@ void main() {
 
       final bills = await BillStorage.loadBills();
       expect(bills, hasLength(1));
-      expect(bills.single.type, 'Electricity Bill');
+      expect(bills.single.type, 'Electricity');
       expect(bills.single.isIncome, isFalse);
       expect(bills.single.dueDate, DateTime(date.year, date.month, date.day));
 
@@ -410,15 +450,56 @@ void main() {
     ];
 
     final datePrompt = await assistant.handle('I have electricity bill 300');
-    expect(datePrompt.text, 'When is the Electricity bill due?');
+    expect(datePrompt.text, 'When is the electricity bill due?');
 
     final confirmation = await assistant.handle(
       '${monthNames[date.month - 1]} ${date.day}',
     );
     expect(confirmation.text, contains('💡 Bill Added to Calendar!'));
-    expect(confirmation.text, contains('P-300.00'));
+    expect(confirmation.text, contains('-₱ 300.00'));
     expect(await FutureEventStorage.loadEvents(), hasLength(1));
   });
+
+  test(
+    'upcoming merchant payment asks amount and wallet before saving',
+    () async {
+      await FinanceStorage.saveAccounts([
+        Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
+        Account(id: 'gcash', name: 'GCash', type: 'E-Wallet', balance: 500),
+      ]);
+      final assistant = GabAssistant();
+      final today = DateTime.now();
+
+      final amountPrompt = await assistant.handle('i have an upcoming shopee');
+      expect(amountPrompt.text, 'How much is the shopee bill?');
+
+      final walletPrompt = await assistant.handle('₱250.00');
+      expect(walletPrompt.text, 'Which wallet are you going to use?');
+      expect(walletPrompt.walletChoices.map((wallet) => wallet.name), [
+        'Cash',
+        'GCash',
+      ]);
+
+      final confirmation = await assistant.handle('GCash');
+      expect(confirmation.text, contains('📅 Bill Added to Calendar!'));
+      expect(confirmation.text, contains('shopee\nAmount: -₱ 250.00'));
+      expect(confirmation.text, contains('Wallet: GCash'));
+
+      final events = await FutureEventStorage.loadEvents();
+      expect(events, hasLength(1));
+      expect(events.single.description, 'shopee');
+      expect(events.single.wallet, 'GCash');
+      final tomorrow = DateTime(today.year, today.month, today.day + 1);
+      expect(events.single.scheduledDate, tomorrow);
+
+      final bills = await BillStorage.loadBills();
+      expect(bills.single.type, 'shopee');
+      expect(bills.single.amount, 250);
+      expect(await FinanceStorage.loadTransactions(), isEmpty);
+      final accounts = await FinanceStorage.loadAccounts();
+      expect(accounts.map((account) => account.balance), [1000, 500]);
+    },
+  );
 
   test(
     'bill parser supports labeled entries and treats on-number as date',
@@ -442,12 +523,12 @@ void main() {
         'Bill: electricity, 300, ${monthNames[today.month - 1]} ${today.day}',
       );
       expect(labeledReply.text, contains('💡 Bill Added to Calendar!'));
-      expect(labeledReply.text, contains('P-300.00'));
+      expect(labeledReply.text, contains('-₱ 300.00'));
 
       final noAmountReply = await GabAssistant().handle(
         'I have water bill on ${today.day}',
       );
-      expect(noAmountReply.text, 'How much is the Water bill?');
+      expect(noAmountReply.text, 'How much is the water bill?');
     },
   );
 
@@ -462,8 +543,69 @@ void main() {
       await assistant.handle('cancel');
 
       final amountPrompt = await assistant.handle('Electricity due tomorrow');
-      expect(amountPrompt.text, 'How much is the Electricity bill?');
+      expect(amountPrompt.text, 'How much is the electricity bill?');
       expect(await FutureEventStorage.loadEvents(), isEmpty);
+    },
+  );
+
+  test('day-only bill dates resolve to the next valid occurrence', () async {
+    Future<DateTime> scheduleBill(DateTime now, String dateText) async {
+      final reply = await GabAssistant(
+        clock: () => now,
+      ).handle('I have water bill 100 due $dateText');
+      expect(reply.text, contains('Bill Added to Calendar!'));
+      return (await FutureEventStorage.loadEvents()).last.scheduledDate;
+    }
+
+    expect(
+      await scheduleBill(DateTime(2026, 11, 20), 'on 12th'),
+      DateTime(2026, 12, 12),
+    );
+    expect(
+      await scheduleBill(DateTime(2026, 11, 20), 'on 25th'),
+      DateTime(2026, 11, 25),
+    );
+    expect(
+      await scheduleBill(DateTime(2026, 11, 20), 'on 20th'),
+      DateTime(2026, 11, 20),
+    );
+    expect(
+      await scheduleBill(DateTime(2026, 12, 28), 'due the 5th'),
+      DateTime(2027, 1, 5),
+    );
+    expect(
+      await scheduleBill(DateTime(2026, 1, 31), 'on 30th'),
+      DateTime(2026, 2, 28),
+    );
+  });
+
+  test(
+    'explicit month dates are preserved and weekday dates roll forward',
+    () async {
+      Future<DateTime> scheduleBill(DateTime now, String dateText) async {
+        final reply = await GabAssistant(
+          clock: () => now,
+        ).handle('I have water bill 100 due $dateText');
+        expect(reply.text, contains('Bill Added to Calendar!'));
+        return (await FutureEventStorage.loadEvents()).last.scheduledDate;
+      }
+
+      expect(
+        await scheduleBill(DateTime(2026, 11, 20), 'on Nov 12'),
+        DateTime(2026, 11, 12),
+      );
+      expect(
+        await scheduleBill(DateTime(2026, 11, 20), '12th of december'),
+        DateTime(2026, 12, 12),
+      );
+      expect(
+        await scheduleBill(DateTime(2026, 11, 18), 'on friday'),
+        DateTime(2026, 11, 20),
+      );
+      expect(
+        await scheduleBill(DateTime(2026, 11, 20), 'on friday'),
+        DateTime(2026, 11, 20),
+      );
     },
   );
 
@@ -686,6 +828,105 @@ void main() {
     expect(await FinanceStorage.loadTransactions(), isEmpty);
   });
 
+  test('expense remaining budget ignores transfer transactions', () async {
+    await SettingsService().setDailySpendingAllocation(1000);
+    await FinanceStorage.saveAccounts([
+      Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 10000),
+      Account(id: 'gcash', name: 'GCash', type: 'E-Wallet', balance: 0),
+    ]);
+    final accounts = await FinanceStorage.loadAccounts();
+    await FinanceStorage.transferMoney(
+      fromAccount: accounts.firstWhere((account) => account.id == 'cash'),
+      toAccount: accounts.firstWhere((account) => account.id == 'gcash'),
+      amount: 2500,
+    );
+
+    final assistant = GabAssistant();
+    await assistant.handle('I spent 200');
+    await assistant.handle('Shoes');
+    final confirmation = await assistant.handle('Cash');
+
+    expect(confirmation.text, contains('Remaining today: ₱ 800.00'));
+    final transactions = await FinanceStorage.loadTransactions();
+    expect(transactions, hasLength(2));
+    expect(transactions.first.isTransfer, isTrue);
+    expect(transactions.first.isExpense, isFalse);
+    expect(transactions.first.isIncome, isFalse);
+  });
+
+  test('transfer from BDO to Cash is logged once as a transfer', () async {
+    await _saveTransferAccounts();
+
+    final reply = await GabAssistant().handle('transfer 300 bdo to cash');
+
+    expect(reply.text, contains('Transfer Logged!'));
+    expect(reply.text, isNot(contains('Expense logged!')));
+    final transactions = await FinanceStorage.loadTransactions();
+    expect(transactions, hasLength(1));
+    expect(transactions.single.type, 'TRANSFER');
+    expect(transactions.single.accountName, 'BDO');
+    expect(transactions.single.destinationAccountName, 'Cash');
+
+    final accounts = await FinanceStorage.loadAccounts();
+    expect(accounts.firstWhere((account) => account.id == 'bdo').balance, 9300);
+    expect(
+      accounts.firstWhere((account) => account.id == 'cash').balance,
+      2500,
+    );
+  });
+
+  test(
+    'transfer command aliases and amount-first form are recognized',
+    () async {
+      const commands = [
+        'transmit 300 bdo to cash',
+        'cashout 300 bdo to cash',
+        'move 300 bdo to cash',
+        '300 bdo to cash',
+        'transfer 300 cash to gcash',
+        'transfer 300 gcash to cash',
+      ];
+
+      for (final command in commands) {
+        await _saveTransferAccounts();
+        await FinanceStorage.saveTransactions([]);
+
+        final reply = await GabAssistant().handle(command);
+
+        expect(reply.text, contains('Transfer Logged!'), reason: command);
+        final transactions = await FinanceStorage.loadTransactions();
+        expect(transactions, hasLength(1), reason: command);
+        expect(transactions.single.type, 'TRANSFER', reason: command);
+        if (command.contains('gcash to cash')) {
+          expect(transactions.single.accountName, 'GCash', reason: command);
+        } else if (command.contains('cash to gcash')) {
+          expect(transactions.single.accountName, 'Cash', reason: command);
+        } else {
+          expect(transactions.single.accountName, 'BDO', reason: command);
+        }
+      }
+    },
+  );
+
+  test(
+    'transfer without a destination asks for the wallet and continues',
+    () async {
+      await _saveTransferAccounts();
+      final assistant = GabAssistant();
+
+      final prompt = await assistant.handle('transfer 300 gcash');
+      expect(prompt.text, 'Which account should I transfer to?');
+      expect(prompt.quickReplies, contains('Cash'));
+      expect(await FinanceStorage.loadTransactions(), isEmpty);
+
+      final reply = await assistant.handle('Cash');
+      expect(reply.text, contains('Transfer Logged!'));
+      final transfer = (await FinanceStorage.loadTransactions()).single;
+      expect(transfer.accountName, 'GCash');
+      expect(transfer.destinationAccountName, 'Cash');
+    },
+  );
+
   test(
     'expense flow asks for missing item then wallet and saves once',
     () async {
@@ -700,10 +941,12 @@ void main() {
       expect(itemPrompt.quickReplies, ['❌ Cancel', '🔄 Do Something Else']);
 
       final walletPrompt = await assistant.handle('Shoes');
-      expect(
-        walletPrompt.text,
-        'Which wallet did you spend it from? Available wallets: Cash, BDO.',
-      );
+      expect(walletPrompt.text, 'Which wallet did you spend it from?');
+      expect(walletPrompt.walletChoices.map((wallet) => wallet.name), [
+        'Cash',
+        'BDO',
+      ]);
+      expect(walletPrompt.walletChoices.last.balance, 2000);
       expect(walletPrompt.quickReplies, [
         'Cash',
         'BDO',
@@ -711,16 +954,29 @@ void main() {
       ]);
 
       final confirmation = await assistant.handle('BDO');
-      expect(confirmation.text, contains('✅ Expense logged!\nShoes  P-300.00'));
-      expect(confirmation.text, contains('Wallet: BDO'));
-      expect(confirmation.text, contains('Remaining today: P -127.70'));
-      expect(confirmation.text, endsWith('Anything else?'));
+      expect(
+        confirmation.text,
+        '💸 Expense logged!\n'
+        'Shoes  -₱ 300.00\n'
+        'New BDO balance: ₱1,700.00\n'
+        'Remaining today: ₱ -127.70\n'
+        'Anything else?',
+      );
       expect(confirmation.quickReplies, [
         '➕ Another Expense',
         '💰 Log Income',
         '💼 Check Balance',
         '👍 Done',
       ]);
+      expect(confirmation.transactionNotification, isNotNull);
+      expect(
+        confirmation.transactionNotification!.title,
+        'Spent ₱300.00 from BDO',
+      );
+      expect(
+        confirmation.transactionNotification!.subtitle,
+        'Your wallet balance is now ₱1,700.00',
+      );
       expect(SettingsService().dailySpendingAllocation, 172.30);
 
       final accounts = await FinanceStorage.loadAccounts();
@@ -779,8 +1035,14 @@ void main() {
     expect(balance.text, contains('Your Total Balance:'));
 
     final confirmation = await assistant.handle('BDO');
-    expect(confirmation.text, contains('✅ Expense logged!\nShoes  P-300.00'));
-    expect(confirmation.text, contains('Wallet: BDO'));
+    expect(
+      confirmation.text,
+      contains(
+        '💸 Expense logged!\n'
+        'Shoes  -₱ 300.00\n'
+        'New BDO balance: ₱700.00',
+      ),
+    );
     expect(await FinanceStorage.loadTransactions(), hasLength(1));
     final accounts = await FinanceStorage.loadAccounts();
     expect(accounts.firstWhere((account) => account.id == 'cash').balance, 100);
@@ -832,12 +1094,19 @@ void main() {
       final invalidWallet = await assistant.handle('GCash');
       expect(
         invalidWallet.text,
-        "I couldn't find that wallet. Available wallets: Cash, BDO. Which one would you like to use?",
+        "I couldn't find that wallet. Which one would you like to use?",
       );
+      expect(invalidWallet.walletChoices.map((wallet) => wallet.name), [
+        'Cash',
+        'BDO',
+      ]);
       expect(await FinanceStorage.loadTransactions(), isEmpty);
 
       final confirmation = await assistant.handle('Cash');
-      expect(confirmation.text, contains('Tea  P-250.00'));
+      expect(
+        confirmation.text,
+        contains('Tea  -₱ 250.00\nNew Cash balance: ₱750.00'),
+      );
       expect(await FinanceStorage.loadTransactions(), hasLength(1));
     },
   );
@@ -850,7 +1119,7 @@ void main() {
 
     final reply = await GabAssistant().handle('I spend 90 on wax using cash');
 
-    expect(reply.text, contains('Wax  P-90.00'));
+    expect(reply.text, contains('Wax  -₱ 90.00\nNew Cash balance: ₱910.00'));
     expect(SettingsService().dailySpendingAllocation, 172.30);
   });
 
@@ -892,16 +1161,27 @@ void main() {
       final assistant = GabAssistant();
 
       final walletPrompt = await assistant.handle('I got my salary 8000');
-      expect(
-        walletPrompt.text,
-        'Which wallet did you deposit it to? Available wallets: Cash, BDO.',
-      );
+      expect(walletPrompt.text, 'Which wallet did you deposit it to?');
+      expect(walletPrompt.walletChoices.map((wallet) => wallet.name), [
+        'Cash',
+        'BDO',
+      ]);
 
       final confirmation = await assistant.handle('BDO');
       expect(
         confirmation.text,
-        '✅ Income logged!\nSalary  P +8,000.00\nWallet: BDO',
+        '💵 Income logged!\nSalary  +₱8,000.00\nNew BDO balance: ₱10,000.00',
       );
+      expect(confirmation.transactionNotification, isNotNull);
+      expect(
+        confirmation.transactionNotification!.title,
+        'Added ₱8,000.00 to BDO',
+      );
+      expect(
+        confirmation.transactionNotification!.subtitle,
+        'Your wallet balance is now ₱10,000.00',
+      );
+      expect(confirmation.quickReplies, ['What is my total balance?', 'Help']);
 
       final accounts = await FinanceStorage.loadAccounts();
       expect(
@@ -920,6 +1200,82 @@ void main() {
     },
   );
 
+  test('income from paid debt omits the possessive from its source', () async {
+    await FinanceStorage.saveAccounts([
+      Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
+    ]);
+    final assistant = GabAssistant();
+
+    final walletPrompt = await assistant.handle('Mark paid his debt 2k');
+    expect(walletPrompt.text, 'Which wallet did you deposit it to?');
+
+    final confirmation = await assistant.handle('Cash');
+    expect(
+      confirmation.text,
+      '💵 Income logged!\nMark Debt  +₱2,000.00\nNew Cash balance: ₱3,000.00',
+    );
+    final transactions = await FinanceStorage.loadTransactions();
+    expect(transactions.single.description, 'Mark Debt');
+  });
+
+  test('paying my debt to Lance is logged as an expense', () async {
+    await FinanceStorage.saveAccounts([
+      Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
+    ]);
+    final assistant = GabAssistant();
+
+    final walletPrompt = await assistant.handle('I paid my debt to Lance 100');
+    expect(walletPrompt.text, 'Which wallet did you spend it from?');
+
+    final confirmation = await assistant.handle('Cash');
+    expect(confirmation.text, contains('💸 Expense logged!'));
+    expect(confirmation.text, contains('Lance Debt'));
+    expect(confirmation.text, contains('-₱ 100.00'));
+    expect(confirmation.highlightColor, 'red');
+
+    final transactions = await FinanceStorage.loadTransactions();
+    expect(transactions.single.type, 'EXPENSE');
+    expect(transactions.single.description, 'Lance Debt');
+    expect(transactions.single.amount, 100);
+  });
+
+  test('Lance paying me back is logged as income', () async {
+    await FinanceStorage.saveAccounts([
+      Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
+    ]);
+    final assistant = GabAssistant();
+
+    final walletPrompt = await assistant.handle('Lance paid me back 100');
+    expect(walletPrompt.text, 'Which wallet did you deposit it to?');
+
+    final confirmation = await assistant.handle('Cash');
+    expect(confirmation.text, contains('Income logged'));
+    expect(confirmation.highlightColor, 'green');
+
+    final transaction = (await FinanceStorage.loadTransactions()).single;
+    expect(transaction.type, 'INCOME');
+    expect(transaction.amount, 100);
+    expect(transaction.description, 'Lance Debt');
+  });
+
+  test("income from debt puts the person's name before the reason", () async {
+    await FinanceStorage.saveAccounts([
+      Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
+    ]);
+    final assistant = GabAssistant();
+
+    final walletPrompt = await assistant.handle(
+      'I received 100 debt from Lance',
+    );
+    expect(walletPrompt.text, 'Which wallet did you deposit it to?');
+
+    await assistant.handle('Cash');
+
+    final transaction = (await FinanceStorage.loadTransactions()).single;
+    expect(transaction.description, 'Lance Debt');
+    expect(transaction.category, 'Reimbursement');
+  });
+
   test('income flow asks for a missing amount first', () async {
     await FinanceStorage.saveAccounts([
       Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 1000),
@@ -931,10 +1287,7 @@ void main() {
     expect(amountPrompt.text, 'How much did you receive?');
 
     final walletPrompt = await assistant.handle('8000');
-    expect(
-      walletPrompt.text,
-      'Which wallet did you deposit it to? Available wallets: Cash, BDO.',
-    );
+    expect(walletPrompt.text, 'Which wallet did you deposit it to?');
     expect(await FinanceStorage.loadTransactions(), isEmpty);
   });
 
@@ -950,17 +1303,14 @@ void main() {
     expect(await FinanceStorage.loadTransactions(), isEmpty);
 
     final walletPrompt = await assistant.handle('Allowance');
-    expect(
-      walletPrompt.text,
-      'Which wallet did you deposit it to? Available wallets: Cash, BDO.',
-    );
+    expect(walletPrompt.text, 'Which wallet did you deposit it to?');
 
     final confirmation = await assistant.handle('Cash');
     expect(
       confirmation.text,
-      contains('✅ Income logged!\nAllowance  P +500.00'),
+      contains('💵 Income logged!\nAllowance  +₱500.00'),
     );
-    expect(confirmation.text, contains('Wallet: Cash'));
+    expect(confirmation.text, contains('New Cash balance: ₱1,500.00'));
 
     final accounts = await FinanceStorage.loadAccounts();
     expect(
@@ -980,14 +1330,16 @@ void main() {
     final sourcePrompt = await assistant.handle('Received 500');
     expect(sourcePrompt.text, 'What was this income from?');
     final walletPrompt = await assistant.handle('Salary');
-    expect(
-      walletPrompt.text,
-      'Which wallet did you deposit it to? Available wallets: Cash, BDO, GCash.',
-    );
+    expect(walletPrompt.text, 'Which wallet did you deposit it to?');
     expect(walletPrompt.quickReplies, ['Cash', 'BDO', 'GCash']);
+    expect(walletPrompt.walletChoices.map((wallet) => wallet.name), [
+      'Cash',
+      'BDO',
+      'GCash',
+    ]);
 
     final confirmation = await assistant.handle('GCash');
-    expect(confirmation.text, contains('Wallet: GCash'));
+    expect(confirmation.text, contains('New GCash balance: ₱3,500.00'));
     final transaction = (await FinanceStorage.loadTransactions()).single;
     expect(transaction.description, 'Salary');
     expect(transaction.accountId, 'gcash');
@@ -1041,20 +1393,21 @@ void main() {
       expect(sourcePrompt.text, 'What was this income from?');
 
       final walletPrompt = await assistant.handle('Salary');
-      expect(
-        walletPrompt.text,
-        'Which wallet did you deposit it to? Available wallets: Cash, BDO.',
-      );
+      expect(walletPrompt.text, 'Which wallet did you deposit it to?');
 
       final invalidWallet = await assistant.handle('GCash');
       expect(
         invalidWallet.text,
-        "I couldn't find that wallet. Available wallets: Cash, BDO. Which one would you like to use?",
+        "I couldn't find that wallet. Which one would you like to use?",
       );
+      expect(invalidWallet.walletChoices.map((wallet) => wallet.name), [
+        'Cash',
+        'BDO',
+      ]);
       expect(await FinanceStorage.loadTransactions(), isEmpty);
 
       final confirmation = await assistant.handle('Cash');
-      expect(confirmation.text, contains('✅ Income logged!'));
+      expect(confirmation.text, contains('💵 Income logged!'));
       expect(await FinanceStorage.loadTransactions(), hasLength(1));
     },
   );
@@ -1082,13 +1435,13 @@ void main() {
 
     await assistant.handle('Received 500');
     final walletPrompt = await assistant.handle('I got my salary 8000');
-    expect(
-      walletPrompt.text,
-      'Which wallet did you deposit it to? Available wallets: Cash, BDO.',
-    );
+    expect(walletPrompt.text, 'Which wallet did you deposit it to?');
 
     final confirmation = await assistant.handle('BDO');
-    expect(confirmation.text, contains('Salary  P +8,000.00'));
+    expect(
+      confirmation.text,
+      contains('Salary  +₱8,000.00\nNew BDO balance: ₱10,000.00'),
+    );
     final transactions = await FinanceStorage.loadTransactions();
     expect(transactions, hasLength(1));
     expect(transactions.single.amount, 8000);
@@ -1217,6 +1570,25 @@ void main() {
       expect(await FutureEventStorage.loadEvents(), isEmpty);
     },
   );
+
+  test('balance replies format amounts with separators and cents', () async {
+    await FinanceStorage.saveAccounts([
+      Account(id: 'cash', name: 'Cash', type: 'Cash', balance: 5998.5),
+      Account(id: 'bdo', name: 'BDO', type: 'Bank', balance: 5100),
+      Account(id: 'gcash', name: 'GCash', type: 'E-Wallet', balance: 700),
+    ]);
+    final assistant = GabAssistant();
+
+    final total = await assistant.handle('What is my total balance?');
+    expect(
+      total.text,
+      '💰 Your Total Balance: ₱11,798.50\n\n'
+      'Cash: ₱5,998.50\nBDO: ₱5,100.00\nGCash: ₱700.00',
+    );
+
+    final cash = await assistant.handle('Check Cash balance');
+    expect(cash.text, 'Cash balance: ₱5,998.50');
+  });
 
   test('undo only removes a transaction on the next user message', () async {
     await FinanceStorage.saveAccounts([

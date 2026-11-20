@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:gabay/config/app_theme.dart';
+import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:gabay/widgets/home/sections/sheet_handle.dart';
 import 'package:gabay/widgets/home/tactile_button.dart';
 
@@ -7,10 +8,12 @@ import 'package:gabay/widgets/home/tactile_button.dart';
 class NumericKeypadSheet extends StatefulWidget {
   final double initialValue;
   final String itemName;
+  final String? quantityUnit;
   const NumericKeypadSheet({
     super.key,
     required this.initialValue,
     required this.itemName,
+    this.quantityUnit,
   });
 
   @override
@@ -20,43 +23,65 @@ class NumericKeypadSheet extends StatefulWidget {
 // Manages the numeric keypad display and confirmation behavior.
 class NumericKeypadSheetState extends State<NumericKeypadSheet> {
   String _display = '';
+  bool _replaceInitialQty = false;
 
   @override
   void initState() {
     super.initState();
-    // Start blank as per user request
-    _display = '';
+    _display = widget.quantityUnit == null
+        ? ''
+        : _formatInitialValue(widget.initialValue);
+    _replaceInitialQty = widget.quantityUnit != null;
   }
 
   double get _currentValue => double.tryParse(_display) ?? 0.0;
+  bool get _isQuantity => widget.quantityUnit != null;
+
+  bool get _canConfirm {
+    final unit = widget.quantityUnit;
+    return unit == null ||
+        (_replaceInitialQty && _display.isNotEmpty) ||
+        isValidQty(_currentValue, unit);
+  }
+
+  static String _formatInitialValue(double value) {
+    return value == value.roundToDouble()
+        ? value.toInt().toString()
+        : value.toString();
+  }
 
   void _onDigit(String digit) {
     setState(() {
+      var display = _replaceInitialQty ? '' : _display;
+      _replaceInitialQty = false;
+
       // If empty and typing '.', start with '0.'
-      if (_display.isEmpty && digit == '.') {
+      if (display.isEmpty && digit == '.') {
         _display = '0.';
         return;
       }
       // If display is '0' and typing a non-dot digit, replace it
-      if (_display == '0' && digit != '.') {
+      if (display == '0' && digit != '.') {
         _display = digit;
         return;
       }
       // Only allow one decimal point
-      if (digit == '.' && _display.contains('.')) return;
-      // Limit to 2 decimal places
-      if (_display.contains('.')) {
-        final decimals = _display.split('.').last;
-        if (decimals.length >= 2) return;
+      if (digit == '.' && display.contains('.')) return;
+      final maxDecimalPlaces = _isQuantity ? 3 : 2;
+      if (display.contains('.')) {
+        final decimals = display.split('.').last;
+        if (decimals.length >= maxDecimalPlaces) return;
       }
       // Limit total length
-      if (_display.length >= 10) return;
-      _display += digit;
+      if (display.length >= 10) return;
+      display += digit;
+      _display = display;
     });
   }
 
   void _onBackspace() {
     setState(() {
+      _replaceInitialQty = false;
       if (_display.isNotEmpty) {
         _display = _display.substring(0, _display.length - 1);
       }
@@ -64,10 +89,14 @@ class NumericKeypadSheetState extends State<NumericKeypadSheet> {
   }
 
   void _onClear() {
-    setState(() => _display = '');
+    setState(() {
+      _replaceInitialQty = false;
+      _display = '';
+    });
   }
 
   void _onConfirm() {
+    if (!_canConfirm) return;
     Navigator.pop(context, _currentValue);
   }
 
@@ -95,7 +124,7 @@ class NumericKeypadSheetState extends State<NumericKeypadSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Edit Price',
+                        _isQuantity ? 'Edit Quantity' : 'Edit Price',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -130,7 +159,7 @@ class NumericKeypadSheetState extends State<NumericKeypadSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            // ─── Price Display ───────────────────────
+            // ─── Value Display ───────────────────────
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 20),
               padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
@@ -144,17 +173,19 @@ class NumericKeypadSheetState extends State<NumericKeypadSheet> {
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
-                  Text(
-                    '₱',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
-                      color: kPrimary,
+                  if (!_isQuantity) ...[
+                    Text(
+                      '₱',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w700,
+                        color: kPrimary,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 4),
+                    const SizedBox(width: 4),
+                  ],
                   Text(
-                    _display.isEmpty ? '0.00' : _display,
+                    _display.isEmpty ? (_isQuantity ? '0' : '0.00') : _display,
                     style: TextStyle(
                       fontSize: 40,
                       fontWeight: FontWeight.w800,
@@ -164,9 +195,30 @@ class NumericKeypadSheetState extends State<NumericKeypadSheet> {
                       letterSpacing: -1,
                     ),
                   ),
+                  if (widget.quantityUnit case final unit?) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      unit,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: kMuted,
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
+            if (_isQuantity && !_canConfirm)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  widget.quantityUnit == 'kg'
+                      ? 'Use the available kg increments, or whole kg above 5.'
+                      : 'Enter a whole quantity from 1 to 999.',
+                  style: TextStyle(fontSize: 12, color: kMuted),
+                ),
+              ),
             const SizedBox(height: 20),
             // ─── Keypad Grid ────────────────────────
             Padding(
@@ -217,44 +269,56 @@ class NumericKeypadSheetState extends State<NumericKeypadSheet> {
                   // Confirm button
                   Expanded(
                     flex: 2,
-                    child: TactileButton(
-                      onTap: _onConfirm,
-                      child: Container(
-                        height: 52,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [kPrimary, kPrimaryLight],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: [
-                            BoxShadow(
-                              color: kPrimary.withValues(alpha: 0.25),
-                              offset: const Offset(0, 6),
-                              blurRadius: 12,
-                            ),
-                          ],
-                        ),
-                        child: Center(
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.check_rounded,
-                                color: Colors.white,
-                                size: 20,
+                    child: IgnorePointer(
+                      ignoring: !_canConfirm,
+                      child: Opacity(
+                        opacity: _canConfirm ? 1 : 0.5,
+                        child: Semantics(
+                          button: true,
+                          enabled: _canConfirm,
+                          child: TactileButton(
+                            onTap: _onConfirm,
+                            child: Container(
+                              height: 52,
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  colors: [kPrimary, kPrimaryLight],
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                ),
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: kPrimary.withValues(alpha: 0.25),
+                                    offset: const Offset(0, 6),
+                                    blurRadius: 12,
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              Text(
-                                'Confirm  ₱${_currentValue.toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w700,
+                              child: Center(
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(
+                                      Icons.check_rounded,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      _isQuantity
+                                          ? 'Confirm  $_display ${widget.quantityUnit}'
+                                          : 'Confirm  ₱${_currentValue.toStringAsFixed(2)}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                            ],
+                            ),
                           ),
                         ),
                       ),

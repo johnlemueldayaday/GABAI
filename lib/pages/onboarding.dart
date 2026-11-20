@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../config/app_theme.dart';
+import '../services/notification_service.dart';
 import '../services/settings_service.dart';
 
 // ─────────────────────────────────────────────────────────────
@@ -108,6 +109,11 @@ class _OnboardingModalState extends State<OnboardingModal>
   Future<void> _finishOnboarding() async {
     await SettingsService().setUserName(_nameCtrl.text.trim());
     await SettingsService().setOnboardingComplete(true);
+    if (mounted) {
+      await NotificationService().requestNotificationPermissions(
+        context: context,
+      );
+    }
     widget.onComplete();
   }
 
@@ -210,7 +216,7 @@ class _OnboardingModalState extends State<OnboardingModal>
   double get _pageHeight {
     switch (_page) {
       case 0:
-        return 360;
+        return 220;
       case 1:
         return 360;
       default:

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../pages/dashboard.dart';
 import '../pages/analytics.dart';
@@ -20,6 +19,7 @@ class AppDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Drawer(
+      width: 250,
       backgroundColor: kBackground,
       child: Column(
         children: [
@@ -185,14 +185,6 @@ class AppDrawer extends StatelessWidget {
                   builder: (_) => const SettingsPage(),
                 ),
               );
-            },
-          ),
-          _DrawerItem(
-            icon: Icons.exit_to_app_rounded,
-            label: 'Exit',
-            isSelected: false,
-            onTap: () {
-              SystemNavigator.pop();
             },
           ),
           const SizedBox(height: 16),

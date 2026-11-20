@@ -9,6 +9,7 @@ class BillCalendarService {
     : _plugin = plugin ?? DeviceCalendarPlugin();
 
   static const _referencesKey = 'device_calendar_bill_events';
+  static const _eventFormatVersion = 2;
   final DeviceCalendarPlugin _plugin;
 
   Future<void> syncAllBills(List<Bill> bills) async {
@@ -84,7 +85,6 @@ class BillCalendarService {
         bill.dueDate.year,
         bill.dueDate.month,
         bill.dueDate.day,
-        9,
       );
       final event = Event(
         calendarId,
@@ -92,9 +92,14 @@ class BillCalendarService {
         description:
             '${bill.type} • ₱${bill.amount.toStringAsFixed(2)} • ${bill.frequency}',
         start: start,
-        end: start.add(const Duration(minutes: 15)),
+        end: start,
+        allDay: true,
         recurrenceRule: recurrenceRuleForFrequency(bill.frequency),
-        reminders: [Reminder(minutes: 0)],
+        // All-day alerts use the calendar's configured all-day alert time.
+        reminders: [
+          Reminder(minutes: 0),
+          Reminder(minutes: 7 * 24 * 60),
+        ],
       );
       final result = await _plugin.createOrUpdateEvent(event);
       final eventId = result?.data;
@@ -211,6 +216,7 @@ class BillCalendarService {
   }
 
   String _signature(Bill bill) => jsonEncode([
+    _eventFormatVersion,
     bill.type,
     bill.amount,
     bill.dueDate.toIso8601String(),

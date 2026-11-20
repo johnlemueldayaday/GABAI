@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/services/settings_service.dart';
+import 'package:gabay/services/notification_service.dart';
 import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/price_storage.dart';
@@ -137,6 +138,24 @@ class _SettingsPageState extends State<SettingsPage> {
                     onTap: () {
                       _showWidgetHowToDialog(context);
                     },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // ─── System Notifications ─────────────────────────────────
+              _SectionHeader(
+                title: 'Notifications & Alerts',
+                icon: Icons.notifications_active_outlined,
+              ),
+              _SettingsCard(
+                children: [
+                  _ActionTile(
+                    icon: Icons.notifications_outlined,
+                    label: 'Send Test Notification',
+                    subtitle: 'Test immediate or 3s delayed banner outside app',
+                    iconColor: kPrimary,
+                    onTap: () => _showTestNotificationSheet(context),
                   ),
                 ],
               ),
@@ -285,6 +304,161 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showTestNotificationSheet(BuildContext context) {
+    bool delay3s = true;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Test System Notifications',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: kTextCharcoal,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Trigger a real OS banner. Turn on delay to lock your device or switch to another app first.',
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 13,
+                    color: kMuted,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  activeThumbColor: kPrimary,
+                  title: Text(
+                    '3-Second Delay',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: kTextCharcoal,
+                    ),
+                  ),
+                  subtitle: Text(
+                    'Gives you time to lock or background the app',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12,
+                      color: kMuted,
+                    ),
+                  ),
+                  value: delay3s,
+                  onChanged: (val) => setSheetState(() => delay3s = val),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: kPrimary,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final hasPerm = await NotificationService()
+                          .requestNotificationPermissions(context: context);
+                      if (!hasPerm) return;
+
+                      if (delay3s && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Banner firing in 3s! Swipe to home screen or lock device now.',
+                            ),
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                        await Future.delayed(const Duration(seconds: 3));
+                      }
+
+                      await NotificationService().notifyTransaction(
+                        type: 'EXPENSE',
+                        amount: 99.00,
+                        accountName: 'GCash',
+                        newBalance: 250.60,
+                        accountId: 'gcash_test',
+                      );
+                    },
+                    child: Text(
+                      'Fire Expense Banner (₱99.00 from GCash)',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  height: 48,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: kPrimary,
+                      side: BorderSide(color: kPrimary),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      final hasPerm = await NotificationService()
+                          .requestNotificationPermissions(context: context);
+                      if (!hasPerm) return;
+
+                      if (delay3s && context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text(
+                              'Banner firing in 3s! Swipe to home screen or lock device now.',
+                            ),
+                            duration: Duration(seconds: 3),
+                          ),
+                        );
+                        await Future.delayed(const Duration(seconds: 3));
+                      }
+
+                      await NotificationService().notifyTransaction(
+                        type: 'INCOME',
+                        amount: 5000.00,
+                        accountName: 'BPI',
+                        newBalance: 18786.00,
+                        description: 'Freelance Project',
+                        accountId: 'bpi_test',
+                      );
+                    },
+                    child: Text(
+                      'Fire Income Banner (₱5,000.00 from Freelance)',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

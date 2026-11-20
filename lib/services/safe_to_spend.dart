@@ -36,6 +36,18 @@ int calculateDaysLeft({required DateTime today, required DateTime payday}) {
   return difference >= 0 ? difference + 1 : 0;
 }
 
+double? calculateSuggestedDailyBudget({
+  required double balance,
+  required DateTime today,
+  required DateTime payday,
+}) {
+  if (!balance.isFinite || balance <= 0) return null;
+  final daysUntilPayday =
+      _localDayNumber(payday.toLocal()) - _localDayNumber(today.toLocal());
+  if (daysUntilPayday < 0) return null;
+  return balance / math.max(1, daysUntilPayday);
+}
+
 DateTime nextPayday({
   required DateTime today,
   required PayFrequency frequency,

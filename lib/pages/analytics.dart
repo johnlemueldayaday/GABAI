@@ -14,11 +14,15 @@ import 'package:gabay/widgets/home/home_helpers.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/bill_expense_classifier.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 
 // ─── Enums ────────────────────────────────────────────────────────────────────
 enum _Period { today, week, month, year }
 
 enum _Section { totalSpent, groceryCategory, billsBreakdown, history }
+
+String _formatAnalyticsAmount(double amount) =>
+    NumberFormat('#,##0.00').format(amount);
 
 extension _PeriodX on _Period {
   String get shortLabel {
@@ -211,8 +215,9 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
       (_bills ?? []).where((b) => b.isPaid && _inRange(b.dueDate)).toList();
 
   // ── Stat totals (transactions only – no double counting) ──────────────────
-  double get _totalIncome =>
-      _filteredTxns.where((t) => t.isIncome).fold(0.0, (s, t) => s + t.amount);
+  double get _totalIncome => _filteredTxns
+      .where((t) => t.isIncome && !t.isTransfer)
+      .fold(0.0, (s, t) => s + t.amount);
 
   double get _totalSpent {
     // To ensure exact match with the "Total Spent Breakdown",
@@ -226,9 +231,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
 
     // 1. Add non-grocery expense transactions
     for (final t in _filteredTxns.where(
-      (tx) => tx.isExpense && tx.category != 'Groceries',
+      (tx) => tx.isExpense && !tx.isTransfer && tx.category != 'Groceries',
     )) {
-      final type = t.category.trim().isEmpty ? 'Other' : t.category.trim();
+      final paidBillLabel = isPaidBillTransaction(t.category, t.description)
+          ? (billLabelForExpense('${t.category} ${t.description}') ??
+                cleanBillName(t.description))
+          : null;
+      final type =
+          paidBillLabel ??
+          (t.category.trim().isEmpty ? 'Other' : t.category.trim());
       cats[type] = (cats[type] ?? 0) + t.amount;
     }
 
@@ -295,18 +306,16 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
               Expanded(
                 child: _StatCard(
                   label: 'INCOME',
-                  value: '$_currency${_totalIncome.toStringAsFixed(0)}',
-                  icon: Icons.south_west_rounded,
-                  color: kPrimary,
+                  value: '$_currency${_formatAnalyticsAmount(_totalIncome)}',
+                  iconAsset: 'assets/images/income_logged.png',
                 ),
               ),
               const SizedBox(width: 10),
               Expanded(
                 child: _StatCard(
                   label: 'SPENT',
-                  value: '$_currency${_totalSpent.toStringAsFixed(0)}',
-                  icon: Icons.arrow_outward_rounded,
-                  color: Colors.red,
+                  value: '$_currency${_formatAnalyticsAmount(_totalSpent)}',
+                  iconAsset: 'assets/images/expense_logged.png',
                 ),
               ),
             ],
@@ -367,7 +376,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
     switch (section) {
       case _Section.totalSpent:
         final total = mergedItems.fold(0.0, (a, b) => a + b.amount);
-        subtitle = '$_currency${total.toStringAsFixed(2)}';
+        subtitle = '$_currency${_formatAnalyticsAmount(total)}';
         content = _TotalSpentContent(items: mergedItems, currency: _currency);
         break;
 
@@ -381,7 +390,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           }
         }
         final total = catSpent.values.fold(0.0, (a, b) => a + b);
-        subtitle = '$_currency${total.toStringAsFixed(2)}';
+        subtitle = '$_currency${_formatAnalyticsAmount(total)}';
         content = _CategoryDonutContent(catSpent: catSpent);
         break;
 
@@ -389,12 +398,15 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
         final Map<String, double> billTotals = {};
         for (final b in filteredBills) {
           if (b.isIncome) continue;
-          final t = b.type.trim().isEmpty ? 'Other' : b.type.trim();
+          final t = billLabelForExpense(b.type) ?? cleanBillName(b.type).trim();
+          if (t.isEmpty) continue;
           billTotals[t] = (billTotals[t] ?? 0) + b.amount;
         }
         for (final transaction in _filteredTxns.where(
           (tx) =>
-              tx.isExpense && !isScheduledBillTransactionCategory(tx.category),
+              tx.isExpense &&
+              !tx.isTransfer &&
+              !isPaidBillTransaction(tx.category, tx.description),
         )) {
           final label = billLabelForExpense(
             '${transaction.category} ${transaction.description}',
@@ -404,7 +416,7 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
           }
         }
         final total = billTotals.values.fold(0.0, (a, b) => a + b);
-        subtitle = '$_currency${total.toStringAsFixed(2)}';
+        subtitle = '$_currency${_formatAnalyticsAmount(total)}';
         content = _BillsContent(billTotals: billTotals);
         break;
 
@@ -539,7 +551,7 @@ class _PeriodToggle extends StatelessWidget {
                 color: Colors.black.withValues(alpha: 0.05),
                 blurRadius: 10,
                 offset: const Offset(0, 4),
-              )
+              ),
             ],
           ),
           child: ClipRRect(
@@ -584,7 +596,9 @@ class _PeriodToggle extends StatelessWidget {
                               duration: const Duration(milliseconds: 300),
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 13,
-                                fontWeight: sel ? FontWeight.w800 : FontWeight.w600,
+                                fontWeight: sel
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
                                 color: sel ? Colors.white : kMuted,
                               ),
                               child: Text(p.shortLabel),
@@ -607,13 +621,11 @@ class _PeriodToggle extends StatelessWidget {
 // ─── Stat Card ────────────────────────────────────────────────────────────────
 class _StatCard extends StatelessWidget {
   final String label, value;
-  final IconData icon;
-  final Color color;
+  final String iconAsset;
   const _StatCard({
     required this.label,
     required this.value,
-    required this.icon,
-    required this.color,
+    required this.iconAsset,
   });
 
   @override
@@ -627,14 +639,7 @@ class _StatCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, size: 16, color: color),
-          ),
+          Image.asset(iconAsset, width: 32, height: 32, fit: BoxFit.contain),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -697,7 +702,7 @@ class _TotalSpentContent extends StatelessWidget {
               ),
             ),
             Text(
-              '$currency${grandTotal.toStringAsFixed(2)}',
+              '$currency${_formatAnalyticsAmount(grandTotal)}',
               style: GoogleFonts.plusJakartaSans(
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
@@ -742,7 +747,7 @@ class _TotalSpentContent extends StatelessWidget {
                       ),
                     ),
                     Text(
-                      '$currency${item.amount.toStringAsFixed(2)}',
+                      '$currency${_formatAnalyticsAmount(item.amount)}',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
@@ -845,7 +850,7 @@ class _CategoryDonutContent extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    '₱${total.toStringAsFixed(0)}',
+                    '₱${_formatAnalyticsAmount(total)}',
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -908,7 +913,7 @@ class _CategoryDonutContent extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '₱${sorted[i].value.toStringAsFixed(0)}',
+                      '₱${_formatAnalyticsAmount(sorted[i].value)}',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -969,7 +974,7 @@ class _BillsContent extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
-                        '₱${total.toStringAsFixed(0)}',
+                        '₱${_formatAnalyticsAmount(total)}',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
@@ -1069,7 +1074,7 @@ class _BillsContent extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '₱${e.value.toStringAsFixed(0)}',
+                        '₱${_formatAnalyticsAmount(e.value)}',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
@@ -1236,7 +1241,7 @@ class _HistoryContentState extends State<_HistoryContent> {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       Text(
-                        '₱${total.toStringAsFixed(2)}',
+                        '₱${_formatAnalyticsAmount(total)}',
                         style: GoogleFonts.plusJakartaSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w800,
@@ -1378,7 +1383,7 @@ class _HistoryBreakdownSheet extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Text(
-                            '₱${totalSpend.toStringAsFixed(0)}',
+                            '₱${_formatAnalyticsAmount(totalSpend)}',
                             style: GoogleFonts.plusJakartaSans(
                               fontSize: 28,
                               fontWeight: FontWeight.w800,
@@ -1549,7 +1554,7 @@ class _CategoryBreakdownItemState extends State<_CategoryBreakdownItem> {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      '₱${widget.spent.toStringAsFixed(2)}',
+                      '₱${_formatAnalyticsAmount(widget.spent)}',
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
@@ -1645,7 +1650,7 @@ class _CategoryBreakdownItemState extends State<_CategoryBreakdownItem> {
                         ),
                       ),
                       Text(
-                        '₱${getItemTotal(item.price, item.qty, item.unit).toStringAsFixed(2)}',
+                        '₱${_formatAnalyticsAmount(getItemTotal(item.price, item.qty, item.unit))}',
                         style: TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w700,

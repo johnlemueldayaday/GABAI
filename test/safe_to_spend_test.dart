@@ -2,6 +2,25 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gabay/services/safe_to_spend.dart';
 
 void main() {
+  test('suggested budget divides balance by days until payday', () {
+    expect(
+      calculateSuggestedDailyBudget(
+        balance: 10000,
+        today: DateTime(2026, 11, 18),
+        payday: DateTime(2026, 11, 30),
+      ),
+      closeTo(10000 / 12, 0.001),
+    );
+    expect(
+      calculateSuggestedDailyBudget(
+        balance: 10000,
+        today: DateTime(2026, 11, 30),
+        payday: DateTime(2026, 11, 30),
+      ),
+      10000,
+    );
+  });
+
   test('uses surplus balance for today', () {
     final result = SafeToSpend.calculate(
       balance: 8000,

@@ -257,6 +257,23 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
     GroceryStorage.saveAll();
   }
 
+  void _editQty(GroceryItem item) async {
+    final result = await showModalBottomSheet<double>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => NumericKeypadSheet(
+        initialValue: item.qty,
+        itemName: item.name,
+        quantityUnit: item.unit,
+      ),
+    );
+    if (result != null) {
+      setState(() => item.qty = result);
+      GroceryStorage.saveAll();
+    }
+  }
+
   void _editPrice(GroceryItem item) async {
     final result = await showModalBottomSheet<double>(
       context: context,
@@ -529,6 +546,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         onToggleItem: _toggleItem,
         onDeleteItem: _deleteItem,
         onChangeQty: _changeQty,
+        onEditQty: _editQty,
         onEditPrice: _editPrice,
         onEditUnit: _showUnitPicker,
         onEditItemName: _editItemName,

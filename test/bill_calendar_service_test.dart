@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:device_calendar/device_calendar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -81,7 +83,16 @@ void main() {
       final event = createCalls.single.arguments as Map<dynamic, dynamic>;
       expect(event['calendarId'], 'default-calendar');
       expect(event['eventTitle'], 'Bill: Rent');
-      expect(event['eventStartDate'], isNotNull);
+      expect(event['eventDescription'], 'Rent • ₱1200.00 • Monthly');
+      expect(event['eventAllDay'], true);
+      final start = DateTime.fromMillisecondsSinceEpoch(
+        event['eventStartDate'] as int,
+      );
+      final end = DateTime.fromMillisecondsSinceEpoch(
+        event['eventEndDate'] as int,
+      );
+      expect(start, DateTime(2026, 11, 1));
+      expect(end, start);
       expect(
         (event['recurrenceRule']
             as Map<dynamic, dynamic>)['recurrenceFrequency'],
@@ -89,9 +100,51 @@ void main() {
       );
       expect(event['reminders'], [
         {'minutes': 0},
+        {'minutes': 10080},
       ]);
     },
   );
+
+  test('replaces existing timed calendar events with all-day reminders', () async {
+    final bill = Bill(
+      id: 'rent',
+      type: 'Rent',
+      amount: 1200,
+      dueDate: DateTime(2026, 11, 1),
+      frequency: 'Monthly',
+    );
+    SharedPreferences.setMockInitialValues({
+      'device_calendar_bill_events': jsonEncode({
+        'rent': {
+          'calendarId': 'default-calendar',
+          'eventId': 'old-event-id',
+          'signature': jsonEncode([
+            bill.type,
+            bill.amount,
+            bill.dueDate.toIso8601String(),
+            bill.frequency,
+            bill.isIncome,
+          ]),
+        },
+      }),
+    });
+
+    await BillCalendarService(plugin: plugin).syncBill(bill);
+
+    expect(
+      calls.where((call) => call.method == 'deleteEvent'),
+      hasLength(1),
+    );
+    final createCall = calls.singleWhere(
+      (call) => call.method == 'createOrUpdateEvent',
+    );
+    final event = createCall.arguments as Map<dynamic, dynamic>;
+    expect(event['eventAllDay'], true);
+    expect(event['reminders'], [
+      {'minutes': 0},
+      {'minutes': 10080},
+    ]);
+  });
 
   test('paid recurring bill removes only its due-date occurrence', () async {
     final service = BillCalendarService(plugin: plugin);

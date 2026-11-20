@@ -2,11 +2,26 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:intl/intl.dart';
 import '../config/app_theme.dart';
 import '../navigation/app_routes.dart';
+import '../models/finance_models.dart';
 import '../services/gab_assistant.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/account_icon.dart';
 import '../pages/cart.dart';
+
+const _quickReplyStarterPhrases = {
+  'Income': 'I received ',
+  'Expense': 'I spent ',
+  'Upcoming Bill': 'I have an upcoming ',
+};
+
+const _quickReplyIcons = {
+  'Expense': 'assets/images/expense_logged.png',
+  'Income': 'assets/images/income_logged.png',
+  'Upcoming Bill': 'assets/images/events_logged.png',
+};
 
 class GabChatPage extends StatefulWidget {
   const GabChatPage({super.key});
@@ -30,8 +45,10 @@ class _GabChatPageState extends State<GabChatPage> {
   static final GabAssistant _assistant = GabAssistant();
   static final List<_GabChatMessage> _savedMessages = [];
   static List<String> _savedQuickReplies = [];
+  static List<Account> _savedWalletChoices = [];
 
   final TextEditingController _controller = TextEditingController();
+  final FocusNode _inputFocusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
   final Random _random = Random();
 
@@ -44,6 +61,11 @@ class _GabChatPageState extends State<GabChatPage> {
   Timer? _typingTimer;
 
   bool get _hasStartedChat => _savedMessages.any((message) => message.isUser);
+
+  bool get _lastMessageIsIncomeConfirmation =>
+      _savedMessages.isNotEmpty &&
+      !_savedMessages.last.isUser &&
+      _savedMessages.last.text.startsWith('💵 Income logged!');
 
   @override
   void initState() {
@@ -64,6 +86,7 @@ class _GabChatPageState extends State<GabChatPage> {
         }
       }
       _savedQuickReplies = g.quickReplies;
+      _savedWalletChoices = g.walletChoices;
     });
     _scrollToBottom();
   }
@@ -73,8 +96,23 @@ class _GabChatPageState extends State<GabChatPage> {
     _replyTimer?.cancel();
     _typingTimer?.cancel();
     _controller.dispose();
+    _inputFocusNode.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _onQuickReplyTapped(String reply) {
+    final starterPhrase = _quickReplyStarterPhrases[reply];
+    if (starterPhrase == null) {
+      _send(reply);
+      return;
+    }
+
+    _controller.value = TextEditingValue(
+      text: starterPhrase,
+      selection: TextSelection.collapsed(offset: starterPhrase.length),
+    );
+    _inputFocusNode.requestFocus();
   }
 
   Future<void> _send([String? value]) async {
@@ -87,6 +125,7 @@ class _GabChatPageState extends State<GabChatPage> {
     setState(() {
       _savedMessages.add(_GabChatMessage(text: text, isUser: true));
       _savedQuickReplies = [];
+      _savedWalletChoices = [];
     });
     _scrollToBottom();
     _startTyping();
@@ -121,6 +160,7 @@ class _GabChatPageState extends State<GabChatPage> {
           }
         }
         _savedQuickReplies = reply.quickReplies;
+        _savedWalletChoices = reply.walletChoices;
       });
       _scrollToBottom();
 
@@ -158,6 +198,7 @@ class _GabChatPageState extends State<GabChatPage> {
           }
         }
         _savedQuickReplies = g.quickReplies;
+        _savedWalletChoices = g.walletChoices;
       });
       _scrollToBottom();
     } finally {
@@ -199,6 +240,13 @@ class _GabChatPageState extends State<GabChatPage> {
 
   @override
   Widget build(BuildContext context) {
+    final walletNames = _savedWalletChoices
+        .map((wallet) => wallet.name)
+        .toSet();
+    final actionQuickReplies = _savedQuickReplies
+        .where((reply) => !walletNames.contains(reply))
+        .toList();
+
     return Scaffold(
       backgroundColor: kBackground,
       appBar: AppBar(
@@ -247,7 +295,7 @@ class _GabChatPageState extends State<GabChatPage> {
                       const SizedBox(width: 6),
                       Flexible(
                         child: Text(
-                          'GAB • Assistant',
+                          'Chat Assistant',
                           overflow: TextOverflow.ellipsis,
                           style: GoogleFonts.plusJakartaSans(
                             color: kMuted,
@@ -306,11 +354,24 @@ class _GabChatPageState extends State<GabChatPage> {
               },
             ),
           ),
-          if (!_isTyping && !_hasStartedChat && _savedQuickReplies.isNotEmpty)
-            _QuickRepliesWidget(replies: _savedQuickReplies, onTap: _send),
+          if (!_isTyping && _savedWalletChoices.isNotEmpty)
+            WalletQuickRepliesWidget(
+              wallets: _savedWalletChoices,
+              onTap: _send,
+            ),
+          if (!_isTyping &&
+              actionQuickReplies.isNotEmpty &&
+              (!_hasStartedChat ||
+                  _savedWalletChoices.isNotEmpty ||
+                  _lastMessageIsIncomeConfirmation))
+            _QuickRepliesWidget(
+              replies: actionQuickReplies,
+              onTap: _onQuickReplyTapped,
+            ),
           const SizedBox(height: 8),
           _ComposerWidget(
             controller: _controller,
+            focusNode: _inputFocusNode,
             isEnabled: !_isTyping,
             onSend: _send,
           ),
@@ -347,6 +408,93 @@ class _TypingWidget extends StatelessWidget {
             fontWeight: FontWeight.w600,
           ),
         ),
+      ),
+    );
+  }
+}
+
+class WalletQuickRepliesWidget extends StatelessWidget {
+  final List<Account> wallets;
+  final ValueChanged<String> onTap;
+
+  const WalletQuickRepliesWidget({
+    super.key,
+    required this.wallets,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final formatter = NumberFormat('#,##0.00', 'en_US');
+
+    return SizedBox(
+      height: 66,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        scrollDirection: Axis.horizontal,
+        itemCount: wallets.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final wallet = wallets[index];
+          final balance = formatter.format(wallet.balance);
+          return Semantics(
+            button: true,
+            label: 'Choose ${wallet.name}, balance ₱$balance',
+            child: Material(
+              color: kCardBg,
+              borderRadius: BorderRadius.circular(14),
+              child: InkWell(
+                onTap: () => onTap(wallet.name),
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  constraints: const BoxConstraints(minWidth: 140),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: kBorder),
+                    boxShadow: [kShadowSoft],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      AccountIconImage(
+                        name: wallet.name,
+                        icon: wallet.icon,
+                        size: 28,
+                      ),
+                      const SizedBox(width: 9),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            wallet.name,
+                            style: GoogleFonts.plusJakartaSans(
+                              color: kMuted,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            '₱$balance',
+                            style: GoogleFonts.plusJakartaSans(
+                              color: kTextCharcoal,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
       ),
     );
   }
@@ -556,29 +704,43 @@ class _QuickRepliesWidget extends StatelessWidget {
             .map(
               (r) => Padding(
                 padding: const EdgeInsets.only(bottom: 8),
-                child: Material(
-                  color: kCardBg,
-                  borderRadius: BorderRadius.circular(16),
-                  child: InkWell(
-                    onTap: () => onTap(r),
+                child: Semantics(
+                  button: true,
+                  label: r,
+                  child: Material(
+                    color: kCardBg,
                     borderRadius: BorderRadius.circular(16),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 10,
-                      ),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        color: kCardBg,
-                        border: Border.all(color: kBorder),
-                        boxShadow: [kShadowSoft],
-                      ),
-                      child: Text(
-                        r,
-                        style: GoogleFonts.plusJakartaSans(
-                          color: kPrimary,
-                          fontSize: 13,
-                          fontWeight: FontWeight.bold,
+                    child: InkWell(
+                      onTap: () => onTap(r),
+                      borderRadius: BorderRadius.circular(16),
+                      child: Container(
+                        constraints: const BoxConstraints(minHeight: 44),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(16),
+                          color: kCardBg,
+                          border: Border.all(color: kBorder),
+                          boxShadow: [kShadowSoft],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (_quickReplyIcons[r] case final icon?) ...[
+                              Image.asset(icon, width: 22, height: 22),
+                              const SizedBox(width: 8),
+                            ],
+                            Text(
+                              r,
+                              style: GoogleFonts.plusJakartaSans(
+                                color: kPrimary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -594,10 +756,12 @@ class _QuickRepliesWidget extends StatelessWidget {
 
 class _ComposerWidget extends StatelessWidget {
   final TextEditingController controller;
+  final FocusNode focusNode;
   final bool isEnabled;
   final VoidCallback onSend;
   const _ComposerWidget({
     required this.controller,
+    required this.focusNode,
     required this.isEnabled,
     required this.onSend,
   });
@@ -617,6 +781,7 @@ class _ComposerWidget extends StatelessWidget {
             Expanded(
               child: TextField(
                 controller: controller,
+                focusNode: focusNode,
                 enabled: isEnabled,
                 minLines: 1,
                 maxLines: 4,

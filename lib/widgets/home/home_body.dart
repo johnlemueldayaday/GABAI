@@ -25,6 +25,7 @@ class HomeBody extends StatelessWidget {
   final void Function(GroceryItem item) onToggleItem;
   final void Function(GroceryItem item) onDeleteItem;
   final void Function(GroceryItem item, int delta) onChangeQty;
+  final void Function(GroceryItem item) onEditQty;
   final void Function(GroceryItem item) onEditPrice;
   final void Function(GroceryItem item) onEditUnit;
   final void Function(GroceryItem item) onEditItemName;
@@ -49,6 +50,7 @@ class HomeBody extends StatelessWidget {
     required this.onToggleItem,
     required this.onDeleteItem,
     required this.onChangeQty,
+    required this.onEditQty,
     required this.onEditPrice,
     required this.onEditUnit,
     required this.onEditItemName,
@@ -106,6 +108,7 @@ class HomeBody extends StatelessWidget {
                     onToggle: onToggleItem,
                     onDelete: onDeleteItem,
                     onQtyChange: onChangeQty,
+                    onQtyEdit: onEditQty,
                     onPriceEdit: onEditPrice,
                     onUnitEdit: onEditUnit,
                     onNameEdit: onEditItemName,
@@ -119,6 +122,7 @@ class HomeBody extends StatelessWidget {
                   onToggle: onToggleItem,
                   onDelete: onDeleteItem,
                   onQtyChange: onChangeQty,
+                  onQtyEdit: onEditQty,
                   onPriceEdit: onEditPrice,
                   onUnitEdit: onEditUnit,
                 ),

@@ -11,6 +11,7 @@ class GroceryListSection extends StatelessWidget {
   final void Function(GroceryItem item) onToggle;
   final void Function(GroceryItem item) onDelete;
   final void Function(GroceryItem item, int delta) onQtyChange;
+  final void Function(GroceryItem item) onQtyEdit;
   final void Function(GroceryItem item) onPriceEdit;
   final void Function(GroceryItem item) onUnitEdit;
   final void Function(GroceryItem item)? onNameEdit;
@@ -23,6 +24,7 @@ class GroceryListSection extends StatelessWidget {
     required this.onToggle,
     required this.onDelete,
     required this.onQtyChange,
+    required this.onQtyEdit,
     required this.onPriceEdit,
     required this.onUnitEdit,
     this.onNameEdit,
@@ -56,6 +58,7 @@ class GroceryListSection extends StatelessWidget {
                 onToggle: () => onToggle(item),
                 onDelete: () => onDelete(item),
                 onQtyChange: (delta) => onQtyChange(item, delta),
+                onQtyEdit: () => onQtyEdit(item),
                 onPriceEdit: () => onPriceEdit(item),
                 onUnitEdit: () => onUnitEdit(item),
                 onNameEdit: onNameEdit == null ? null : () => onNameEdit!(item),

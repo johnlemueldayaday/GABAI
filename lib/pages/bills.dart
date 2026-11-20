@@ -6,12 +6,15 @@ import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../config/app_theme.dart';
 import '../widgets/app_drawer.dart';
+import '../widgets/gab_picker_sheet.dart';
 import '../models/bill_models.dart';
 import '../models/finance_models.dart';
 import '../services/bill_storage.dart';
 import '../services/bill_calendar_service.dart';
 import '../services/finance_storage.dart';
 import '../services/notification_service.dart';
+import '../services/future_event_storage.dart';
+import '../services/bill_expense_classifier.dart';
 import '../services/safe_to_spend.dart';
 
 class BillsPage extends StatefulWidget {
@@ -51,12 +54,8 @@ class _BillsPageState extends State<BillsPage> {
     if (widget.initialSelectedBillId != null) {
       final bill = bills.firstWhere(
         (b) => b.id == widget.initialSelectedBillId,
-        orElse: () => Bill(
-          id: '',
-          type: '',
-          amount: 0,
-          dueDate: DateTime.now(),
-        ),
+        orElse: () =>
+            Bill(id: '', type: '', amount: 0, dueDate: DateTime.now()),
       );
       if (bill.id.isNotEmpty) {
         setState(() {
@@ -120,6 +119,7 @@ class _BillsPageState extends State<BillsPage> {
   Future<void> _markBillAsPaid(Bill bill, [Account? chosenAccount]) async {
     final accounts = await FinanceStorage.loadAccounts();
     Account? targetAccount = chosenAccount;
+    final cleanName = cleanBillName(bill.type);
 
     if (targetAccount == null && accounts.isNotEmpty) {
       if (accounts.length > 1 && mounted) {
@@ -141,22 +141,40 @@ class _BillsPageState extends State<BillsPage> {
 
     if (targetAccount != null) {
       final txn = FinanceTransaction(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        id: 'bill_${bill.id}_${bill.dueDate.year}${bill.dueDate.month}${bill.dueDate.day}',
         amount: bill.amount,
         accountId: targetAccount.id,
         accountName: targetAccount.name,
         type: bill.isIncome ? 'INCOME' : 'EXPENSE',
-        category: bill.type,
-        description: bill.isIncome ? 'Received: ${bill.type}' : 'Bill Paid: ${bill.type}',
+        category: cleanName,
+        description: bill.isIncome
+            ? 'Received: $cleanName'
+            : 'Paid: $cleanName',
         date: DateTime.now(),
       );
       try {
-        await FinanceStorage.addTransaction(txn);
+        final existingTransactions = await FinanceStorage.loadTransactions();
+        final today = DateTime.now();
+        final alreadyLogged = existingTransactions.any(
+          (existing) =>
+              existing.id == txn.id ||
+              (existing.type == txn.type &&
+                  existing.accountId == txn.accountId &&
+                  existing.amount == txn.amount &&
+                  (existing.description == txn.description ||
+                      cleanBillName(existing.description) == cleanName) &&
+                  existing.date.year == today.year &&
+                  existing.date.month == today.month &&
+                  existing.date.day == today.day),
+        );
+        if (!alreadyLogged) {
+          await FinanceStorage.addTransaction(txn);
+        }
       } catch (e) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not deduct balance: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not deduct balance: $e')));
         return;
       }
     }
@@ -165,12 +183,37 @@ class _BillsPageState extends State<BillsPage> {
     Bill? updatedBill;
     if (idx != -1) {
       setState(() {
-        updatedBill = _allBills[idx].copyWith(isPaid: true);
+        updatedBill = _allBills[idx].copyWith(type: cleanName, isPaid: true);
         _allBills[idx] = updatedBill!;
       });
       await _saveData();
     }
     if (updatedBill != null) await _syncBillReminders(updatedBill!);
+
+    if (!bill.isIncome) {
+      final events = await FutureEventStorage.loadEvents();
+      final eventId = bill.id.startsWith('future_')
+          ? bill.id.substring('future_'.length)
+          : null;
+      final matchingIndex = events.indexWhere(
+        (event) =>
+            (eventId != null && event.id == eventId) ||
+            (cleanBillName(event.description) == cleanName &&
+                event.scheduledDate.year == bill.dueDate.year &&
+                event.scheduledDate.month == bill.dueDate.month &&
+                event.scheduledDate.day == bill.dueDate.day),
+      );
+      if (matchingIndex != -1) {
+        await FutureEventStorage.updateEvent(
+          events[matchingIndex].copyWith(
+            isCompleted: true,
+            status: 'paid',
+            wallet: targetAccount?.name,
+            amount: bill.amount,
+          ),
+        );
+      }
+    }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -178,11 +221,11 @@ class _BillsPageState extends State<BillsPage> {
         content: Text(
           targetAccount != null
               ? bill.isIncome
-                  ? '${bill.type} received! ${formatPeso(bill.amount)} added to ${targetAccount.name}.'
-                  : 'Bill paid! ${formatPeso(bill.amount)} deducted from ${targetAccount.name}.'
+                    ? '${bill.type} received! ${formatPeso(bill.amount)} added to ${targetAccount.name}.'
+                    : 'Bill paid! ${formatPeso(bill.amount)} deducted from ${targetAccount.name}.'
               : bill.isIncome
-                  ? '${bill.type} marked as received.'
-                  : 'Bill marked as paid.',
+              ? '${bill.type} marked as received.'
+              : 'Bill marked as paid.',
         ),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -223,7 +266,9 @@ class _BillsPageState extends State<BillsPage> {
         SnackBar(
           content: Text('${bill.type} canceled.'),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
@@ -250,7 +295,9 @@ class _BillsPageState extends State<BillsPage> {
               SnackBar(
                 content: Text('${updatedBill.type} updated.'),
                 behavior: SnackBarBehavior.floating,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
             );
           }
@@ -302,8 +349,12 @@ class _BillsPageState extends State<BillsPage> {
           // Only add to FinanceStorage automatically if date is today or in the past
           final now = DateTime.now();
           final today = DateTime(now.year, now.month, now.day);
-          final billDate = DateTime(newBill.dueDate.year, newBill.dueDate.month, newBill.dueDate.day);
-          
+          final billDate = DateTime(
+            newBill.dueDate.year,
+            newBill.dueDate.month,
+            newBill.dueDate.day,
+          );
+
           if (!billDate.isAfter(today)) {
             final accounts = await FinanceStorage.loadAccounts();
             if (accounts.isNotEmpty) {
@@ -512,21 +563,13 @@ class _BillsPageState extends State<BillsPage> {
               ),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: isIncome
-                          ? kPrimary.withValues(alpha: 0.1)
-                          : Colors.red.withValues(alpha: 0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      isIncome
-                          ? Icons.south_west_rounded
-                          : Icons.arrow_outward_rounded,
-                      color: isIncome ? kPrimary : Colors.red,
-                      size: 18,
-                    ),
+                  Image.asset(
+                    isIncome
+                        ? 'assets/images/income_logged.png'
+                        : 'assets/images/expense_logged.png',
+                    width: 38,
+                    height: 38,
+                    fit: BoxFit.contain,
                   ),
                   const SizedBox(width: 14),
                   Expanded(
@@ -574,11 +617,7 @@ class _BillsPageState extends State<BillsPage> {
                       ],
                     ),
                   ),
-                  Icon(
-                    Icons.chevron_right_rounded,
-                    color: kMuted,
-                    size: 20,
-                  ),
+                  Icon(Icons.chevron_right_rounded, color: kMuted, size: 20),
                 ],
               ),
             ),
@@ -666,109 +705,109 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
               borderRadius: BorderRadius.circular(16),
             ),
             child: Row(
-            children: [
-              Checkbox(
-                value: b.isPaid,
-                onChanged: (val) {
-                  final idx = widget.bills.indexWhere(
-                    (bill) => bill.id == b.id,
-                  );
-                  if (idx != -1) {
-                    setState(() {
-                      widget.bills[idx] = widget.bills[idx].copyWith(
-                        isPaid: val ?? false,
-                      );
-                    });
-                    widget.onTogglePaid(b.id);
-                  }
-                },
-                activeColor: kPrimary,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4),
+              children: [
+                Checkbox(
+                  value: b.isPaid,
+                  onChanged: (val) {
+                    final idx = widget.bills.indexWhere(
+                      (bill) => bill.id == b.id,
+                    );
+                    if (idx != -1) {
+                      setState(() {
+                        widget.bills[idx] = widget.bills[idx].copyWith(
+                          isPaid: val ?? false,
+                        );
+                      });
+                      widget.onTogglePaid(b.id);
+                    }
+                  },
+                  activeColor: kPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(4),
+                  ),
                 ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      b.type,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontWeight: FontWeight.w700,
-                        color: b.isPaid ? kMuted : kTextCharcoal,
-                        decoration: b.isPaid
-                            ? TextDecoration.lineThrough
-                            : null,
-                      ),
-                    ),
-                    Row(
-                      children: [
-                        Text(
-                          _formatSignedBillAmount(b),
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 12,
-                            color: b.isIncome ? kPrimary : Colors.red,
-                            fontWeight: FontWeight.w600,
-                            decoration: b.isPaid
-                                ? TextDecoration.lineThrough
-                                : null,
-                          ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        b.type,
+                        style: GoogleFonts.plusJakartaSans(
+                          fontWeight: FontWeight.w700,
+                          color: b.isPaid ? kMuted : kTextCharcoal,
+                          decoration: b.isPaid
+                              ? TextDecoration.lineThrough
+                              : null,
                         ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: b.isPaid
-                                ? kMuted.withValues(alpha: 0.1)
-                                : kPrimary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            b.frequency,
+                      ),
+                      Row(
+                        children: [
+                          Text(
+                            _formatSignedBillAmount(b),
                             style: GoogleFonts.plusJakartaSans(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              color: b.isPaid ? kMuted : kPrimary,
+                              fontSize: 12,
+                              color: b.isIncome ? kPrimary : Colors.red,
+                              fontWeight: FontWeight.w600,
+                              decoration: b.isPaid
+                                  ? TextDecoration.lineThrough
+                                  : null,
                             ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ],
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: b.isPaid
+                                  ? kMuted.withValues(alpha: 0.1)
+                                  : kPrimary.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              b.frequency,
+                              style: GoogleFonts.plusJakartaSans(
+                                fontSize: 9,
+                                fontWeight: FontWeight.w700,
+                                color: b.isPaid ? kMuted : kPrimary,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              IconButton(
-                icon: const Icon(
-                  Icons.delete_outline,
-                  color: Colors.red,
-                  size: 20,
-                ),
-                onPressed: () {
-                  final idx = widget.bills.indexWhere(
-                    (bill) => bill.id == b.id,
-                  );
-                  if (idx != -1) {
-                    final removedBill = widget.bills.removeAt(idx);
-                    _listKey.currentState?.removeItem(
-                      idx,
-                      (context, animation) =>
-                          _buildBillItem(removedBill, animation),
-                      duration: const Duration(milliseconds: 400),
+                IconButton(
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: Colors.red,
+                    size: 20,
+                  ),
+                  onPressed: () {
+                    final idx = widget.bills.indexWhere(
+                      (bill) => bill.id == b.id,
                     );
-                    widget.onDelete(b.id);
-                    setState(() {});
-                  }
-                },
-              ),
-            ],
-            ),   // Row
-          ),     // Container
-        ),       // GestureDetector
-      ),         // FadeTransition
-    );           // SlideTransition
+                    if (idx != -1) {
+                      final removedBill = widget.bills.removeAt(idx);
+                      _listKey.currentState?.removeItem(
+                        idx,
+                        (context, animation) =>
+                            _buildBillItem(removedBill, animation),
+                        duration: const Duration(milliseconds: 400),
+                      );
+                      widget.onDelete(b.id);
+                      setState(() {});
+                    }
+                  },
+                ),
+              ],
+            ), // Row
+          ), // Container
+        ), // GestureDetector
+      ), // FadeTransition
+    ); // SlideTransition
   }
 
   @override
@@ -936,65 +975,53 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedBillType,
-                  dropdownColor: kCardBg,
-                  elevation: 8,
-                  borderRadius: BorderRadius.circular(16),
-                  menuMaxHeight: 336,
-                  icon: Icon(Icons.keyboard_arrow_down_rounded, color: kPrimary),
-                  style: GoogleFonts.plusJakartaSans(color: kTextCharcoal, fontSize: 14, fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    labelText: 'Type/Category',
-                    labelStyle: TextStyle(color: kMuted),
-                    hintText: 'Select or add type',
-                    hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: kBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: kPrimary),
-                    ),
-                  ),
-                  items: [
-                    ...(_isIncomeType
-                            ? predefinedIncomeTypes
-                            : predefinedExpenseTypes)
-                        .map(
-                          (type) =>
-                              DropdownMenuItem(value: type, child: Text(type)),
-                        ),
-                    const DropdownMenuItem(
-                      value: '_custom_',
-                      child: Text('+ Add Custom Type'),
-                    ),
-                  ],
-                  onChanged: (v) => setState(() {
-                    if (v == '_custom_') {
-                      _showCustomInput = true;
-                      _selectedBillType = null;
-                    } else {
-                      _showCustomInput = false;
-                      _selectedBillType = v;
-                      _typeCtrl.clear();
+                _BillsPickerTile(
+                  label: 'Type/Category',
+                  value: _showCustomInput ? '+ Custom type' : _selectedBillType,
+                  hint: 'Select or add type',
+                  onTap: () async {
+                    final types = _isIncomeType
+                        ? predefinedIncomeTypes
+                        : predefinedExpenseTypes;
+                    final picked = await showGabPicker<String>(
+                      context: context,
+                      title: 'Type / Category',
+                      selectedValue: _selectedBillType,
+                      showSearch: true,
+                      searchHint: 'Search types…',
+                      items: types
+                          .map((t) => GabPickerItem<String>(value: t, label: t))
+                          .toList(),
+                      addCustomLabel: '+ Add Custom Type',
+                      onAddCustom: () =>
+                          setState(() => _showCustomInput = true),
+                    );
+                    if (picked != null) {
+                      setState(() {
+                        _showCustomInput = false;
+                        _selectedBillType = picked.value;
+                        _typeCtrl.clear();
+                      });
                     }
-                  }),
+                  },
                 ),
                 if (_showCustomInput) ...[
                   const SizedBox(height: 16),
                   TextField(
                     controller: _typeCtrl,
-                    style: GoogleFonts.plusJakartaSans(color: kTextCharcoal, fontSize: 14, fontWeight: FontWeight.w600),
+                    style: GoogleFonts.plusJakartaSans(
+                      color: kTextCharcoal,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                     decoration: InputDecoration(
                       hintText: 'Enter custom type',
                       hintStyle: TextStyle(
                         color: kMuted.withValues(alpha: 0.5),
                       ),
                       contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 16,
+                        horizontal: 16,
+                        vertical: 16,
                       ),
                       enabledBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(16),
@@ -1011,13 +1038,20 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                 TextField(
                   controller: _amountCtrl,
                   keyboardType: TextInputType.number,
-                  style: GoogleFonts.plusJakartaSans(color: kTextCharcoal, fontSize: 14, fontWeight: FontWeight.w600),
+                  style: GoogleFonts.plusJakartaSans(
+                    color: kTextCharcoal,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                   decoration: InputDecoration(
                     labelText: 'Amount',
                     labelStyle: TextStyle(color: kMuted),
                     hintText: 'Amount',
                     hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 16,
+                    ),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                       borderSide: BorderSide(color: kBorder),
@@ -1029,31 +1063,22 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                   ),
                 ),
                 const SizedBox(height: 16),
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedFrequency,
-                  dropdownColor: kCardBg,
-                  elevation: 8,
-                  borderRadius: BorderRadius.circular(16),
-                  menuMaxHeight: 336,
-                  icon: Icon(Icons.keyboard_arrow_down_rounded, color: kPrimary),
-                  style: GoogleFonts.plusJakartaSans(color: kTextCharcoal, fontSize: 14, fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    labelText: 'Frequency',
-                    labelStyle: TextStyle(color: kMuted),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: kBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: kPrimary),
-                    ),
-                  ),
-                  items: _frequencies
-                      .map((f) => DropdownMenuItem(value: f, child: Text(f)))
-                      .toList(),
-                  onChanged: (v) => setState(() => _selectedFrequency = v!),
+                _BillsPickerTile(
+                  label: 'Frequency',
+                  value: _selectedFrequency,
+                  onTap: () async {
+                    final picked = await showGabPicker<String>(
+                      context: context,
+                      title: 'Frequency',
+                      selectedValue: _selectedFrequency,
+                      items: _frequencies
+                          .map((f) => GabPickerItem<String>(value: f, label: f))
+                          .toList(),
+                    );
+                    if (picked != null) {
+                      setState(() => _selectedFrequency = picked.value);
+                    }
+                  },
                 ),
                 const SizedBox(height: 16),
                 SizedBox(
@@ -1061,9 +1086,15 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                   height: 50,
                   child: ElevatedButton(
                     onPressed: () async {
-                      String cleanAmount = _amountCtrl.text.replaceAll(',', '').replaceAll('₱', '').trim();
+                      String cleanAmount = _amountCtrl.text
+                          .replaceAll(',', '')
+                          .replaceAll('₱', '')
+                          .trim();
                       if (cleanAmount.toLowerCase().endsWith('k')) {
-                        String numPart = cleanAmount.substring(0, cleanAmount.length - 1);
+                        String numPart = cleanAmount.substring(
+                          0,
+                          cleanAmount.length - 1,
+                        );
                         double? val = double.tryParse(numPart);
                         if (val != null) {
                           cleanAmount = (val * 1000).toString();
@@ -1271,7 +1302,9 @@ class _SelectAccountSheet extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Text(
-            isIncome ? 'Select Wallet to Transfer To' : 'Select Account to Pay From',
+            isIncome
+                ? 'Select Wallet to Transfer To'
+                : 'Select Account to Pay From',
             style: GoogleFonts.plusJakartaSans(
               fontSize: 18,
               fontWeight: FontWeight.w800,
@@ -1280,7 +1313,7 @@ class _SelectAccountSheet extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            isIncome 
+            isIncome
                 ? 'Amount to add: ${formatPeso(amount)}'
                 : 'Amount to deduct: ${formatPeso(amount)}',
             style: GoogleFonts.plusJakartaSans(
@@ -1344,7 +1377,9 @@ class _BillDetailActionSheet extends StatelessWidget {
 
   IconData _iconForType(String type) {
     final lower = type.toLowerCase();
-    if (lower.contains('car') || lower.contains('vehicle') || lower.contains('loan')) {
+    if (lower.contains('car') ||
+        lower.contains('vehicle') ||
+        lower.contains('loan')) {
       return Icons.directions_car_rounded;
     }
     if (lower.contains('electric') || lower.contains('power')) {
@@ -1359,7 +1394,9 @@ class _BillDetailActionSheet extends StatelessWidget {
     if (lower.contains('phone')) {
       return Icons.phone_iphone_rounded;
     }
-    if (lower.contains('rent') || lower.contains('house') || lower.contains('home')) {
+    if (lower.contains('rent') ||
+        lower.contains('house') ||
+        lower.contains('home')) {
       return Icons.home_rounded;
     }
     if (lower.contains('salary') || lower.contains('income')) {
@@ -1372,16 +1409,20 @@ class _BillDetailActionSheet extends StatelessWidget {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
-    final billDue = DateTime(bill.dueDate.year, bill.dueDate.month, bill.dueDate.day);
+    final billDue = DateTime(
+      bill.dueDate.year,
+      bill.dueDate.month,
+      bill.dueDate.day,
+    );
     final days = billDue.difference(today).inDays;
 
     final daysStr = days == 0
         ? 'Due Today'
         : days == 1
-            ? 'Due Tomorrow'
-            : days < 0
-                ? 'Overdue by ${days.abs()} day${days.abs() > 1 ? 's' : ''}'
-                : 'Due in $days days';
+        ? 'Due Tomorrow'
+        : days < 0
+        ? 'Overdue by ${days.abs()} day${days.abs() > 1 ? 's' : ''}'
+        : 'Due in $days days';
 
     return Container(
       decoration: BoxDecoration(
@@ -1419,12 +1460,13 @@ class _BillDetailActionSheet extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: (bill.isPaid
-                      ? Colors.green
-                      : bill.isIncome
+              color:
+                  (bill.isPaid
+                          ? Colors.green
+                          : bill.isIncome
                           ? kPrimary
                           : Colors.orange)
-                  .withValues(alpha: 0.12),
+                      .withValues(alpha: 0.12),
               shape: BoxShape.circle,
             ),
             child: Icon(
@@ -1432,8 +1474,8 @@ class _BillDetailActionSheet extends StatelessWidget {
               color: bill.isPaid
                   ? Colors.green
                   : bill.isIncome
-                      ? kPrimary
-                      : Colors.orange,
+                  ? kPrimary
+                  : Colors.orange,
               size: 32,
             ),
           ),
@@ -1452,7 +1494,10 @@ class _BillDetailActionSheet extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: (bill.isPaid ? Colors.green : Colors.orange)
                       .withValues(alpha: 0.1),
@@ -1470,7 +1515,10 @@ class _BillDetailActionSheet extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: kPrimary.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
@@ -1513,10 +1561,14 @@ class _BillDetailActionSheet extends StatelessWidget {
               height: 44,
               child: ElevatedButton.icon(
                 onPressed: () => onPaid(null),
-                icon: Icon(
-                  bill.isIncome ? Icons.south_west_rounded : Icons.check_circle_rounded,
-                  size: 18,
-                ),
+                icon: bill.isIncome
+                    ? Image.asset(
+                        'assets/images/income_logged.png',
+                        width: 18,
+                        height: 18,
+                        fit: BoxFit.contain,
+                      )
+                    : const Icon(Icons.check_circle_rounded, size: 18),
                 label: Text(
                   bill.isIncome ? 'Received' : 'Bill Paid',
                   style: GoogleFonts.plusJakartaSans(
@@ -1525,7 +1577,9 @@ class _BillDetailActionSheet extends StatelessWidget {
                   ),
                 ),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: bill.isIncome ? kPrimary : Colors.green.shade600,
+                  backgroundColor: bill.isIncome
+                      ? kPrimary
+                      : Colors.green.shade600,
                   foregroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -1566,7 +1620,11 @@ class _BillDetailActionSheet extends StatelessWidget {
             height: 38,
             child: TextButton.icon(
               onPressed: onCancel,
-              icon: const Icon(Icons.delete_outline_rounded, color: Colors.red, size: 16),
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                color: Colors.red,
+                size: 16,
+              ),
               label: Text(
                 bill.isIncome ? 'Remove' : 'Cancel Bill',
                 style: GoogleFonts.plusJakartaSans(
@@ -1592,10 +1650,7 @@ class _EditBillSheet extends StatefulWidget {
   final Bill bill;
   final Function(Bill) onSave;
 
-  const _EditBillSheet({
-    required this.bill,
-    required this.onSave,
-  });
+  const _EditBillSheet({required this.bill, required this.onSave});
 
   @override
   State<_EditBillSheet> createState() => _EditBillSheetState();
@@ -1622,7 +1677,9 @@ class _EditBillSheetState extends State<_EditBillSheet> {
   void initState() {
     super.initState();
     _typeCtrl = TextEditingController(text: widget.bill.type);
-    _amountCtrl = TextEditingController(text: widget.bill.amount.toStringAsFixed(2));
+    _amountCtrl = TextEditingController(
+      text: widget.bill.amount.toStringAsFixed(2),
+    );
     _selectedDueDate = widget.bill.dueDate;
     _selectedFrequency = widget.bill.frequency;
     _isIncome = widget.bill.isIncome;
@@ -1757,7 +1814,10 @@ class _EditBillSheetState extends State<_EditBillSheet> {
                         }
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 14,
+                        ),
                         decoration: BoxDecoration(
                           color: kBackground,
                           borderRadius: BorderRadius.circular(14),
@@ -1767,13 +1827,19 @@ class _EditBillSheetState extends State<_EditBillSheet> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              DateFormat('MMM d, yyyy').format(_selectedDueDate),
+                              DateFormat(
+                                'MMM d, yyyy',
+                              ).format(_selectedDueDate),
                               style: GoogleFonts.plusJakartaSans(
                                 fontWeight: FontWeight.w600,
                                 color: kTextCharcoal,
                               ),
                             ),
-                            Icon(Icons.calendar_today_rounded, size: 16, color: kPrimary),
+                            Icon(
+                              Icons.calendar_today_rounded,
+                              size: 16,
+                              color: kPrimary,
+                            ),
                           ],
                         ),
                       ),
@@ -1795,40 +1861,25 @@ class _EditBillSheetState extends State<_EditBillSheet> {
                       ),
                     ),
                     const SizedBox(height: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      decoration: BoxDecoration(
-                        color: kBackground,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: kBorder),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          value: _selectedFrequency,
-                          isExpanded: true,
+                    _BillsPickerTile(
+                      label: 'Frequency',
+                      value: _selectedFrequency,
+                      onTap: () async {
+                        final picked = await showGabPicker<String>(
+                          context: context,
+                          title: 'Frequency',
+                          selectedValue: _selectedFrequency,
                           items: _frequencies
                               .map(
-                                (f) => DropdownMenuItem(
-                                  value: f,
-                                  child: Text(
-                                    f,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ),
+                                (f) =>
+                                    GabPickerItem<String>(value: f, label: f),
                               )
                               .toList(),
-                          onChanged: (val) {
-                            if (val != null) {
-                              setState(() {
-                                _selectedFrequency = val;
-                              });
-                            }
-                          },
-                        ),
-                      ),
+                        );
+                        if (picked != null) {
+                          setState(() => _selectedFrequency = picked.value);
+                        }
+                      },
                     ),
                   ],
                 ),
@@ -1841,7 +1892,9 @@ class _EditBillSheetState extends State<_EditBillSheet> {
             height: 50,
             child: ElevatedButton(
               onPressed: () {
-                final amt = double.tryParse(_amountCtrl.text.replaceAll(',', '').trim());
+                final amt = double.tryParse(
+                  _amountCtrl.text.replaceAll(',', '').trim(),
+                );
                 final type = _typeCtrl.text.trim();
                 if (amt != null && amt > 0 && type.isNotEmpty) {
                   final updated = widget.bill.copyWith(
@@ -1872,6 +1925,68 @@ class _EditBillSheetState extends State<_EditBillSheet> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Tappable picker tile for bills.dart — opens a [GabPickerSheet] bottom sheet.
+class _BillsPickerTile extends StatelessWidget {
+  final String label;
+  final String? value;
+  final String? hint;
+  final VoidCallback onTap;
+
+  const _BillsPickerTile({
+    required this.label,
+    required this.onTap,
+    this.value,
+    this.hint,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: kCardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: kBorder),
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: kMuted,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    value ?? hint ?? 'Select…',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: value != null
+                          ? kTextCharcoal
+                          : kMuted.withValues(alpha: 0.6),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down_rounded, color: kPrimary, size: 22),
+          ],
+        ),
       ),
     );
   }

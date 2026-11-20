@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/app_theme.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/account_icon.dart';
+import '../widgets/gab_picker_sheet.dart';
 import '../models/finance_models.dart';
 import '../services/finance_storage.dart';
 import '../services/settings_service.dart';
@@ -83,10 +85,12 @@ class _WalletChoiceButton extends StatelessWidget {
 }
 
 class _WalletPageState extends State<WalletPage> {
+  static const _hiddenBalancesKey = 'wallet_hidden_balance_account_ids';
+
   List<Account> _accounts = [];
   List<FinanceTransaction> _transactions = [];
   bool _isLoading = true;
-  bool _showMyAccounts = false;
+  Set<String> _hiddenAccountIds = {};
   final String _currency = SettingsService().currency;
 
   @override
@@ -96,6 +100,8 @@ class _WalletPageState extends State<WalletPage> {
   }
 
   Future<void> _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    _hiddenAccountIds = prefs.getStringList(_hiddenBalancesKey)?.toSet() ?? {};
     var accounts = await FinanceStorage.loadAccounts();
 
     if (!accounts.any((account) => account.name.toLowerCase() == 'cash')) {
@@ -129,6 +135,324 @@ class _WalletPageState extends State<WalletPage> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _toggleBalanceVisibility(String accountId) async {
+    final hiddenAccountIds = Set<String>.from(_hiddenAccountIds);
+    if (!hiddenAccountIds.add(accountId)) {
+      hiddenAccountIds.remove(accountId);
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_hiddenBalancesKey, hiddenAccountIds.toList());
+    if (!mounted) return;
+    setState(() {
+      _hiddenAccountIds = hiddenAccountIds;
+    });
+  }
+
+  Future<void> _showTransferSheet() async {
+    if (_accounts.length < 2) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add at least two accounts to transfer.')),
+      );
+      return;
+    }
+
+    final amountCtrl = TextEditingController();
+    final feeCtrl = TextEditingController(text: '10.00');
+    String? fromAccountId = _accounts.first.id;
+    String? toAccountId = _accounts[1].id;
+    String? errorMessage;
+    var isSaving = false;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Container(
+          decoration: BoxDecoration(
+            color: kCardBg,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+          ),
+          padding: EdgeInsets.fromLTRB(
+            24,
+            20,
+            24,
+            24 + MediaQuery.of(context).viewInsets.bottom,
+          ),
+          child: SafeArea(
+            top: false,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Transfer Funds',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: kTextCharcoal,
+                          ),
+                        ),
+                        IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: Icon(Icons.close, color: kMuted),
+                          tooltip: 'Close',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      key: const ValueKey('wallet_transfer_amount'),
+                      controller: amountCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      style: TextStyle(color: kTextCharcoal),
+                      decoration: InputDecoration(
+                        labelText: 'Amount',
+                        labelStyle: TextStyle(color: kMuted),
+                        prefixText: '$_currency ',
+                        prefixStyle: TextStyle(
+                          color: kTextCharcoal,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: kBorder),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: kPrimary),
+                        ),
+                      ),
+                      onChanged: (_) {
+                        if (errorMessage != null) {
+                          setSheetState(() => errorMessage = null);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      key: const ValueKey('wallet_transfer_fee'),
+                      controller: feeCtrl,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      style: TextStyle(color: kTextCharcoal),
+                      decoration: InputDecoration(
+                        labelText: 'Transaction Fee',
+                        labelStyle: TextStyle(color: kMuted),
+                        prefixText: '$_currency ',
+                        prefixStyle: TextStyle(
+                          color: kTextCharcoal,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: kBorder),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: kPrimary),
+                        ),
+                      ),
+                      onChanged: (_) {
+                        if (errorMessage != null) {
+                          setSheetState(() => errorMessage = null);
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _WalletPickerTile(
+                      label: 'From Account',
+                      account: fromAccountId != null
+                          ? _accounts.firstWhere(
+                              (a) => a.id == fromAccountId,
+                              orElse: () => _accounts.first)
+                          : null,
+                      onTap: () async {
+                        final picked = await showGabPicker<String>(
+                          context: context,
+                          title: 'From Account',
+                          selectedValue: fromAccountId,
+                          items: _accounts
+                              .map((a) => GabPickerItem<String>(
+                                    value: a.id,
+                                    label: a.name,
+                                    leading: AccountIconImage(
+                                        name: a.name,
+                                        icon: a.icon,
+                                        size: 24),
+                                  ))
+                              .toList(),
+                        );
+                        if (picked != null) {
+                          setSheetState(() {
+                            fromAccountId = picked.value;
+                            if (fromAccountId == toAccountId) {
+                              toAccountId = _accounts
+                                  .firstWhere(
+                                      (a) => a.id != fromAccountId)
+                                  .id;
+                            }
+                            errorMessage = null;
+                          });
+                        }
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _WalletPickerTile(
+                      label: 'To Account',
+                      account: toAccountId != null
+                          ? _accounts.firstWhere(
+                              (a) => a.id == toAccountId,
+                              orElse: () => _accounts
+                                  .firstWhere(
+                                      (a) => a.id != fromAccountId))
+                          : null,
+                      onTap: () async {
+                        final picked = await showGabPicker<String>(
+                          context: context,
+                          title: 'To Account',
+                          selectedValue: toAccountId,
+                          items: _accounts
+                              .where((a) => a.id != fromAccountId)
+                              .map((a) => GabPickerItem<String>(
+                                    value: a.id,
+                                    label: a.name,
+                                    leading: AccountIconImage(
+                                        name: a.name,
+                                        icon: a.icon,
+                                        size: 24),
+                                  ))
+                              .toList(),
+                        );
+                        if (picked != null) {
+                          setSheetState(() {
+                            toAccountId = picked.value;
+                            errorMessage = null;
+                          });
+                        }
+                      },
+                    ),
+                    if (errorMessage != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        errorMessage!,
+                        style: GoogleFonts.plusJakartaSans(
+                          color: Colors.red,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: isSaving
+                            ? null
+                            : () async {
+                                final amount = double.tryParse(
+                                  amountCtrl.text.trim(),
+                                );
+                                final fee = double.tryParse(
+                                  feeCtrl.text.trim(),
+                                );
+                                if (amount == null ||
+                                    !amount.isFinite ||
+                                    amount <= 0) {
+                                  setSheetState(
+                                    () => errorMessage =
+                                        'Enter a valid transfer amount.',
+                                  );
+                                  return;
+                                }
+                                if (fee == null || !fee.isFinite || fee < 0) {
+                                  setSheetState(
+                                    () => errorMessage =
+                                        'Enter a valid transaction fee (0 or more).',
+                                  );
+                                  return;
+                                }
+                                if (fromAccountId == null ||
+                                    toAccountId == null) {
+                                  setSheetState(
+                                    () => errorMessage =
+                                        'Select both accounts for the transfer.',
+                                  );
+                                  return;
+                                }
+
+                                final from = _accounts.firstWhere(
+                                  (account) => account.id == fromAccountId,
+                                );
+                                final to = _accounts.firstWhere(
+                                  (account) => account.id == toAccountId,
+                                );
+                                setSheetState(() {
+                                  isSaving = true;
+                                  errorMessage = null;
+                                });
+                                try {
+                                  await FinanceStorage.transferMoney(
+                                    fromAccount: from,
+                                    toAccount: to,
+                                    amount: amount,
+                                    fee: fee,
+                                    requireSourceBalance: true,
+                                  );
+                                  if (!sheetContext.mounted) return;
+                                  Navigator.pop(sheetContext);
+                                  await _loadData();
+                                } catch (error) {
+                                  if (!sheetContext.mounted) return;
+                                  setSheetState(() {
+                                    isSaving = false;
+                                    errorMessage = error
+                                        .toString()
+                                        .replaceFirst('Exception: ', '');
+                                  });
+                                }
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: kPrimary,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                        ),
+                        child: Text(
+                          'Transfer Funds',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await WidgetsBinding.instance.endOfFrame;
+    amountCtrl.dispose();
+    feeCtrl.dispose();
   }
 
   Future<void> _saveWalletBalance(WalletOption wallet, double balance) async {
@@ -530,26 +854,23 @@ class _WalletPageState extends State<WalletPage> {
                 ),
               ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<String>(
-                initialValue: selectedType,
-                dropdownColor: kCardBg,
-                style: TextStyle(color: kTextCharcoal, fontSize: 14),
-                decoration: InputDecoration(
-                  labelText: 'Account Type',
-                  labelStyle: TextStyle(color: kMuted),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: kBorder),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide(color: kPrimary),
-                  ),
-                ),
-                items: accountTypes
-                    .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-                    .toList(),
-                onChanged: (v) => setSheetState(() => selectedType = v!),
+              _WalletPickerTile(
+                label: 'Account Type',
+                valueLabel: selectedType,
+                onTap: () async {
+                  final picked = await showGabPicker<String>(
+                    context: context,
+                    title: 'Account Type',
+                    selectedValue: selectedType,
+                    items: accountTypes
+                        .map((t) =>
+                            GabPickerItem<String>(value: t, label: t))
+                        .toList(),
+                  );
+                  if (picked != null) {
+                    setSheetState(() => selectedType = picked.value);
+                  }
+                },
               ),
               const SizedBox(height: 16),
               Text(
@@ -685,11 +1006,14 @@ class _WalletPageState extends State<WalletPage> {
 
   @override
   Widget build(BuildContext context) {
-    final addedWallets = _accounts.where((account) {
-      return walletOptions.any(
-        (wallet) => wallet.name.toLowerCase() == account.name.toLowerCase(),
-      );
-    }).toList();
+    final recentTransactions = _transactions
+        .where(
+          (transaction) =>
+              !(transaction.isTransfer &&
+                  transaction.type == 'INCOME' &&
+                  transaction.destinationAccountId == null),
+        )
+        .toList();
 
     return Scaffold(
       backgroundColor: kBackground,
@@ -714,20 +1038,15 @@ class _WalletPageState extends State<WalletPage> {
         centerTitle: true,
         actions: [
           IconButton(
-            icon: Icon(
-              _showMyAccounts
-                  ? Icons.visibility_rounded
-                  : Icons.visibility_off_rounded,
-              color: kPrimary,
-            ),
-            onPressed: () {
-              setState(() {
-                _showMyAccounts = !_showMyAccounts;
-              });
-            },
-            tooltip: _showMyAccounts ? 'Hide accounts' : 'Show accounts',
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            tooltip: 'Transfer',
+            icon: Icon(Icons.swap_horiz_rounded, color: kPrimary),
+            onPressed: _showTransferSheet,
           ),
+          const SizedBox(width: 4),
           IconButton(
+            constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+            tooltip: 'Add wallet',
             icon: Icon(Icons.add_card_rounded, color: kPrimary),
             onPressed: _showAddWalletSheet,
           ),
@@ -743,155 +1062,243 @@ class _WalletPageState extends State<WalletPage> {
                   vertical: 16,
                 ),
                 children: [
-                  if (_showMyAccounts) ...[
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'My Accounts',
-                          style: GoogleFonts.plusJakartaSans(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: kTextCharcoal,
-                          ),
-                        ),
-                      ],
+                  Text(
+                    'My Accounts',
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: kTextCharcoal,
                     ),
-                    const SizedBox(height: 8),
-                    GridView.builder(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: 1.4,
+                  ),
+                  const SizedBox(height: 8),
+                  GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 1.4,
+                        ),
+                    itemCount: _accounts.length,
+                    itemBuilder: (context, index) {
+                      final acc = _accounts[index];
+                      final accountColor = Color(acc.colorValue);
+                      final isBalanceHidden = _hiddenAccountIds.contains(
+                        acc.id,
+                      );
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              kCardBg,
+                              Color.lerp(kCardBg, kBackground, 0.55)!,
+                            ],
                           ),
-                      itemCount: _accounts.length,
-                      itemBuilder: (context, index) {
-                        final acc = _accounts[index];
-                        return Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: kCardBg,
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(color: kBorder),
-                            boxShadow: [kShadowSoft],
+                          borderRadius: BorderRadius.circular(24),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.9),
                           ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Color(
-                                        acc.colorValue,
-                                      ).withValues(alpha: 0.1),
-                                      shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              offset: const Offset(-4, -4),
+                              blurRadius: 9,
+                            ),
+                            BoxShadow(
+                              color: kTextCharcoal.withValues(alpha: 0.12),
+                              offset: const Offset(6, 8),
+                              blurRadius: 16,
+                            ),
+                          ],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Container(
+                                  width: 42,
+                                  height: 42,
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [
+                                        accountColor.withValues(alpha: 0.2),
+                                        accountColor.withValues(alpha: 0.08),
+                                      ],
                                     ),
-                                    child: AccountIconImage(
-                                      name: acc.name,
-                                      icon: acc.icon,
-                                      size: 22,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.9,
+                                      ),
                                     ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.9,
+                                        ),
+                                        offset: const Offset(-2, -2),
+                                        blurRadius: 5,
+                                      ),
+                                      BoxShadow(
+                                        color: accountColor.withValues(
+                                          alpha: 0.2,
+                                        ),
+                                        offset: const Offset(3, 4),
+                                        blurRadius: 7,
+                                      ),
+                                    ],
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 8,
-                                      vertical: 4,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: kBackground,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      acc.type,
-                                      style: GoogleFonts.plusJakartaSans(
-                                        fontSize: 9,
-                                        fontWeight: FontWeight.bold,
-                                        color: kMuted,
+                                  child: Center(
+                                    child: Container(
+                                      width: 32,
+                                      height: 32,
+                                      decoration: BoxDecoration(
+                                        color: kCardBg.withValues(alpha: 0.9),
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: accountColor.withValues(
+                                              alpha: 0.16,
+                                            ),
+                                            offset: const Offset(2, 2),
+                                            blurRadius: 4,
+                                          ),
+                                          BoxShadow(
+                                            color: Colors.white.withValues(
+                                              alpha: 0.95,
+                                            ),
+                                            offset: const Offset(-2, -2),
+                                            blurRadius: 4,
+                                          ),
+                                        ],
+                                      ),
+                                      alignment: Alignment.center,
+                                      child: AccountIconImage(
+                                        name: acc.name,
+                                        icon: acc.icon,
+                                        size: 22,
                                       ),
                                     ),
                                   ),
-                                ],
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    acc.name,
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                      color: kTextCharcoal,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    '$_currency${acc.balance.toStringAsFixed(2)}',
-                                    style: GoogleFonts.plusJakartaSans(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w800,
-                                      color: Color(acc.colorValue),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                  ],
-                  if (addedWallets.isNotEmpty) ...[
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: addedWallets.map((account) {
-                          return Container(
-                            margin: const EdgeInsets.only(right: 10),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: kCardBg,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: kBorder),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                AccountIconImage(
-                                  name: account.name,
-                                  icon: account.icon,
-                                  size: 18,
                                 ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '$_currency${account.balance.toStringAsFixed(2)}',
-                                  style: GoogleFonts.plusJakartaSans(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.black,
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                      colors: [kCardBg, kBackground],
+                                    ),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.white.withValues(
+                                        alpha: 0.85,
+                                      ),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.white.withValues(
+                                          alpha: 0.8,
+                                        ),
+                                        offset: const Offset(-1, -1),
+                                        blurRadius: 3,
+                                      ),
+                                      BoxShadow(
+                                        color: kTextCharcoal.withValues(
+                                          alpha: 0.08,
+                                        ),
+                                        offset: const Offset(2, 2),
+                                        blurRadius: 4,
+                                      ),
+                                    ],
+                                  ),
+                                  child: Text(
+                                    acc.type,
+                                    style: GoogleFonts.plusJakartaSans(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.bold,
+                                      color: kMuted,
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                  ],
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        acc.name,
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: kTextCharcoal,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        isBalanceHidden
+                                            ? '*****'
+                                            : '$_currency${NumberFormat('#,##0.00').format(acc.balance)}',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: GoogleFonts.plusJakartaSans(
+                                          fontSize: 15,
+                                          fontWeight: FontWeight.w800,
+                                          color: accountColor,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                IconButton(
+                                  key: ValueKey(
+                                    'wallet_balance_visibility_${acc.id}',
+                                  ),
+                                  constraints: const BoxConstraints.tightFor(
+                                    width: 32,
+                                    height: 32,
+                                  ),
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                  tooltip: isBalanceHidden
+                                      ? 'Show ${acc.name} balance'
+                                      : 'Hide ${acc.name} balance',
+                                  onPressed: () =>
+                                      _toggleBalanceVisibility(acc.id),
+                                  icon: Icon(
+                                    isBalanceHidden
+                                        ? Icons.visibility_off_rounded
+                                        : Icons.visibility_rounded,
+                                    size: 22,
+                                    color: kPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
                   const SizedBox(height: 24),
                   Text(
                     'Recent Transactions',
@@ -902,7 +1309,7 @@ class _WalletPageState extends State<WalletPage> {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  if (_transactions.isEmpty)
+                  if (recentTransactions.isEmpty)
                     Center(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(vertical: 40),
@@ -929,14 +1336,21 @@ class _WalletPageState extends State<WalletPage> {
                     ListView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
-                      itemCount: _transactions.length > 5
+                      itemCount: recentTransactions.length > 5
                           ? 5
-                          : _transactions.length,
+                          : recentTransactions.length,
                       itemBuilder: (context, index) {
                         final txn =
-                            _transactions[_transactions.length - 1 - index];
+                            recentTransactions[recentTransactions.length -
+                                1 -
+                                index];
                         final isExpense = txn.isExpense;
-                        final color = isExpense ? Colors.red : kPrimary;
+                        final isTransfer = txn.isTransfer;
+                        final color = isTransfer
+                            ? const Color(0xFF3B82F6)
+                            : isExpense
+                            ? Colors.red
+                            : kPrimary;
                         final account = _accounts.firstWhere(
                           (account) => account.id == txn.accountId,
                           orElse: () => Account(
@@ -945,10 +1359,37 @@ class _WalletPageState extends State<WalletPage> {
                             type: '',
                           ),
                         );
-                        final title = txn.description.isNotEmpty
+                        final destinationName =
+                            txn.destinationAccountName ??
+                            txn.description
+                                .replaceFirst(
+                                  RegExp(
+                                    r'^(?:transfer|transmitted) to\s+',
+                                    caseSensitive: false,
+                                  ),
+                                  '',
+                                )
+                                .trim();
+                        final destinationAccount = _accounts.firstWhere(
+                          (candidate) =>
+                              candidate.id == txn.destinationAccountId ||
+                              candidate.name.toLowerCase().trim() ==
+                                  destinationName.toLowerCase(),
+                          orElse: () => Account(
+                            id: txn.destinationAccountId ?? '',
+                            name: destinationName,
+                            type: '',
+                          ),
+                        );
+                        final title = isTransfer
+                            ? 'Transmitted to $destinationName'
+                            : txn.description.isNotEmpty
                             ? txn.description
                             : txn.category;
                         final previousBalance = txn.previousBalance;
+                        final formattedAmount = isTransfer
+                            ? NumberFormat('#,##0.00').format(txn.amount)
+                            : NumberFormat('#,##0').format(txn.amount);
 
                         return Dismissible(
                           key: ValueKey('wallet_transaction_undo_${txn.id}'),
@@ -974,19 +1415,15 @@ class _WalletPageState extends State<WalletPage> {
                             ),
                             child: Row(
                               children: [
-                                Container(
-                                  padding: const EdgeInsets.all(10),
-                                  decoration: BoxDecoration(
-                                    color: color.withValues(alpha: 0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Icon(
-                                    isExpense
-                                        ? Icons.arrow_outward_rounded
-                                        : Icons.south_west_rounded,
-                                    color: color,
-                                    size: 18,
-                                  ),
+                                Image.asset(
+                                  isTransfer
+                                      ? 'assets/images/transfer_logged.png'
+                                      : isExpense
+                                      ? 'assets/images/expense_logged.png'
+                                      : 'assets/images/income_logged.png',
+                                  width: 38,
+                                  height: 38,
+                                  fit: BoxFit.contain,
                                 ),
                                 const SizedBox(width: 14),
                                 Expanded(
@@ -1003,6 +1440,29 @@ class _WalletPageState extends State<WalletPage> {
                                           color: kTextCharcoal,
                                         ),
                                       ),
+                                      if (isTransfer) ...[
+                                        const SizedBox(height: 4),
+                                        Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              'from ${account.name}',
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
+                                                    fontSize: 10,
+                                                    color: kMuted,
+                                                    fontWeight: FontWeight.w600,
+                                                  ),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            AccountIconImage(
+                                              name: account.name,
+                                              icon: account.icon,
+                                              size: 15,
+                                            ),
+                                          ],
+                                        ),
+                                      ],
                                       const SizedBox(height: 4),
                                       Text(
                                         DateFormat(
@@ -1021,35 +1481,52 @@ class _WalletPageState extends State<WalletPage> {
                                   crossAxisAlignment: CrossAxisAlignment.end,
                                   children: [
                                     Text(
-                                      '${isExpense ? "-" : "+"}$_currency${NumberFormat('#,##0').format(txn.amount)}',
+                                      '${isExpense
+                                          ? "-"
+                                          : isTransfer
+                                          ? ""
+                                          : "+"}$_currency$formattedAmount',
                                       style: GoogleFonts.plusJakartaSans(
                                         fontWeight: FontWeight.w800,
                                         color: color,
                                         fontSize: 15,
                                       ),
                                     ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        if (previousBalance != null) ...[
-                                          Text(
-                                            '$_currency${NumberFormat('#,##0').format(previousBalance)}',
-                                            style: GoogleFonts.plusJakartaSans(
-                                              fontSize: 10,
-                                              color: kMuted,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                        ],
-                                        AccountIconImage(
-                                          name: account.name,
-                                          icon: account.icon,
-                                          size: 16,
+                                    if (isTransfer) ...[
+                                      const SizedBox(height: 6),
+                                      AccountIconImage(
+                                        key: ValueKey(
+                                          'transfer_destination_icon_${txn.id}',
                                         ),
-                                      ],
-                                    ),
+                                        name: destinationAccount.name,
+                                        icon: destinationAccount.icon,
+                                        size: 16,
+                                      ),
+                                    ] else ...[
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (previousBalance != null) ...[
+                                            Text(
+                                              '$_currency${NumberFormat('#,##0').format(previousBalance)}',
+                                              style:
+                                                  GoogleFonts.plusJakartaSans(
+                                                    fontSize: 10,
+                                                    color: kMuted,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                          ],
+                                          AccountIconImage(
+                                            name: account.name,
+                                            icon: account.icon,
+                                            size: 16,
+                                          ),
+                                        ],
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ],
@@ -1061,6 +1538,75 @@ class _WalletPageState extends State<WalletPage> {
                 ],
               ),
             ),
+    );
+  }
+}
+
+
+/// Tappable picker tile for wallet.dart sheets — mirrors [_GabPickerTile] in dashboard.dart.
+/// Accepts either an [Account] with icon or just a [valueLabel] string.
+class _WalletPickerTile extends StatelessWidget {
+  final String label;
+  final Account? account;
+  final String? valueLabel;
+  final VoidCallback onTap;
+
+  const _WalletPickerTile({
+    required this.label,
+    required this.onTap,
+    this.account,
+    this.valueLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final displayValue = account?.name ?? valueLabel;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: kCardBg,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: kBorder),
+        ),
+        child: Row(
+          children: [
+            if (account != null) ...[
+              AccountIconImage(name: account!.name, icon: account!.icon, size: 22),
+              const SizedBox(width: 10),
+            ],
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: kMuted,
+                    ),
+                  ),
+                  if (displayValue != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      displayValue,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: kTextCharcoal,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(Icons.keyboard_arrow_down_rounded, color: kMuted, size: 22),
+          ],
+        ),
+      ),
     );
   }
 }
