@@ -26,10 +26,10 @@ class SettingsService extends ChangeNotifier {
 
   String _currency = '₱';
   double _dailySpendingAllocation = 172.30;
-  List<int> _salaryPaydayDays = [15, 30];
-  PayFrequency _payFrequency = PayFrequency.twiceMonthly;
-  int _payday1 = 15;
-  int? _payday2 = 30;
+  List<int> _salaryPaydayDays = [30];
+  PayFrequency _payFrequency = PayFrequency.monthly;
+  int _payday1 = 30;
+  int? _payday2;
   int? _intervalDays;
   DateTime? _anchorPayday;
   final ValueNotifier<double> dailySpendingAllocationNotifier = ValueNotifier(
@@ -80,18 +80,18 @@ class SettingsService extends ChangeNotifier {
         prefs.getDouble(_keyDailySpendingAllocation) ?? 172.30;
     dailySpendingAllocationNotifier.value = _dailySpendingAllocation;
     final legacyPaydayDays =
-        (prefs.getStringList(_keySalaryPaydayDays) ?? ['15', '30'])
+        (prefs.getStringList(_keySalaryPaydayDays) ?? ['30'])
             .map(int.tryParse)
             .whereType<int>()
             .where((day) => day >= 1 && day <= 31)
             .toSet()
             .toList()
           ..sort();
-    _salaryPaydayDays = legacyPaydayDays.isEmpty ? [15, 30] : legacyPaydayDays;
+    _salaryPaydayDays = legacyPaydayDays.isEmpty ? [30] : legacyPaydayDays;
     final storedFrequency = prefs.getString(_keyPayFrequency);
     _payFrequency = PayFrequency.values.firstWhere(
       (frequency) => frequency.name == storedFrequency,
-      orElse: () => PayFrequency.twiceMonthly,
+      orElse: () => PayFrequency.monthly,
     );
     _payday1 = prefs.getInt(_keyPayday1) ?? _salaryPaydayDays.first;
     _payday2 =
@@ -307,10 +307,10 @@ class SettingsService extends ChangeNotifier {
     await prefs.remove(_keyAnchorPayday);
     _currency = '₱';
     _dailySpendingAllocation = 172.30;
-    _salaryPaydayDays = [15, 30];
-    _payFrequency = PayFrequency.twiceMonthly;
-    _payday1 = 15;
-    _payday2 = 30;
+    _salaryPaydayDays = [30];
+    _payFrequency = PayFrequency.monthly;
+    _payday1 = 30;
+    _payday2 = null;
     _intervalDays = null;
     _anchorPayday = null;
     dailySpendingAllocationNotifier.value = _dailySpendingAllocation;

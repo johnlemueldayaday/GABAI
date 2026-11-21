@@ -8,7 +8,8 @@ func formatPeso(_ value: Double) -> String {
     f.numberStyle = .decimal
     f.minimumFractionDigits = 2
     f.maximumFractionDigits = 2
-    return "₱" + (f.string(from: NSNumber(value: value)) ?? "0.00")
+    let formatted = f.string(from: NSNumber(value: abs(value))) ?? "0.00"
+    return value < 0 ? "-₱" + formatted : "₱" + formatted
 }
 
 func formatPesoWhole(_ value: Double) -> String {
@@ -80,8 +81,10 @@ struct SafeToSpendWidgetView : View {
         switch family {
         case .systemSmall:
             VStack(alignment: .leading, spacing: 8) {
-                Label("Safe to spend", systemImage: "checkmark.shield.fill")
+                Label(entry.safeToSpend <= 0 ? "Cut cost" : "Safe to spend",
+                      systemImage: entry.safeToSpend <= 0 ? "arrow.down.right" : "checkmark.shield.fill")
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(entry.safeToSpend <= 0 ? .red : .primary)
                     .lineLimit(1)
 
                 Spacer(minLength: 0)
@@ -92,8 +95,8 @@ struct SafeToSpendWidgetView : View {
                     .lineLimit(1)
 
                 ProgressView(value: entry.weekBudget > 0 ? min(entry.weekSpent / entry.weekBudget, 1.0) : 0)
-                    .tint(.green)
-                Text("spent this week")
+                    .tint(entry.safeToSpend <= 0 ? .red : .green)
+                Text("\(formatPeso(entry.weekSpent)) spent this week")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
             }
@@ -101,8 +104,9 @@ struct SafeToSpendWidgetView : View {
         case .systemMedium:
             HStack(spacing: 16) {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Safe to spend")
+                    Text(entry.safeToSpend <= 0 ? "Cut cost" : "Safe to spend")
                         .font(.headline)
+                        .foregroundStyle(entry.safeToSpend <= 0 ? .red : .primary)
                     Text(formatPeso(entry.safeToSpend))
                         .font(.largeTitle.weight(.bold))
                         .minimumScaleFactor(0.7)
@@ -118,7 +122,7 @@ struct SafeToSpendWidgetView : View {
                     Text("Weekly spending")
                         .font(.caption.weight(.semibold))
                     ProgressView(value: entry.weekBudget > 0 ? min(entry.weekSpent / entry.weekBudget, 1.0) : 0)
-                        .tint(.green)
+                        .tint(entry.safeToSpend <= 0 ? .red : .green)
                     Text("\(formatPesoWhole(entry.weekSpent)) of \(formatPesoWhole(entry.weekBudget))")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
@@ -129,10 +133,11 @@ struct SafeToSpendWidgetView : View {
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
-                    Image(systemName: "checkmark.shield.fill")
+                    Image(systemName: entry.safeToSpend <= 0 ? "arrow.down.right" : "checkmark.shield.fill")
                         .font(.system(size: 12))
-                    Text("Safe to spend")
+                    Text(entry.safeToSpend <= 0 ? "Cut cost" : "Safe to spend")
                         .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(entry.safeToSpend <= 0 ? .red : .primary)
                 }
 
                 Text(formatPeso(entry.safeToSpend))
@@ -198,6 +203,9 @@ struct WeeklyBudgetWidgetView : View {
                     Text("\(formatPesoWhole(entry.weekSpent)) of \(formatPesoWhole(entry.weekBudget))")
                 }
                 .font(.caption)
+                Text("\(formatPeso(entry.weekSpent)) spent this week")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
             .padding()
         case .accessoryRectangular:
@@ -221,6 +229,9 @@ struct WeeklyBudgetWidgetView : View {
                     Text(formatPesoWhole(entry.weekSpent))
                         .font(.system(size: 10))
                 }
+                Text("\(formatPeso(entry.weekSpent)) spent this week")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
             }
         default:
             Text("Unsupported")

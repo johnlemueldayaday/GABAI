@@ -28,7 +28,15 @@ import 'package:intl/intl.dart';
 import 'package:video_player/video_player.dart';
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+  final String? initialTransactionType;
+  final String? initialAccountId;
+  final bool openSpendingScheduleOnStart;
+  const DashboardPage({
+    super.key,
+    this.initialTransactionType,
+    this.initialAccountId,
+    this.openSpendingScheduleOnStart = false,
+  });
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -41,14 +49,78 @@ class _DashboardPageState extends State<DashboardPage>
   List<Account> _accounts = [];
   double _netWorth = 0.0;
   double _dailyAllocation = 172.30;
-  PayFrequency _payFrequency = PayFrequency.twiceMonthly;
-  int _payday1 = 15;
-  int? _payday2 = 30;
+  PayFrequency _payFrequency = PayFrequency.monthly;
+  int _payday1 = 30;
+  int? _payday2;
   int? _intervalDays;
   DateTime? _anchorPayday;
   bool _showWeeklySpending = false;
   String _currency = '₱';
   late final PageController _safeToSpendPageController;
+  bool _initialTransactionSheetShown = false;
+  bool _initialSpendingScheduleShown = false;
+
+  // ── MRU category order (persisted) ──────────────────────────────────────
+  List<String> _mruExpense = [];
+  List<String> _mruIncome = [];
+
+  static const _kMruExpenseKey = 'mru_expense_categories';
+  static const _kMruIncomeKey = 'mru_income_categories';
+
+  Future<void> _loadMruCategories() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      _mruExpense = prefs.getStringList(_kMruExpenseKey) ?? [];
+      _mruIncome = prefs.getStringList(_kMruIncomeKey) ?? [];
+    });
+  }
+
+  Future<void> _recordCategoryUsed(String category, String type) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (type == 'INCOME') {
+      _mruIncome.remove(category);
+      _mruIncome.insert(0, category);
+      await prefs.setStringList(_kMruIncomeKey, _mruIncome);
+    } else {
+      _mruExpense.remove(category);
+      _mruExpense.insert(0, category);
+      await prefs.setStringList(_kMruExpenseKey, _mruExpense);
+    }
+  }
+
+  Future<void> _addAndSelectCustomCategory(
+    String category,
+    String type,
+    void Function(String) onSelected,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (type == 'INCOME') {
+      if (!_mruIncome.contains(category)) _mruIncome.insert(0, category);
+      await prefs.setStringList(_kMruIncomeKey, _mruIncome);
+    } else {
+      if (!_mruExpense.contains(category)) _mruExpense.insert(0, category);
+      await prefs.setStringList(_kMruExpenseKey, _mruExpense);
+    }
+    if (mounted) setState(() {});
+    onSelected(category);
+  }
+
+  /// Returns the base list (without 'Other') merged with MRU at the front.
+  List<String> _orderedCategories(String type) {
+    final base = (type == 'INCOME' ? incomeCategories : expenseCategories)
+        .where((c) => c != 'Other')
+        .toList();
+    final mru = type == 'INCOME' ? _mruIncome : _mruExpense;
+    final result = <String>[];
+    for (final c in mru) {
+      if (base.contains(c) || !result.contains(c)) result.add(c);
+    }
+    for (final c in base) {
+      if (!result.contains(c)) result.add(c);
+    }
+    return result;
+  }
 
   Future<void> _openBillDetails(Bill bill) async {
     await Navigator.of(context).push(
@@ -67,6 +139,7 @@ class _DashboardPageState extends State<DashboardPage>
       _handleDailyAllocationChanged,
     );
     _loadData();
+    _loadMruCategories();
     _safeToSpendPageController = PageController(
       initialPage: _showWeeklySpending ? 1 : 0,
     );
@@ -118,6 +191,27 @@ class _DashboardPageState extends State<DashboardPage>
       _intervalDays = SettingsService().intervalDays;
       _anchorPayday = SettingsService().anchorPayday;
     });
+
+    if (widget.initialTransactionType != null &&
+        !_initialTransactionSheetShown) {
+      _initialTransactionSheetShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showAddTransactionSheet(
+            initialType: widget.initialTransactionType!,
+            preselectedAccountId: widget.initialAccountId,
+          );
+        }
+      });
+    } else if (widget.openSpendingScheduleOnStart &&
+        !_initialSpendingScheduleShown) {
+      _initialSpendingScheduleShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _editSpendingSchedule();
+        }
+      });
+    }
 
     unawaited(_updateWidgetData());
   }
@@ -172,16 +266,25 @@ class _DashboardPageState extends State<DashboardPage>
     }
   }
 
-  void _showAddTransactionSheet({String initialType = 'EXPENSE'}) {
+  void _showAddTransactionSheet({
+    String initialType = 'EXPENSE',
+    String? preselectedAccountId,
+  }) {
     final amountCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    String selectedType = initialType;
-    String? selectedAccountId = _accounts.isNotEmpty
-        ? _accounts.first.id
-        : null;
-    String selectedCategory = initialType == 'INCOME'
-        ? incomeCategories.first
-        : expenseCategories.first;
+    final String selectedType = initialType;
+    String? selectedAccountId =
+        preselectedAccountId ??
+        (_accounts.isNotEmpty ? _accounts.first.id : null);
+
+    // Seed first category from MRU-ordered list
+    final initialCategories = _orderedCategories(initialType);
+    String selectedCategory = initialCategories.isNotEmpty
+        ? initialCategories.first
+        : (initialType == 'INCOME'
+              ? incomeCategories.first
+              : expenseCategories.first);
+
+    final sheetTitle = initialType == 'INCOME' ? 'Income' : 'Expense';
 
     showModalBottomSheet(
       context: context,
@@ -189,13 +292,7 @@ class _DashboardPageState extends State<DashboardPage>
       backgroundColor: Colors.transparent,
       builder: (context) => StatefulBuilder(
         builder: (context, setSheetState) {
-          final isExpense = selectedType == 'EXPENSE';
-          final currentCategories = isExpense
-              ? expenseCategories
-              : incomeCategories;
-          if (!currentCategories.contains(selectedCategory)) {
-            selectedCategory = currentCategories.first;
-          }
+          final orderedCats = _orderedCategories(selectedType);
 
           return Container(
             decoration: BoxDecoration(
@@ -214,11 +311,12 @@ class _DashboardPageState extends State<DashboardPage>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ── Header ─────────────────────────────────────────────
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(
-                      'Log Transaction',
+                      sheetTitle,
                       style: GoogleFonts.plusJakartaSans(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
@@ -231,71 +329,9 @@ class _DashboardPageState extends State<DashboardPage>
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: GestureDetector(
-                        key: const ValueKey('transaction_expense_tab'),
-                        onTap: () => setSheetState(() {
-                          selectedType = 'EXPENSE';
-                          selectedCategory = expenseCategories.first;
-                        }),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: isExpense
-                                ? Colors.red.withValues(alpha: 0.1)
-                                : kBackground,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isExpense ? Colors.red : kBorder,
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'Expense',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontWeight: FontWeight.bold,
-                              color: isExpense ? Colors.red : kMuted,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: GestureDetector(
-                        key: const ValueKey('transaction_income_tab'),
-                        onTap: () => setSheetState(() {
-                          selectedType = 'INCOME';
-                          selectedCategory = incomeCategories.first;
-                        }),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          decoration: BoxDecoration(
-                            color: !isExpense
-                                ? kPrimary.withValues(alpha: 0.1)
-                                : kBackground,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: !isExpense ? kPrimary : kBorder,
-                            ),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            'Income',
-                            style: GoogleFonts.plusJakartaSans(
-                              fontWeight: FontWeight.bold,
-                              color: !isExpense ? kPrimary : kMuted,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
                 const SizedBox(height: 20),
+
+                // ── Amount ──────────────────────────────────────────────
                 TextField(
                   controller: amountCtrl,
                   keyboardType: const TextInputType.numberWithOptions(
@@ -321,6 +357,8 @@ class _DashboardPageState extends State<DashboardPage>
                   ),
                 ),
                 const SizedBox(height: 16),
+
+                // ── Account picker ──────────────────────────────────────
                 _GabPickerTile(
                   label: 'Account',
                   value: selectedAccountId != null
@@ -373,45 +411,107 @@ class _DashboardPageState extends State<DashboardPage>
                   },
                 ),
                 const SizedBox(height: 16),
+
+                // ── Category picker (MRU-ordered, with Add new) ─────────
                 _GabPickerTile(
                   label: 'Category',
                   value: selectedCategory,
                   onTap: () async {
+                    // Show custom-input dialog for "Add new category"
+                    Future<void> addNew() async {
+                      final ctrl = TextEditingController();
+                      final nav = Navigator.of(context);
+                      final result = await showDialog<String>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          backgroundColor: kCardBg,
+                          surfaceTintColor: Colors.transparent,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          title: Text(
+                            'New Category',
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 18,
+                              color: kTextCharcoal,
+                            ),
+                          ),
+                          content: TextField(
+                            controller: ctrl,
+                            autofocus: true,
+                            textCapitalization: TextCapitalization.words,
+                            style: GoogleFonts.plusJakartaSans(
+                              fontWeight: FontWeight.w500,
+                            ),
+                            decoration: InputDecoration(
+                              hintText: 'Category name',
+                              hintStyle: TextStyle(color: kMuted),
+                              enabledBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(color: kBorder),
+                              ),
+                              focusedBorder: UnderlineInputBorder(
+                                borderSide: BorderSide(
+                                  color: kPrimary,
+                                  width: 2,
+                                ),
+                              ),
+                            ),
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => nav.pop(),
+                              child: Text(
+                                'Cancel',
+                                style: TextStyle(
+                                  color: kMuted,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => nav.pop(ctrl.text.trim()),
+                              child: Text(
+                                'Add',
+                                style: TextStyle(
+                                  color: kPrimary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (result != null && result.isNotEmpty) {
+                        await _addAndSelectCustomCategory(
+                          result,
+                          selectedType,
+                          (cat) => setSheetState(() => selectedCategory = cat),
+                        );
+                      }
+                    }
+
                     final picked = await showGabPicker<String>(
                       context: context,
                       title: 'Select Category',
                       selectedValue: selectedCategory,
                       showSearch: true,
                       searchHint: 'Search categories…',
-                      items: currentCategories
+                      items: orderedCats
                           .map((c) => GabPickerItem<String>(value: c, label: c))
                           .toList(),
+                      addCustomLabel: '+ Add new category',
+                      onAddCustom: addNew,
                     );
                     if (picked != null) {
+                      await _recordCategoryUsed(picked.value, selectedType);
                       setSheetState(() => selectedCategory = picked.value);
                     }
                   },
                 ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: descCtrl,
-                  style: TextStyle(color: kTextCharcoal),
-                  decoration: InputDecoration(
-                    labelText: 'Description',
-                    labelStyle: TextStyle(color: kMuted),
-                    hintText: 'What was this for?',
-                    hintStyle: TextStyle(color: kMuted.withValues(alpha: 0.5)),
-                    enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: kBorder),
-                    ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: kPrimary),
-                    ),
-                  ),
-                ),
                 const SizedBox(height: 24),
+
+                // ── Submit ──────────────────────────────────────────────
                 SizedBox(
                   width: double.infinity,
                   height: 50,
@@ -429,9 +529,13 @@ class _DashboardPageState extends State<DashboardPage>
                           accountName: account.name,
                           type: selectedType,
                           category: selectedCategory,
-                          description: descCtrl.text.trim(),
+                          description: '',
                         );
                         await FinanceStorage.addTransaction(txn);
+                        await _recordCategoryUsed(
+                          selectedCategory,
+                          selectedType,
+                        );
                         if (context.mounted) {
                           Navigator.pop(context);
                           _loadData();
@@ -602,6 +706,11 @@ class _DashboardPageState extends State<DashboardPage>
             accounts: _accounts,
             isIncome: true,
             onUndo: _undoTransaction,
+            onEmptyTap: () {
+              HapticFeedback.heavyImpact();
+              SystemSound.play(SystemSoundType.click);
+              _showAddTransactionSheet(initialType: 'INCOME');
+            },
           ),
         ],
       );
@@ -619,6 +728,11 @@ class _DashboardPageState extends State<DashboardPage>
             accounts: _accounts,
             isIncome: false,
             onUndo: _undoTransaction,
+            onEmptyTap: () {
+              HapticFeedback.heavyImpact();
+              SystemSound.play(SystemSoundType.click);
+              _showAddTransactionSheet(initialType: 'EXPENSE');
+            },
           ),
         ],
       );
@@ -794,13 +908,19 @@ class _DashboardPageState extends State<DashboardPage>
                           Row(
                             children: [
                               Icon(
-                                Icons.shield_outlined,
+                                spendingPlan.safeToSpend <= 0
+                                    ? Icons.trending_down_rounded
+                                    : Icons.shield_outlined,
                                 size: 15,
-                                color: kPrimary,
+                                color: spendingPlan.safeToSpend <= 0
+                                    ? Colors.red
+                                    : kPrimary,
                               ),
                               const SizedBox(width: 5),
                               Text(
-                                'SAFE TO SPEND',
+                                spendingPlan.safeToSpend <= 0
+                                    ? 'CUT COST'
+                                    : 'SAFE TO SPEND',
                                 style: GoogleFonts.plusJakartaSans(
                                   fontSize: 10,
                                   fontWeight: FontWeight.w800,
@@ -818,7 +938,9 @@ class _DashboardPageState extends State<DashboardPage>
                               style: GoogleFonts.plusJakartaSans(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w900,
-                                color: kTextCharcoal,
+                                color: spendingPlan.safeToSpend <= 0
+                                    ? Colors.red
+                                    : kTextCharcoal,
                               ),
                             ),
                           ),
@@ -837,11 +959,13 @@ class _DashboardPageState extends State<DashboardPage>
                                   isWeek: false,
                                   progress: todayProgress,
                                   safeToSpend: spendingPlan.safeToSpend,
+                                  spent: todaySpent,
                                 ),
                                 _buildPeriodPage(
                                   isWeek: true,
                                   progress: weekProgress,
                                   safeToSpend: spendingPlan.safeToSpend,
+                                  spent: weekSpent,
                                 ),
                               ],
                             ),
@@ -881,7 +1005,20 @@ class _DashboardPageState extends State<DashboardPage>
             const SizedBox(height: 24),
 
             _SectionHeader(title: 'Upcoming Events'),
-            _UpcomingEventsList(bills: _bills, onBillTapped: _openBillDetails),
+            _UpcomingEventsList(
+              bills: _bills,
+              onBillTapped: _openBillDetails,
+              onEmptyTap: () async {
+                HapticFeedback.heavyImpact();
+                SystemSound.play(SystemSoundType.click);
+                await Navigator.of(context).push(
+                  CupertinoPageRoute(
+                    builder: (_) => const BillsPage(openAddEventOnStart: true),
+                  ),
+                );
+                await _loadData();
+              },
+            ),
 
             if (showExpenseFirst) ...[
               buildExpenseSection(),
@@ -902,7 +1039,11 @@ class _DashboardPageState extends State<DashboardPage>
     required bool isWeek,
     required double progress,
     required double safeToSpend,
+    required double spent,
   }) {
+    final remainingProgress = (1 - progress).clamp(0.0, 1.0).toDouble();
+    final remainingPercent = (remainingProgress * 100).toStringAsFixed(0);
+    final isCutCost = safeToSpend <= 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -945,18 +1086,31 @@ class _DashboardPageState extends State<DashboardPage>
         ClipRRect(
           borderRadius: BorderRadius.circular(6),
           child: LinearProgressIndicator(
-            value: progress,
+            value: remainingProgress,
             minHeight: 7,
             backgroundColor: kPrimary.withValues(alpha: 0.1),
             valueColor: AlwaysStoppedAnimation<Color>(
-              safeToSpend <= 0 ? Colors.red : kPrimary,
+              isCutCost ? Colors.red : kPrimary,
             ),
           ),
         ),
         const SizedBox(height: 3),
-        Text(
-          '${NumberFormat('0.##').format(progress * 100)}% of 100%',
-          style: GoogleFonts.plusJakartaSans(fontSize: 9, color: kMuted),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '$remainingPercent% of 100%',
+              style: GoogleFonts.plusJakartaSans(fontSize: 9, color: kMuted),
+            ),
+            Text(
+              formatPeso(spent),
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 9,
+                color: kMuted,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       ],
     );
@@ -1144,155 +1298,404 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
         ? 'Suggest'
         : 'Suggest ${widget.currency}${NumberFormat('#,##0.00').format(suggestedBudget)}';
     return AlertDialog(
-      title: const Text('Spending schedule'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+      backgroundColor: kCardBg,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+      title: Row(
         children: [
-          DropdownButtonFormField<PayFrequency>(
-            initialValue: _frequency,
-            decoration: const InputDecoration(labelText: 'Pay frequency'),
-            items: PayFrequency.values
-                .map(
-                  (frequency) => DropdownMenuItem(
-                    value: frequency,
-                    child: Text(_frequencyLabel(frequency)),
-                  ),
-                )
-                .toList(),
-            onChanged: (frequency) {
-              if (frequency != null) setState(() => _frequency = frequency);
-            },
-          ),
-          const SizedBox(height: 8),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Expanded(
-                child: TextField(
-                  key: const ValueKey('daily_budget_input'),
-                  controller: _dailyBudgetController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'Daily budget',
-                    prefixText: '${widget.currency} ',
-                  ),
-                ),
+          Expanded(
+            child: Text(
+              'Spending schedule',
+              style: GoogleFonts.plusJakartaSans(
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
+                color: kTextCharcoal,
               ),
-              const SizedBox(width: 8),
-              OutlinedButton.icon(
-                key: const ValueKey('suggested_daily_budget_button'),
-                onPressed: suggestedBudget == null
-                    ? null
-                    : () {
-                        final value = suggestedBudget.toStringAsFixed(2);
-                        _dailyBudgetController.value = TextEditingValue(
-                          text: value,
-                          selection: TextSelection.collapsed(
-                            offset: value.length,
-                          ),
-                        );
-                      },
-                icon: const Icon(Icons.lightbulb_outline_rounded, size: 16),
-                label: Text(suggestedBudgetLabel),
-                style: OutlinedButton.styleFrom(
-                  minimumSize: const Size(0, 44),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  shape: const StadiumBorder(),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (_frequency == PayFrequency.monthly)
-            _paydayDropdown(
-              label: 'Payday',
-              value: _payday1,
-              onChanged: (day) => setState(() => _payday1 = day),
             ),
-          if (_frequency == PayFrequency.twiceMonthly)
+          ),
+          IconButton(
+            onPressed: () => Navigator.pop(context),
+            icon: Icon(Icons.close_rounded, color: kMuted),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            splashRadius: 20,
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Pay frequency picker tile
+            _GabPickerTile(
+              key: const ValueKey('pay_frequency_picker'),
+              label: 'Pay frequency',
+              value: _frequencyLabel(_frequency),
+              backgroundColor: Colors.white,
+              onTap: () async {
+                final picked = await showGabPicker<PayFrequency>(
+                  context: context,
+                  title: 'Select Pay Frequency',
+                  selectedValue: _frequency,
+                  items: PayFrequency.values
+                      .map(
+                        (f) => GabPickerItem(
+                          value: f,
+                          label: _frequencyLabel(f),
+                          subtitle: _frequencySubtitle(f),
+                        ),
+                      )
+                      .toList(),
+                );
+                if (picked != null) {
+                  setState(() => _frequency = picked.value);
+                }
+              },
+            ),
+            const SizedBox(height: 12),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: _paydayDropdown(
-                    label: 'Payday 1',
-                    value: _payday1,
-                    onChanged: (day) => _updatePaydays(first: day),
+                  child: TextField(
+                    key: const ValueKey('daily_budget_input'),
+                    controller: _dailyBudgetController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: kTextCharcoal,
+                    ),
+                    decoration: InputDecoration(
+                      labelText: 'Daily budget',
+                      labelStyle: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: kMuted,
+                      ),
+                      prefixText: '${widget.currency} ',
+                      prefixStyle: GoogleFonts.plusJakartaSans(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: kTextCharcoal,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: kBorder),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: kBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: kPrimary, width: 1.5),
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _paydayDropdown(
-                    label: 'Payday 2',
-                    value: _payday2,
-                    onChanged: (day) => _updatePaydays(second: day),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  key: const ValueKey('suggested_daily_budget_button'),
+                  onPressed: suggestedBudget == null
+                      ? null
+                      : () {
+                          final value = suggestedBudget.toStringAsFixed(2);
+                          _dailyBudgetController.value = TextEditingValue(
+                            text: value,
+                            selection: TextSelection.collapsed(
+                              offset: value.length,
+                            ),
+                          );
+                        },
+                  icon: Icon(
+                    Icons.lightbulb_outline_rounded,
+                    size: 16,
+                    color: suggestedBudget == null ? kMuted : kPrimary,
+                  ),
+                  label: Text(
+                    suggestedBudgetLabel,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: suggestedBudget == null ? kMuted : kPrimary,
+                    ),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 48),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    side: BorderSide(
+                      color: suggestedBudget == null
+                          ? kBorder
+                          : kPrimary.withValues(alpha: 0.4),
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    backgroundColor: suggestedBudget == null
+                        ? Colors.transparent
+                        : kPrimary.withValues(alpha: 0.05),
                   ),
                 ),
               ],
             ),
-          if (_isCalendarBased)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                'Dates after month-end use the last day of that month.',
-                style: TextStyle(fontSize: 11, color: kMuted),
+            const SizedBox(height: 12),
+            if (_frequency == PayFrequency.monthly)
+              _GabPickerTile(
+                key: const ValueKey('payday_picker'),
+                label: 'Payday',
+                value: '$_payday1${_ordinalSuffix(_payday1)} of the month',
+                backgroundColor: Colors.white,
+                onTap: () async {
+                  final picked = await showGabPicker<int>(
+                    context: context,
+                    title: 'Select Payday',
+                    selectedValue: _payday1,
+                    items: List.generate(31, (index) => index + 1)
+                        .map(
+                          (day) => GabPickerItem(
+                            value: day,
+                            label: '$day${_ordinalSuffix(day)} of the month',
+                          ),
+                        )
+                        .toList(),
+                  );
+                  if (picked != null) {
+                    setState(() => _payday1 = picked.value);
+                  }
+                },
               ),
-            ),
-          if (!_isCalendarBased) ...[
-            if (_frequency == PayFrequency.custom)
-              TextField(
-                controller: _customIntervalController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Every N days',
-                  helperText: 'Enter a value from 1 to 90',
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-            OutlinedButton.icon(
-              onPressed: _pickAnchorPayday,
-              icon: const Icon(Icons.calendar_today_outlined),
-              label: Text(
-                'Next payday: ${DateFormat('MMM d').format(_resolvedPayday ?? _anchorPayday)}',
-              ),
-            ),
-          ],
-          if (_frequency == PayFrequency.twiceMonthly && _payday1 == _payday2)
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Choose two different payday dates.'),
-            ),
-          if (_resolvedPayday case final resolved?)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text.rich(
-                  TextSpan(
-                    children: [
-                      TextSpan(
-                        text:
-                            '${calculateDaysLeft(today: _today, payday: resolved) - 1}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      const TextSpan(text: ' days until next payday'),
-                    ],
+            if (_frequency == PayFrequency.twiceMonthly)
+              Row(
+                children: [
+                  Expanded(
+                    child: _GabPickerTile(
+                      key: const ValueKey('payday1_picker'),
+                      label: 'Payday 1',
+                      value: '$_payday1${_ordinalSuffix(_payday1)}',
+                      backgroundColor: Colors.white,
+                      onTap: () async {
+                        final picked = await showGabPicker<int>(
+                          context: context,
+                          title: 'Select Payday 1',
+                          selectedValue: _payday1,
+                          items: List.generate(31, (index) => index + 1)
+                              .map(
+                                (day) => GabPickerItem(
+                                  value: day,
+                                  label: '$day${_ordinalSuffix(day)} of the month',
+                                ),
+                              )
+                              .toList(),
+                        );
+                        if (picked != null) {
+                          _updatePaydays(first: picked.value);
+                        }
+                      },
+                    ),
                   ),
-                  style: TextStyle(fontSize: 12, color: kMuted),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _GabPickerTile(
+                      key: const ValueKey('payday2_picker'),
+                      label: 'Payday 2',
+                      value: '$_payday2${_ordinalSuffix(_payday2)}',
+                      backgroundColor: Colors.white,
+                      onTap: () async {
+                        final picked = await showGabPicker<int>(
+                          context: context,
+                          title: 'Select Payday 2',
+                          selectedValue: _payday2,
+                          items: List.generate(31, (index) => index + 1)
+                              .map(
+                                (day) => GabPickerItem(
+                                  value: day,
+                                  label: '$day${_ordinalSuffix(day)} of the month',
+                                ),
+                              )
+                              .toList(),
+                        );
+                        if (picked != null) {
+                          _updatePaydays(second: picked.value);
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            if (_isCalendarBased)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline_rounded, size: 14, color: kMuted),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Dates after month-end use the last day of that month.',
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 11,
+                          color: kMuted,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-            ),
-        ],
+            if (!_isCalendarBased) ...[
+              if (_frequency == PayFrequency.custom) ...[
+                TextField(
+                  controller: _customIntervalController,
+                  keyboardType: TextInputType.number,
+                  style: GoogleFonts.plusJakartaSans(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: kTextCharcoal,
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Every N days',
+                    helperText: 'Enter a value from 1 to 90',
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 12,
+                    ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: kBorder),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: kBorder),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: kPrimary, width: 1.5),
+                    ),
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+                const SizedBox(height: 10),
+              ],
+              _GabPickerTile(
+                label: 'Next payday anchor',
+                value: DateFormat('MMM d, yyyy').format(
+                  _resolvedPayday ?? _anchorPayday,
+                ),
+                leading: Icon(
+                  Icons.calendar_month_rounded,
+                  size: 20,
+                  color: kPrimary,
+                ),
+                backgroundColor: Colors.white,
+                onTap: _pickAnchorPayday,
+              ),
+            ],
+            if (_frequency == PayFrequency.twiceMonthly && _payday1 == _payday2)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      size: 14,
+                      color: Colors.redAccent,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Choose two different payday dates.',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        color: Colors.redAccent,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (_resolvedPayday case final resolved?)
+              Container(
+                margin: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: kPrimary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.schedule_rounded, size: 16, color: kPrimary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text:
+                                  '${calculateDaysLeft(today: _today, payday: resolved) - 1}',
+                              style: GoogleFonts.plusJakartaSans(
+                                fontWeight: FontWeight.w700,
+                                color: kPrimary,
+                              ),
+                            ),
+                            const TextSpan(text: ' days until next payday'),
+                          ],
+                        ),
+                        style: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: kMuted,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(
+            'Cancel',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: kMuted,
+            ),
+          ),
         ),
         FilledButton(
           onPressed: _valid ? _save : null,
-          child: const Text('Save'),
+          style: FilledButton.styleFrom(
+            backgroundColor: kPrimary,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: Text(
+            'Save',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
         ),
       ],
     );
@@ -1311,26 +1714,6 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
         return 'th';
     }
   }
-
-  DropdownButtonFormField<int> _paydayDropdown({
-    required String label,
-    required int value,
-    required ValueChanged<int> onChanged,
-  }) => DropdownButtonFormField<int>(
-    initialValue: value,
-    decoration: InputDecoration(labelText: label),
-    items: List.generate(31, (index) => index + 1)
-        .map(
-          (day) => DropdownMenuItem(
-            value: day,
-            child: Text('$day${_ordinalSuffix(day)}'),
-          ),
-        )
-        .toList(),
-    onChanged: (day) {
-      if (day != null) onChanged(day);
-    },
-  );
 
   void _updatePaydays({int? first, int? second}) {
     final firstValue = first ?? _payday1;
@@ -1354,6 +1737,16 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
     PayFrequency.every15Days => 'Every 15 days',
     PayFrequency.every30Days => 'Every 30 days',
     PayFrequency.custom => 'Custom',
+  };
+
+  String _frequencySubtitle(PayFrequency frequency) => switch (frequency) {
+    PayFrequency.monthly => 'Once a month on a chosen date (Default)',
+    PayFrequency.twiceMonthly => 'Twice a month (e.g. 15th & 30th)',
+    PayFrequency.weekly => 'Every 7 days',
+    PayFrequency.everyTwoWeeks => 'Bi-weekly (every 14 days)',
+    PayFrequency.every15Days => 'Fixed 15-day cycle',
+    PayFrequency.every30Days => 'Fixed 30-day cycle',
+    PayFrequency.custom => 'Custom recurring interval',
   };
 }
 
@@ -1595,7 +1988,12 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
 class _UpcomingEventsList extends StatelessWidget {
   final List<Bill> bills;
   final Future<void> Function(Bill) onBillTapped;
-  const _UpcomingEventsList({required this.bills, required this.onBillTapped});
+  final VoidCallback? onEmptyTap;
+  const _UpcomingEventsList({
+    required this.bills,
+    required this.onBillTapped,
+    this.onEmptyTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1613,16 +2011,7 @@ class _UpcomingEventsList extends StatelessWidget {
     final items = upcomingBills;
 
     if (items.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: kCardBg,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Center(
-          child: Text('No upcoming events', style: TextStyle(color: kMuted)),
-        ),
-      );
+      return _EmptyStateCard(label: 'No upcoming events', onTap: onEmptyTap);
     }
 
     return SizedBox(
@@ -1720,11 +2109,13 @@ class _TransactionList extends StatelessWidget {
   final List<Account> accounts;
   final bool isIncome;
   final Future<void> Function(FinanceTransaction) onUndo;
+  final VoidCallback? onEmptyTap;
   const _TransactionList({
     required this.transactions,
     required this.accounts,
     required this.isIncome,
     required this.onUndo,
+    this.onEmptyTap,
   });
 
   String _money(double value) => formatPeso(value);
@@ -1825,18 +2216,9 @@ class _TransactionList extends StatelessWidget {
     final items = recent.take(3).toList();
 
     if (items.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: kCardBg,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Center(
-          child: Text(
-            'No recent ${isIncome ? 'income' : 'expenses'}',
-            style: TextStyle(color: kMuted),
-          ),
-        ),
+      return _EmptyStateCard(
+        label: 'No recent ${isIncome ? 'income' : 'expenses'}',
+        onTap: onEmptyTap,
       );
     }
 
@@ -2459,12 +2841,15 @@ class _GabPickerTile extends StatelessWidget {
   final String? value;
   final Widget? leading;
   final VoidCallback onTap;
+  final Color? backgroundColor;
 
   const _GabPickerTile({
+    super.key,
     required this.label,
     required this.onTap,
     this.value,
     this.leading,
+    this.backgroundColor,
   });
 
   @override
@@ -2474,7 +2859,7 @@ class _GabPickerTile extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: kCardBg,
+          color: backgroundColor ?? kCardBg,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: kBorder),
         ),
@@ -2510,6 +2895,79 @@ class _GabPickerTile extends StatelessWidget {
             ),
             Icon(Icons.keyboard_arrow_down_rounded, color: kMuted, size: 22),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Interactive empty-state card for Dashboard sections (Upcoming Events, Recent Income, Recent Expenses).
+/// Provides visual feedback (hover/pressed state, pointer cursor, scale animation),
+/// vibration (haptic feedback), and audible feedback when tapped to redirect.
+class _EmptyStateCard extends StatefulWidget {
+  final String label;
+  final VoidCallback? onTap;
+
+  const _EmptyStateCard({required this.label, this.onTap});
+
+  @override
+  State<_EmptyStateCard> createState() => _EmptyStateCardState();
+}
+
+class _EmptyStateCardState extends State<_EmptyStateCard> {
+  bool _isPressed = false;
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final canTap = widget.onTap != null;
+
+    return MouseRegion(
+      cursor: canTap ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) {
+        if (canTap) setState(() => _isHovered = true);
+      },
+      onExit: (_) {
+        if (canTap) setState(() => _isHovered = false);
+      },
+      child: GestureDetector(
+        onTapDown: canTap ? (_) => setState(() => _isPressed = true) : null,
+        onTapUp: canTap ? (_) => setState(() => _isPressed = false) : null,
+        onTapCancel: canTap ? () => setState(() => _isPressed = false) : null,
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _isPressed ? 0.98 : 1.0,
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeInOut,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: _isHovered || _isPressed
+                  ? Color.alphaBlend(kPrimary.withValues(alpha: 0.05), kCardBg)
+                  : kCardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _isHovered || _isPressed
+                    ? kPrimary.withValues(alpha: 0.25)
+                    : Colors.transparent,
+                width: 1,
+              ),
+            ),
+            child: Center(
+              child: Text(
+                widget.label,
+                style: GoogleFonts.plusJakartaSans(
+                  color: _isHovered || _isPressed ? kPrimary : kMuted,
+                  fontWeight: _isHovered || _isPressed
+                      ? FontWeight.w600
+                      : FontWeight.normal,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
     );

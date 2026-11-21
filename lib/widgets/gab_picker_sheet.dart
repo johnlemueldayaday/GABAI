@@ -331,9 +331,11 @@ Future<GabPickerItem<T>?> showGabPicker<T>({
   String searchHint = 'Search…',
   String? addCustomLabel,
   VoidCallback? onAddCustom,
+  bool useRootNavigator = true,
 }) {
   return showModalBottomSheet<GabPickerItem<T>>(
     context: context,
+    useRootNavigator: useRootNavigator,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (_) => GabPickerSheet<T>(

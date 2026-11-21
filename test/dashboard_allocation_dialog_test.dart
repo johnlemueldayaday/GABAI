@@ -60,13 +60,13 @@ void main() {
     expect(labelSpan.style?.fontWeight, isNot(FontWeight.bold));
 
     await tester.enterText(find.byType(TextField), '500');
-    await tester.tap(find.byType(DropdownButtonFormField<PayFrequency>));
+    await tester.tap(find.byKey(const ValueKey('pay_frequency_picker')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Every 15 days').last);
     await tester.pumpAndSettle();
     expect(find.textContaining('Next payday:'), findsWidgets);
-    expect(find.byType(DropdownButtonFormField<int>), findsNothing);
-    await tester.tap(find.byType(OutlinedButton).last);
+    expect(find.byKey(const ValueKey('payday_picker')), findsNothing);
+    await tester.tap(find.text('Next payday anchor'));
     await tester.pumpAndSettle();
     expect(find.byType(CalendarDatePicker), findsOneWidget);
     await tester.tap(find.text('Cancel').last);

@@ -30,7 +30,7 @@ void main() {
     );
 
     expect(result.reservedFuture, 7000);
-    expect(result.availableToday, 1000);
+    expect(result.availableToday, 500);
     expect(result.extra, 500);
     expect(result.safeToSpend, 500);
   });
@@ -44,7 +44,7 @@ void main() {
     );
 
     expect(result.reservedFuture, 6500);
-    expect(result.availableToday, 1200);
+    expect(result.availableToday, 200);
     expect(result.extra, 700);
     expect(result.safeToSpend, 700);
   });
@@ -57,7 +57,7 @@ void main() {
       spentToday: 800,
     );
 
-    expect(result.availableToday, 700);
+    expect(result.availableToday, -300);
     expect(result.extra, 200);
     expect(result.safeToSpend, 200);
   });
@@ -70,9 +70,9 @@ void main() {
       spentToday: 0,
     );
 
-    expect(result.availableToday, 0);
+    expect(result.availableToday, 500);
     expect(result.extra, -500);
-    expect(result.safeToSpend, 0);
+    expect(result.safeToSpend, -500);
   });
 
   test('reduces effective daily budget based on current shortfall', () {
@@ -89,10 +89,10 @@ void main() {
       spentToday: 0,
     );
 
-    expect(firstCase.safeToSpend, 0);
+    expect(firstCase.safeToSpend, -200);
     expect(firstCase.effectiveDailyBudget, closeTo(464.29, 0.01));
     expect(firstCase.isSevereShortfall, isFalse);
-    expect(secondCase.safeToSpend, 0);
+    expect(secondCase.safeToSpend, -300);
     expect(secondCase.effectiveDailyBudget, closeTo(476.92, 0.01));
     expect(secondCase.isSevereShortfall, isFalse);
   });
@@ -105,7 +105,7 @@ void main() {
       spentToday: 0,
     );
 
-    expect(result.safeToSpend, 0);
+    expect(result.safeToSpend, -7000);
     expect(result.effectiveDailyBudget, 0);
     expect(result.extra, -7000);
     expect(result.isSevereShortfall, isTrue);
@@ -120,7 +120,7 @@ void main() {
     );
 
     expect(recovered.effectiveDailyBudget, 500);
-    expect(recovered.safeToSpend, 0);
+    expect(recovered.safeToSpend, 500);
     expect(recovered.isSevereShortfall, isFalse);
   });
 
@@ -133,7 +133,7 @@ void main() {
     );
 
     expect(result.daysLeft, 0);
-    expect(result.availableToday, 800);
+    expect(result.availableToday, 500);
     expect(result.extra, 800);
     expect(result.safeToSpend, 800);
 
@@ -144,7 +144,7 @@ void main() {
       spentToday: 0,
     );
     expect(passedPayday.daysLeft, 0);
-    expect(passedPayday.availableToday, 800);
+    expect(passedPayday.availableToday, 500);
     expect(passedPayday.safeToSpend, 800);
   });
 
@@ -158,7 +158,7 @@ void main() {
         spentToday: 0,
       );
 
-      expect(result.availableToday, 800);
+      expect(result.availableToday, 500);
       expect(result.extra, 300);
       expect(result.safeToSpend, 300);
     },
@@ -184,11 +184,11 @@ void main() {
       spentToday: 0,
     );
 
-    expect(negativeBalance.availableToday, -7100);
+    expect(negativeBalance.availableToday, 500);
     expect(negativeBalance.extra, -7600);
-    expect(zeroBalance.availableToday, -7000);
+    expect(zeroBalance.availableToday, 500);
     expect(zeroBalance.extra, -7500);
-    expect(zeroAllocation.availableToday, 800);
+    expect(zeroAllocation.availableToday, 0);
     expect(zeroAllocation.extra, 800);
     expect(zeroAllocation.safeToSpend, 800);
   });
@@ -271,37 +271,44 @@ void main() {
 
   test('formats pesos with separators and two decimals', () {
     expect(formatPeso(8000), '₱8,000.00');
+    expect(formatPeso(-350), '-₱350.00');
   });
 
-  test('overspending adjusts daily budget per day and sets safe to spend to 0', () {
-    // Weekly budget: 7,000, 1,000/day. Day 1: spent 1,100.
-    final overspentCase = SafeToSpend.calculate(
-      balance: 5900,
-      dailyBudget: 1000,
-      daysLeft: 7,
-      spentToday: 1100,
-      totalCycleDays: 7,
-      cycleSpentBeforeToday: 0,
-    );
+  test(
+    'overspending adjusts daily budget per day and keeps a negative safe to spend',
+    () {
+      // Weekly budget: 7,000, 1,000/day. Day 1: spent 1,100.
+      final overspentCase = SafeToSpend.calculate(
+        balance: 5900,
+        dailyBudget: 1000,
+        daysLeft: 7,
+        spentToday: 1100,
+        totalCycleDays: 7,
+        cycleSpentBeforeToday: 0,
+      );
 
-    // 0 safe to spend for today because 1100 >= 1000
-    expect(overspentCase.safeToSpend, 0);
-    // Adjusted daily budget: (7000 - 1100) / 6 = 5900 / 6 = 983.33/day
-    expect(overspentCase.effectiveDailyBudget, closeTo(983.33, 0.01));
-  });
+      // The user is -100 below the future reserve.
+      expect(overspentCase.safeToSpend, -100);
+      // Adjusted daily budget: (7000 - 1100) / 6 = 5900 / 6 = 983.33/day
+      expect(overspentCase.effectiveDailyBudget, closeTo(983.33, 0.01));
+    },
+  );
 
-  test('undoing recent overspent expense refreshes safe to spend and restored daily budget', () {
-    // Undoing the 1,100 expense restores spentToday to 0
-    final undoneCase = SafeToSpend.calculate(
-      balance: 7000,
-      dailyBudget: 1000,
-      daysLeft: 7,
-      spentToday: 0,
-      totalCycleDays: 7,
-      cycleSpentBeforeToday: 0,
-    );
+  test(
+    'undoing recent overspent expense refreshes safe to spend and restored daily budget',
+    () {
+      // Undoing the 1,100 expense restores spentToday to 0
+      final undoneCase = SafeToSpend.calculate(
+        balance: 7000,
+        dailyBudget: 1000,
+        daysLeft: 7,
+        spentToday: 0,
+        totalCycleDays: 7,
+        cycleSpentBeforeToday: 0,
+      );
 
-    expect(undoneCase.safeToSpend, 1000);
-    expect(undoneCase.effectiveDailyBudget, 1000);
-  });
+      expect(undoneCase.safeToSpend, 1000);
+      expect(undoneCase.effectiveDailyBudget, 1000);
+    },
+  );
 }

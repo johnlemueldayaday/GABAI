@@ -1,11 +1,13 @@
 import 'dart:ui';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../config/app_theme.dart';
 import '../services/notification_service.dart';
 import '../services/settings_service.dart';
+import 'wallet.dart';
 
 // ─────────────────────────────────────────────────────────────
 // Entry widget — wraps the real app and overlays onboarding
@@ -115,6 +117,13 @@ class _OnboardingModalState extends State<OnboardingModal>
       );
     }
     widget.onComplete();
+    if (mounted) {
+      Navigator.of(context).push(
+        CupertinoPageRoute(
+          builder: (_) => const WalletPage(openAddWalletOnStart: true),
+        ),
+      );
+    }
   }
 
   @override
@@ -196,7 +205,7 @@ class _OnboardingModalState extends State<OnboardingModal>
                         ),
                       ),
                       child: Text(
-                        _page == 1 ? 'Get Started 🎉' : 'Next →',
+                        _page == 1 ? 'Set Up My Wallet →' : 'Next →',
                         style: GoogleFonts.plusJakartaSans(
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
@@ -305,37 +314,34 @@ class _Screen1 extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Screen 3: Walkthrough tour
+// Screen 2: Quick Setup Guide (Step-by-step to get started)
 // ─────────────────────────────────────────────────────────────
 class _Screen3 extends StatelessWidget {
   const _Screen3();
 
   @override
   Widget build(BuildContext context) {
-    const features = [
-      _FeatureItem(
-        icon: Icons.dashboard_rounded,
-        color: 0xFF10B981,
-        title: 'Dashboard',
-        desc: 'See your total balance, recent income & expenses at a glance.',
-      ),
-      _FeatureItem(
+    const steps = [
+      _SetupStepItem(
+        stepNumber: '1',
+        title: 'Add Your First Wallet',
+        desc: 'Pick Cash, GCash, Maya, or Bank and input your current funds.',
         icon: Icons.account_balance_wallet_rounded,
-        color: 0xFF6366F1,
-        title: 'Wallet',
-        desc: 'Manage all your accounts, log transactions & transfer funds.',
+        iconColor: 0xFF10B981,
       ),
-      _FeatureItem(
-        icon: Icons.calendar_month_rounded,
-        color: 0xFFF59E0B,
-        title: 'Calendar',
-        desc: 'Schedule and track recurring bills, income, and due dates.',
+      _SetupStepItem(
+        stepNumber: '2',
+        title: 'Configure Safe to Spend',
+        desc: 'Set your Monthly payday and daily budget to prevent overspending.',
+        icon: Icons.shield_outlined,
+        iconColor: 0xFF6366F1,
       ),
-      _FeatureItem(
-        icon: Icons.shopping_cart_rounded,
-        color: 0xFFEC4899,
-        title: 'Grocery',
-        desc: 'Plan grocery lists and track how much you spend per trip.',
+      _SetupStepItem(
+        stepNumber: '3',
+        title: 'Log Daily & Stay on Track',
+        desc: 'Tap + Income or ↑ Expense whenever money moves to see live limits.',
+        icon: Icons.swap_vert_circle_rounded,
+        iconColor: 0xFFF59E0B,
       ),
     ];
 
@@ -344,58 +350,102 @@ class _Screen3 extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'You\'re all set! ✨',
-            style: GoogleFonts.plusJakartaSans(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: kTextCharcoal,
-            ),
+          Row(
+            children: [
+              Text(
+                'Quick Setup Guide',
+                style: GoogleFonts.plusJakartaSans(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                  color: kTextCharcoal,
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Text('🚀', style: TextStyle(fontSize: 20)),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
-            'Here\'s a quick look at what you can do.',
-            style: GoogleFonts.plusJakartaSans(fontSize: 13, color: kMuted),
+            '3 simple steps to get Gabay working for you:',
+            style: GoogleFonts.plusJakartaSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+              color: kMuted,
+            ),
           ),
-          const SizedBox(height: 20),
-          ...features.map((f) => _FeatureTile(item: f)),
+          const SizedBox(height: 18),
+          ...steps.map((s) => _SetupStepTile(step: s)),
         ],
       ),
     );
   }
 }
 
-class _FeatureItem {
-  final IconData icon;
-  final int color;
+class _SetupStepItem {
+  final String stepNumber;
   final String title;
   final String desc;
-  const _FeatureItem({
-    required this.icon,
-    required this.color,
+  final IconData icon;
+  final int iconColor;
+
+  const _SetupStepItem({
+    required this.stepNumber,
     required this.title,
     required this.desc,
+    required this.icon,
+    required this.iconColor,
   });
 }
 
-class _FeatureTile extends StatelessWidget {
-  final _FeatureItem item;
-  const _FeatureTile({required this.item});
+class _SetupStepTile extends StatelessWidget {
+  final _SetupStepItem step;
+  const _SetupStepTile({required this.step});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: Color(item.color).withValues(alpha: 0.12),
+              color: Color(step.iconColor).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(item.icon, color: Color(item.color), size: 22),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Icon(
+                  step.icon,
+                  color: Color(step.iconColor),
+                  size: 22,
+                ),
+                Positioned(
+                  top: 2,
+                  right: 2,
+                  child: Container(
+                    width: 15,
+                    height: 15,
+                    decoration: BoxDecoration(
+                      color: Color(step.iconColor),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      step.stepNumber,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           const SizedBox(width: 14),
           Expanded(
@@ -403,7 +453,7 @@ class _FeatureTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  item.title,
+                  step.title,
                   style: GoogleFonts.plusJakartaSans(
                     fontWeight: FontWeight.w800,
                     fontSize: 14,
@@ -412,7 +462,7 @@ class _FeatureTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  item.desc,
+                  step.desc,
                   style: GoogleFonts.plusJakartaSans(
                     fontSize: 12,
                     color: kMuted,

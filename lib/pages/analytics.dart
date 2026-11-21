@@ -73,19 +73,6 @@ extension _SectionX on _Section {
         return 'History Breakdown';
     }
   }
-
-  IconData get icon {
-    switch (this) {
-      case _Section.totalSpent:
-        return Icons.pie_chart_outline_rounded;
-      case _Section.groceryCategory:
-        return Icons.shopping_cart_outlined;
-      case _Section.billsBreakdown:
-        return Icons.receipt_long_outlined;
-      case _Section.history:
-        return Icons.history_rounded;
-    }
-  }
 }
 
 // ─── Color Palette ────────────────────────────────────────────────────────────
@@ -458,16 +445,6 @@ class _AnalyticsPageState extends State<AnalyticsPage> {
                       ),
                     ),
                   ),
-                  // Icon
-                  Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: kPrimary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: Icon(section.icon, size: 15, color: kPrimary),
-                  ),
-                  const SizedBox(width: 10),
                   // Title + subtitle
                   Expanded(
                     child: Column(

@@ -10,9 +10,11 @@ import '../widgets/gab_picker_sheet.dart';
 import '../models/finance_models.dart';
 import '../services/finance_storage.dart';
 import '../services/settings_service.dart';
+import 'dashboard.dart';
 
 class WalletPage extends StatefulWidget {
-  const WalletPage({super.key});
+  final bool openAddWalletOnStart;
+  const WalletPage({super.key, this.openAddWalletOnStart = false});
 
   @override
   State<WalletPage> createState() => _WalletPageState();
@@ -134,6 +136,13 @@ class _WalletPageState extends State<WalletPage> {
       setState(() {
         _isLoading = false;
       });
+      if (widget.openAddWalletOnStart) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _showAddWalletSheet();
+          }
+        });
+      }
     }
   }
 
@@ -669,10 +678,21 @@ class _WalletPageState extends State<WalletPage> {
                                   value,
                                 );
                                 if (sheetContext.mounted) {
-                                  setSheetState(() {
-                                    isSaving = false;
-                                    showingBalance = false;
-                                  });
+                                  Navigator.pop(sheetContext);
+                                }
+                                if (widget.openAddWalletOnStart && mounted) {
+                                  await HapticFeedback.mediumImpact();
+                                  if (!context.mounted) return;
+                                  Navigator.pushReplacement(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => const DashboardPage(
+                                        openSpendingScheduleOnStart: true,
+                                      ),
+                                    ),
+                                  );
+                                } else if (mounted) {
+                                  await _loadData();
                                 }
                               },
                         style: ElevatedButton.styleFrom(
@@ -1123,74 +1143,108 @@ class _WalletPageState extends State<WalletPage> {
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                      colors: [
-                                        accountColor.withValues(alpha: 0.2),
-                                        accountColor.withValues(alpha: 0.08),
-                                      ],
-                                    ),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: Colors.white.withValues(
-                                        alpha: 0.9,
+                                (() {
+                                  final isCash =
+                                      acc.name.trim().toLowerCase() == 'cash';
+                                  final iconCircle = Container(
+                                    width: 42,
+                                    height: 42,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                        colors: [
+                                          accountColor.withValues(alpha: 0.2),
+                                          accountColor.withValues(alpha: 0.08),
+                                        ],
                                       ),
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
                                         color: Colors.white.withValues(
                                           alpha: 0.9,
                                         ),
-                                        offset: const Offset(-2, -2),
-                                        blurRadius: 5,
                                       ),
-                                      BoxShadow(
-                                        color: accountColor.withValues(
-                                          alpha: 0.2,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.white.withValues(
+                                            alpha: 0.9,
+                                          ),
+                                          offset: const Offset(-2, -2),
+                                          blurRadius: 5,
                                         ),
-                                        offset: const Offset(3, 4),
-                                        blurRadius: 7,
-                                      ),
-                                    ],
-                                  ),
-                                  child: Center(
-                                    child: Container(
-                                      width: 32,
-                                      height: 32,
-                                      decoration: BoxDecoration(
-                                        color: kCardBg.withValues(alpha: 0.9),
-                                        shape: BoxShape.circle,
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: accountColor.withValues(
-                                              alpha: 0.16,
-                                            ),
-                                            offset: const Offset(2, 2),
-                                            blurRadius: 4,
+                                        BoxShadow(
+                                          color: accountColor.withValues(
+                                            alpha: 0.2,
                                           ),
-                                          BoxShadow(
-                                            color: Colors.white.withValues(
-                                              alpha: 0.95,
+                                          offset: const Offset(3, 4),
+                                          blurRadius: 7,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Center(
+                                      child: Container(
+                                        width: 32,
+                                        height: 32,
+                                        decoration: BoxDecoration(
+                                          color: kCardBg.withValues(alpha: 0.9),
+                                          shape: BoxShape.circle,
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: accountColor.withValues(
+                                                alpha: 0.16,
+                                              ),
+                                              offset: const Offset(2, 2),
+                                              blurRadius: 4,
                                             ),
-                                            offset: const Offset(-2, -2),
-                                            blurRadius: 4,
-                                          ),
-                                        ],
-                                      ),
-                                      alignment: Alignment.center,
-                                      child: AccountIconImage(
-                                        name: acc.name,
-                                        icon: acc.icon,
-                                        size: 22,
+                                            BoxShadow(
+                                              color: Colors.white.withValues(
+                                                alpha: 0.95,
+                                              ),
+                                              offset: const Offset(-2, -2),
+                                              blurRadius: 4,
+                                            ),
+                                          ],
+                                        ),
+                                        alignment: Alignment.center,
+                                        child: AccountIconImage(
+                                          name: acc.name,
+                                          icon: acc.icon,
+                                          size: 22,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                ),
+                                  );
+
+                                  if (!isCash) return iconCircle;
+
+                                  return _CashCircleButton(
+                                    onTap: () async {
+                                      // Proactive vibration: double pulse
+                                      await HapticFeedback.mediumImpact();
+                                      await Future.delayed(
+                                        const Duration(milliseconds: 60),
+                                      );
+                                      await HapticFeedback.heavyImpact();
+
+                                      // Proactive sound: alert sound
+                                      await SystemSound.play(
+                                        SystemSoundType.alert,
+                                      );
+
+                                      if (!context.mounted) return;
+                                      Navigator.pushReplacement(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => DashboardPage(
+                                            initialTransactionType: 'INCOME',
+                                            initialAccountId: acc.id,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    child: iconCircle,
+                                  );
+                                })(),
                                 Container(
                                   padding: const EdgeInsets.symmetric(
                                     horizontal: 8,
@@ -1605,6 +1659,41 @@ class _WalletPickerTile extends StatelessWidget {
             ),
             Icon(Icons.keyboard_arrow_down_rounded, color: kMuted, size: 22),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Interactive button wrapper specifically for the Cash account circular icon.
+/// Provides a responsive spring scale effect on touch/click.
+class _CashCircleButton extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+
+  const _CashCircleButton({required this.child, required this.onTap});
+
+  @override
+  State<_CashCircleButton> createState() => _CashCircleButtonState();
+}
+
+class _CashCircleButtonState extends State<_CashCircleButton> {
+  bool _isPressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTapDown: (_) => setState(() => _isPressed = true),
+        onTapUp: (_) => setState(() => _isPressed = false),
+        onTapCancel: () => setState(() => _isPressed = false),
+        onTap: widget.onTap,
+        child: AnimatedScale(
+          scale: _isPressed ? 0.88 : 1.0,
+          duration: const Duration(milliseconds: 100),
+          curve: Curves.easeOutCubic,
+          child: widget.child,
         ),
       ),
     );

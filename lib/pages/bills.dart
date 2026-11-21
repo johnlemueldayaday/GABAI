@@ -19,7 +19,12 @@ import '../services/safe_to_spend.dart';
 
 class BillsPage extends StatefulWidget {
   final String? initialSelectedBillId;
-  const BillsPage({super.key, this.initialSelectedBillId});
+  final bool openAddEventOnStart;
+  const BillsPage({
+    super.key,
+    this.initialSelectedBillId,
+    this.openAddEventOnStart = false,
+  });
 
   @override
   State<BillsPage> createState() => _BillsPageState();
@@ -68,6 +73,12 @@ class _BillsPageState extends State<BillsPage> {
           }
         });
       }
+    } else if (widget.openAddEventOnStart) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _showAddEventSheet();
+        }
+      });
     }
   }
 

@@ -2,8 +2,10 @@ import 'dart:math' as math;
 
 import 'package:intl/intl.dart';
 
-String formatPeso(double amount) =>
-    '₱${NumberFormat('#,##0.00').format(amount)}';
+String formatPeso(double amount) {
+  final formatted = NumberFormat('#,##0.00').format(amount.abs());
+  return amount < 0 ? '-₱$formatted' : '₱$formatted';
+}
 
 enum PayFrequency {
   monthly,
@@ -62,7 +64,7 @@ DateTime nextPayday({
       frequency == PayFrequency.twiceMonthly) {
     final paydays = frequency == PayFrequency.monthly
         ? [payday1]
-      : [payday1, ?payday2];
+        : [payday1, ?payday2];
     DateTime? earliest;
     for (var monthOffset = 0; monthOffset <= 1; monthOffset++) {
       final month = DateTime(todayDate.year, todayDate.month + monthOffset, 1);
@@ -187,13 +189,14 @@ class SafeToSpend {
     required double dailyBudget,
     required int daysLeft,
     required double spentToday,
-    int? totalCycleDays,           // kept for API compatibility, unused
+    int? totalCycleDays, // kept for API compatibility, unused
     double cycleSpentBeforeToday = 0.0, // kept for API compatibility, unused
   }) {
     final validBalance = balance.isFinite ? balance : 0.0;
     final validBudget = dailyBudget.isFinite ? math.max(0.0, dailyBudget) : 0.0;
-    final validSpentToday =
-        spentToday.isFinite ? math.max(0.0, spentToday) : 0.0;
+    final validSpentToday = spentToday.isFinite
+        ? math.max(0.0, spentToday)
+        : 0.0;
 
     final remainingDays = math.max(0, daysLeft);
 
@@ -217,10 +220,10 @@ class SafeToSpend {
     //   extra = 6440 - 4800 = 1640  → safe to spend
     //
     //   If 2240 spent today → balance becomes 4700
-    //   extra = 4700 - 4800 = -100  → safe to spend = 0
+    //   extra = 4700 - 4800 = -100  → safe to spend = -100
     //   effectiveDailyBudget = 4700 / 12 = 391.67
     final extra = validBalance - reservedFuture;
-    final safeToSpend = math.max(0.0, extra);
+    final safeToSpend = extra;
 
     // When we've dipped into the future reserve (extra < 0), recalculate the
     // daily budget across remaining future days so the user knows their new cap.
@@ -228,7 +231,8 @@ class SafeToSpend {
         ? math.max(0.0, validBalance / futureDays)
         : validBudget;
 
-    final isSevereShortfall = extra < 0 &&
+    final isSevereShortfall =
+        extra < 0 &&
         validBudget > 0 &&
         effectiveDailyBudget < validBudget * 0.4;
 
@@ -250,4 +254,3 @@ class SafeToSpend {
     );
   }
 }
-
