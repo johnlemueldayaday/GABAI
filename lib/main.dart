@@ -8,6 +8,8 @@ import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/notification_service.dart';
 import 'package:gabay/services/bill_calendar_service.dart';
 import 'package:gabay/services/bill_storage.dart';
+import 'package:gabay/services/sm_supermarket_price_seeder.dart';
+import 'package:gabay/services/puregold_price_seeder.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,6 +21,8 @@ void main() async {
   // Load persisted data
   await GroceryStorage.loadAll();
   await PriceStorage.load();
+  SmSupermarketPriceSeeder.seed(); // Seed SM Supermarket reference prices
+  PuregoldPriceSeeder.seed();       // Seed Puregold reference prices
   await SettingsService().load();
 
   await NotificationService().init();

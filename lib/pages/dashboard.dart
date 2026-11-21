@@ -369,6 +369,9 @@ class _DashboardPageState extends State<DashboardPage>
                             )
                             .name
                       : null,
+                  subtitle: selectedAccountId != null
+                      ? '$_currency${NumberFormat('#,##0.00').format(_accounts.firstWhere((a) => a.id == selectedAccountId, orElse: () => _accounts.first).balance)}'
+                      : null,
                   leading: selectedAccountId != null
                       ? AccountIconImage(
                           name: _accounts
@@ -396,6 +399,8 @@ class _DashboardPageState extends State<DashboardPage>
                             (a) => GabPickerItem<String>(
                               value: a.id,
                               label: a.name,
+                              subtitle:
+                                  '$_currency${NumberFormat('#,##0.00').format(a.balance)}',
                               leading: AccountIconImage(
                                 name: a.name,
                                 icon: a.icon,
@@ -2839,6 +2844,7 @@ class _BubblePainter extends CustomPainter {
 class _GabPickerTile extends StatelessWidget {
   final String label;
   final String? value;
+  final String? subtitle;
   final Widget? leading;
   final VoidCallback onTap;
   final Color? backgroundColor;
@@ -2848,6 +2854,7 @@ class _GabPickerTile extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.value,
+    this.subtitle,
     this.leading,
     this.backgroundColor,
   });
@@ -2887,6 +2894,17 @@ class _GabPickerTile extends StatelessWidget {
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: kTextCharcoal,
+                      ),
+                    ),
+                  ],
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle!,
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: kMuted,
                       ),
                     ),
                   ],

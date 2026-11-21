@@ -108,7 +108,10 @@ class FinanceStorage {
   /// Add a transaction, update the linked account balance, and persist both.
   /// This is the core method that Gab's `add_transaction` tool will call.
   /// Throws an exception if the transaction would result in a negative balance for Cash, E-Wallet, or Bank accounts.
-  static Future<void> addTransaction(FinanceTransaction txn) async {
+  static Future<void> addTransaction(
+    FinanceTransaction txn, {
+    bool notify = true,
+  }) async {
     if (txn.isTransfer) {
       throw ArgumentError.value(
         txn.type,
@@ -149,20 +152,22 @@ class FinanceStorage {
     await saveAccounts(accounts);
 
     // 4. Trigger system local notification
-    try {
-      final totalBalance = accounts.fold(0.0, (sum, a) => sum + a.balance);
-      await NotificationService().notifyTransaction(
-        type: txn.type,
-        amount: txn.amount,
-        accountName: account.name,
-        newBalance: txn.type == 'INCOME' ? totalBalance : newBalance,
-        description:
-            txn.description.isNotEmpty ? txn.description : txn.category,
-        accountId: account.id,
-        transactionId: txn.id,
-      );
-    } catch (_) {
-      // Notification dispatch should not prevent successful transaction storage
+    if (notify) {
+      try {
+        final totalBalance = accounts.fold(0.0, (sum, a) => sum + a.balance);
+        await NotificationService().notifyTransaction(
+          type: txn.type,
+          amount: txn.amount,
+          accountName: account.name,
+          newBalance: txn.type == 'INCOME' ? totalBalance : newBalance,
+          description:
+              txn.description.isNotEmpty ? txn.description : txn.category,
+          accountId: account.id,
+          transactionId: txn.id,
+        );
+      } catch (_) {
+        // Notification dispatch should not prevent successful transaction storage
+      }
     }
   }
 

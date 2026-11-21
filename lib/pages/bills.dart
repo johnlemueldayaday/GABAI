@@ -38,7 +38,8 @@ class _BillsPageState extends State<BillsPage> {
 
   String _formatSignedBillAmount(Bill bill) {
     final sign = bill.isIncome ? '+' : '-';
-    return '$sign₱${bill.amount.toStringAsFixed(2)}';
+    final formatted = NumberFormat('#,##0.00', 'en_US').format(bill.amount);
+    return '$sign₱$formatted';
   }
 
   @override
@@ -357,6 +358,14 @@ class _BillsPageState extends State<BillsPage> {
           await _saveData();
           await _syncBillReminders(newBill);
 
+          try {
+            await NotificationService().notifyBillAddedToCalendar(
+              billName: newBill.type,
+              amount: newBill.amount,
+              billId: newBill.id,
+            );
+          } catch (_) {}
+
           // Only add to FinanceStorage automatically if date is today or in the past
           final now = DateTime.now();
           final today = DateTime(now.year, now.month, now.day);
@@ -380,7 +389,7 @@ class _BillsPageState extends State<BillsPage> {
                 description: 'Calendar Event: ${newBill.type}',
                 date: newBill.dueDate,
               );
-              await FinanceStorage.addTransaction(txn);
+              await FinanceStorage.addTransaction(txn, notify: false);
             }
           }
         },
@@ -671,7 +680,8 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
 
   String _formatSignedBillAmount(Bill bill) {
     final sign = bill.isIncome ? '+' : '-';
-    return '$sign₱${bill.amount.toStringAsFixed(2)}';
+    final formatted = NumberFormat('#,##0.00', 'en_US').format(bill.amount);
+    return '$sign₱$formatted';
   }
 
   final List<String> _frequencies = [
@@ -1188,7 +1198,7 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                                                         ),
                                                   ),
                                                   Text(
-                                                    '₱${amount.toStringAsFixed(2)} - $_selectedFrequency',
+                                                    '₱${NumberFormat('#,##0.00', 'en_US').format(amount)} - $_selectedFrequency',
                                                     style:
                                                         GoogleFonts.plusJakartaSans(
                                                           fontSize: 12,

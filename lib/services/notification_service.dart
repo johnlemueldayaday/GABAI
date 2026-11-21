@@ -10,6 +10,7 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/models/bill_models.dart';
+import 'package:gabay/pages/bills.dart';
 import 'package:gabay/pages/wallet.dart';
 
 class NotificationService {
@@ -71,6 +72,10 @@ class NotificationService {
       if (data['type'] == 'transaction') {
         navigatorKey.currentState?.push(
           MaterialPageRoute(builder: (_) => const WalletPage()),
+        );
+      } else if (data['type'] == 'bill_calendar') {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(builder: (_) => const BillsPage()),
         );
       }
     } catch (e) {
@@ -332,6 +337,57 @@ class NotificationService {
     );
   }
 
+  /// Sends an immediate local notification when a bill is added to calendar.
+  Future<void> notifyBillAddedToCalendar({
+    required String billName,
+    required double amount,
+    String? billId,
+  }) async {
+    await init();
+    await _ensureNotificationPermissions();
+
+    final formatter = NumberFormat('#,##0.00', 'en_US');
+    final formattedAmount = '₱${formatter.format(amount)}';
+
+    final title = '📆 $billName Added to Calendar!';
+    final body = 'Amount : $formattedAmount';
+
+    final payload = jsonEncode({
+      'type': 'bill_calendar',
+      'billId': billId,
+      'billName': billName,
+    });
+
+    final threadId =
+        'bill_${billName.toLowerCase().replaceAll(RegExp(r'\s+'), '_')}';
+
+    await flutterLocalNotificationsPlugin.show(
+      id: DateTime.now().microsecondsSinceEpoch & 0x7FFFFFFF,
+      title: title,
+      body: body,
+      payload: payload,
+      notificationDetails: NotificationDetails(
+        android: const AndroidNotificationDetails(
+          'transaction_alerts',
+          'Transaction Alerts',
+          channelDescription: 'Notifications shown when a transaction or entry is logged',
+          importance: Importance.max,
+          priority: Priority.high,
+          enableVibration: true,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBanner: true,
+          presentList: true,
+          presentSound: true,
+          presentBadge: true,
+          interruptionLevel: InterruptionLevel.active,
+          threadIdentifier: threadId,
+        ),
+      ),
+    );
+  }
+
   int _notificationId(String billId, int daysBefore) {
     var hash = 0x811C9DC5;
     for (final codeUnit in billId.codeUnits) {
@@ -408,7 +464,8 @@ class NotificationService {
     await flutterLocalNotificationsPlugin.zonedSchedule(
       id: notificationId,
       title: 'Upcoming ${bill.isIncome ? 'Income' : 'Bill'}: ${bill.type}',
-      body: '${bill.type} of ₱${bill.amount.toStringAsFixed(2)} $daysText',
+      body:
+          '${bill.type} of ₱${NumberFormat('#,##0.00', 'en_US').format(bill.amount)} $daysText',
       scheduledDate: tz.TZDateTime.from(targetDate, tz.local),
       notificationDetails: const NotificationDetails(
         android: AndroidNotificationDetails(

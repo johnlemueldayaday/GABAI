@@ -299,6 +299,8 @@ class _WalletPageState extends State<WalletPage> {
                               .map((a) => GabPickerItem<String>(
                                     value: a.id,
                                     label: a.name,
+                                    subtitle:
+                                        '$_currency${NumberFormat('#,##0.00').format(a.balance)}',
                                     leading: AccountIconImage(
                                         name: a.name,
                                         icon: a.icon,
@@ -340,6 +342,8 @@ class _WalletPageState extends State<WalletPage> {
                               .map((a) => GabPickerItem<String>(
                                     value: a.id,
                                     label: a.name,
+                                    subtitle:
+                                        '$_currency${NumberFormat('#,##0.00').format(a.balance)}',
                                     leading: AccountIconImage(
                                         name: a.name,
                                         icon: a.icon,
@@ -1614,6 +1618,7 @@ class _WalletPickerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currency = SettingsService().currency;
     final displayValue = account?.name ?? valueLabel;
     return GestureDetector(
       onTap: onTap,
@@ -1651,6 +1656,17 @@ class _WalletPickerTile extends StatelessWidget {
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: kTextCharcoal,
+                      ),
+                    ),
+                  ],
+                  if (account != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      '$currency${NumberFormat('#,##0.00').format(account!.balance)}',
+                      style: GoogleFonts.plusJakartaSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: kMuted,
                       ),
                     ),
                   ],
