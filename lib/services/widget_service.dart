@@ -14,6 +14,7 @@ class WidgetService {
     required double safeToSpend,
     required double weekSpent,
     required double weekBudget,
+    int daysLeft = 0,
   }) async {
     if (kIsWeb) return false; // Home widgets not supported on web
     try {
@@ -34,9 +35,14 @@ class WidgetService {
         'week_budget',
         weekBudget,
       );
+      final daysLeftSaved = await HomeWidget.saveWidgetData<int>(
+        'days_left',
+        daysLeft,
+      );
       if (safeToSpendSaved != true ||
           weekSpentSaved != true ||
-          weekBudgetSaved != true) {
+          weekBudgetSaved != true ||
+          daysLeftSaved != true) {
         throw StateError('GABAI could not save the widget data.');
       }
 

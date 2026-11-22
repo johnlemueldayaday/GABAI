@@ -1,6 +1,7 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:gabay/widgets/account_icon.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -17,6 +18,7 @@ import '../services/notification_service.dart';
 import '../services/future_event_storage.dart';
 import '../services/bill_expense_classifier.dart';
 import '../services/safe_to_spend.dart';
+import 'dashboard.dart';
 
 class BillsPage extends StatefulWidget {
   final String? initialSelectedBillId;
@@ -354,6 +356,13 @@ class _BillsPageState extends State<BillsPage> {
       builder: (context) => _DayBillsSheet(
         day: _selectedDay!,
         bills: _getEventsForDay(_selectedDay!),
+        getEventsForDay: _getEventsForDay,
+        onDayChanged: (newDay) {
+          setState(() {
+            _selectedDay = newDay;
+            _focusedDay = newDay;
+          });
+        },
         onAdd: (newBill) async {
           setState(() {
             _allBills.add(newBill);
@@ -369,33 +378,6 @@ class _BillsPageState extends State<BillsPage> {
                 billId: newBill.id,
               );
             } catch (_) {}
-          }
-
-          // Only add to FinanceStorage automatically if date is today or in the past
-          final now = DateTime.now();
-          final today = DateTime(now.year, now.month, now.day);
-          final billDate = DateTime(
-            newBill.dueDate.year,
-            newBill.dueDate.month,
-            newBill.dueDate.day,
-          );
-
-          if (!billDate.isAfter(today)) {
-            final accounts = await FinanceStorage.loadAccounts();
-            if (accounts.isNotEmpty) {
-              final account = accounts.first;
-              final txn = FinanceTransaction(
-                id: DateTime.now().millisecondsSinceEpoch.toString(),
-                amount: newBill.amount,
-                accountId: account.id,
-                accountName: account.name,
-                type: newBill.isIncome ? 'INCOME' : 'EXPENSE',
-                category: newBill.type,
-                description: 'Calendar Event: ${newBill.type}',
-                date: newBill.dueDate,
-              );
-              await FinanceStorage.addTransaction(txn, notify: false);
-            }
           }
         },
         onDelete: (id) async {
@@ -656,6 +638,8 @@ class _BillsPageState extends State<BillsPage> {
 class _DayBillsSheet extends StatefulWidget {
   final DateTime day;
   final List<Bill> bills;
+  final List<Bill> Function(DateTime)? getEventsForDay;
+  final ValueChanged<DateTime>? onDayChanged;
   final Function(Bill) onAdd;
   final Function(String) onDelete;
   final Function(String) onTogglePaid;
@@ -664,6 +648,8 @@ class _DayBillsSheet extends StatefulWidget {
   const _DayBillsSheet({
     required this.day,
     required this.bills,
+    this.getEventsForDay,
+    this.onDayChanged,
     required this.onAdd,
     required this.onDelete,
     required this.onTogglePaid,
@@ -682,6 +668,11 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
   String? _selectedBillType;
   bool _showCustomInput = false;
   bool _isIncomeType = false;
+  late DateTime _currentDay;
+  late List<Bill> _currentBills;
+  double _startX = 0.0;
+  double _startY = 0.0;
+  bool _swipedThisGesture = false;
 
   String _formatSignedBillAmount(Bill bill) {
     final sign = bill.isIncome ? '+' : '-';
@@ -702,6 +693,23 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
   @override
   void initState() {
     super.initState();
+    _currentDay = widget.day;
+    _currentBills = List<Bill>.from(widget.bills);
+  }
+
+  void _changeDay(int deltaDays) {
+    setState(() {
+      _currentDay = _currentDay.add(Duration(days: deltaDays));
+      if (widget.getEventsForDay != null) {
+        _currentBills = widget.getEventsForDay!(_currentDay);
+      } else {
+        _currentBills = widget.bills
+            .where((b) => isSameDay(b.dueDate, _currentDay))
+            .toList();
+      }
+    });
+    HapticFeedback.selectionClick();
+    widget.onDayChanged?.call(_currentDay);
   }
 
   @override
@@ -735,12 +743,12 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                 Checkbox(
                   value: b.isPaid,
                   onChanged: (val) {
-                    final idx = widget.bills.indexWhere(
+                    final idx = _currentBills.indexWhere(
                       (bill) => bill.id == b.id,
                     );
                     if (idx != -1) {
                       setState(() {
-                        widget.bills[idx] = widget.bills[idx].copyWith(
+                        _currentBills[idx] = _currentBills[idx].copyWith(
                           isPaid: val ?? false,
                         );
                       });
@@ -812,11 +820,11 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                     size: 20,
                   ),
                   onPressed: () {
-                    final idx = widget.bills.indexWhere(
+                    final idx = _currentBills.indexWhere(
                       (bill) => bill.id == b.id,
                     );
                     if (idx != -1) {
-                      final removedBill = widget.bills.removeAt(idx);
+                      final removedBill = _currentBills.removeAt(idx);
                       _listKey.currentState?.removeItem(
                         idx,
                         (context, animation) =>
@@ -838,7 +846,7 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = DateFormat('MMMM d, yyyy').format(widget.day);
+    final dateStr = DateFormat('MMMM d, yyyy').format(_currentDay);
 
     return Container(
       constraints: BoxConstraints(
@@ -854,37 +862,67 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(24),
-            child: Row(
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Entries for',
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        color: kMuted,
-                        fontWeight: FontWeight.w600,
-                      ),
+          Listener(
+            behavior: HitTestBehavior.opaque,
+            onPointerDown: (e) {
+              _startX = e.position.dx;
+              _startY = e.position.dy;
+              _swipedThisGesture = false;
+            },
+            onPointerMove: (e) {
+              if (_swipedThisGesture) return;
+              final dx = e.position.dx - _startX;
+              final dy = (e.position.dy - _startY).abs();
+              if (dx.abs() > 30 && dx.abs() > dy * 0.7) {
+                _swipedThisGesture = true;
+                if (dx < 0) {
+                  // Swiped left -> advance to next day (e.g. Nov 22 -> Nov 23)
+                  _changeDay(1);
+                } else {
+                  // Swiped right -> go back to previous day (e.g. Nov 23 -> Nov 22)
+                  _changeDay(-1);
+                }
+              }
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Entries for',
+                          style: GoogleFonts.plusJakartaSans(
+                            fontSize: 12,
+                            color: kMuted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 200),
+                          transitionBuilder: (child, animation) =>
+                              FadeTransition(opacity: animation, child: child),
+                          child: Text(
+                            dateStr,
+                            key: ValueKey(dateStr),
+                            style: GoogleFonts.plusJakartaSans(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: kTextCharcoal,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    Text(
-                      dateStr,
-                      style: GoogleFonts.plusJakartaSans(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: kTextCharcoal,
-                      ),
-                    ),
-                  ],
-                ),
-                const Spacer(),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: Icon(Icons.close, color: kMuted),
-                ),
-              ],
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close, color: kMuted),
+                  ),
+                ],
+              ),
             ),
           ),
           Divider(color: kBorder, height: 1),
@@ -892,7 +930,7 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
             child: Stack(
               children: [
                 AnimatedOpacity(
-                  opacity: widget.bills.isEmpty ? 1.0 : 0.0,
+                  opacity: _currentBills.isEmpty ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 300),
                   child: Center(
                     child: Column(
@@ -916,14 +954,17 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                   ),
                 ),
                 AnimatedList(
-                  key: _listKey,
-                  initialItemCount: widget.bills.length,
+                  key: ValueKey(_currentDay),
+                  initialItemCount: _currentBills.length,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 24,
                     vertical: 12,
                   ),
                   itemBuilder: (context, i, animation) {
-                    final b = widget.bills[i];
+                    if (i >= _currentBills.length) {
+                      return const SizedBox.shrink();
+                    }
+                    final b = _currentBills[i];
                     return _buildBillItem(b, animation);
                   },
                 ),
@@ -1170,7 +1211,7 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                                       Text(
                                         DateFormat(
                                           'MMMM d, yyyy',
-                                        ).format(widget.day),
+                                        ).format(_currentDay),
                                         style: GoogleFonts.plusJakartaSans(
                                           fontWeight: FontWeight.w700,
                                           color: kTextCharcoal,
@@ -1251,13 +1292,13 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
                                 .toString(),
                             type: type,
                             amount: amount,
-                            dueDate: widget.day,
+                            dueDate: _currentDay,
                             isIncome: _isIncomeType,
                             frequency: _selectedFrequency,
                           );
 
-                          widget.bills.add(newBill);
-                          widget.onAdd(newBill);
+                          _currentBills.add(newBill);
+                          await widget.onAdd(newBill);
 
                           _listKey.currentState?.insertItem(
                             widget.bills.length - 1,
@@ -1266,6 +1307,15 @@ class _DayBillsSheetState extends State<_DayBillsSheet> {
 
                           _amountCtrl.clear();
                           if (_showCustomInput) _typeCtrl.clear();
+
+                          if (context.mounted) {
+                            Navigator.of(context).pushAndRemoveUntil(
+                              MaterialPageRoute(
+                                builder: (_) => const DashboardPage(),
+                              ),
+                              (route) => false,
+                            );
+                          }
                         }
                       }
                     },
