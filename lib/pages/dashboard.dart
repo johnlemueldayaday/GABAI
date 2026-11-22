@@ -14,6 +14,7 @@ import 'package:gabay/pages/gab_chat.dart';
 import 'package:gabay/pages/bills.dart';
 import 'package:gabay/services/bill_storage.dart';
 import 'package:gabay/services/finance_storage.dart';
+import 'package:gabay/services/grocery_storage.dart';
 import 'package:gabay/services/settings_service.dart';
 import 'package:gabay/services/safe_to_spend.dart';
 import 'package:gabay/services/bill_expense_classifier.dart';
@@ -26,6 +27,30 @@ import 'package:gabay/pages/wallet.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:video_player/video_player.dart';
+
+bool isBillTransaction(
+  FinanceTransaction transaction, [
+  List<Bill> bills = const [],
+]) {
+  if (transaction.id.startsWith('bill_')) return true;
+  if (isPaidBillTransaction(transaction.category, transaction.description)) {
+    return true;
+  }
+  final desc = transaction.description.trim().toLowerCase();
+  if (desc.startsWith('calendar event:')) return true;
+  final cat = transaction.category.trim().toLowerCase();
+  if (cat == 'bills' || cat == 'bill') return true;
+  if (billLabelForExpense('${transaction.category} ${transaction.description}') !=
+      null) {
+    return true;
+  }
+  final cleanDesc = cleanBillName(transaction.description).toLowerCase();
+  final cleanCat = cleanBillName(transaction.category).toLowerCase();
+  return bills.any((b) {
+    final bType = cleanBillName(b.type).toLowerCase();
+    return bType.isNotEmpty && (bType == cleanDesc || bType == cleanCat);
+  });
+}
 
 class DashboardPage extends StatefulWidget {
   final String? initialTransactionType;
@@ -67,12 +92,57 @@ class _DashboardPageState extends State<DashboardPage>
   static const _kMruExpenseKey = 'mru_expense_categories';
   static const _kMruIncomeKey = 'mru_income_categories';
 
+  // ── Last used account (persisted) ───────────────────────────────────────
+  String? _lastUsedExpenseAccountId;
+  String? _lastUsedIncomeAccountId;
+
+  static const _kLastExpenseAccountKey = 'last_used_expense_account_id';
+  static const _kLastIncomeAccountKey = 'last_used_income_account_id';
+
+  Future<void> _recordAccountUsed(String accountId, String type) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (type == 'INCOME') {
+      _lastUsedIncomeAccountId = accountId;
+      await prefs.setString(_kLastIncomeAccountKey, accountId);
+    } else {
+      _lastUsedExpenseAccountId = accountId;
+      await prefs.setString(_kLastExpenseAccountKey, accountId);
+    }
+  }
+
+  String? _getDefaultAccountId(String type) {
+    final lastId = type == 'INCOME'
+        ? _lastUsedIncomeAccountId
+        : _lastUsedExpenseAccountId;
+    if (lastId != null && _accounts.any((a) => a.id == lastId)) {
+      return lastId;
+    }
+    // Fallback: look at the most recent transaction of this type
+    final matchingTxns = _transactions
+        .where(
+          (t) =>
+              (type == 'INCOME' ? t.isIncome : t.isExpense) && !t.isTransfer,
+        )
+        .toList();
+    if (matchingTxns.isNotEmpty) {
+      matchingTxns.sort((a, b) => b.date.compareTo(a.date));
+      for (final txn in matchingTxns) {
+        if (_accounts.any((a) => a.id == txn.accountId)) {
+          return txn.accountId;
+        }
+      }
+    }
+    return _accounts.isNotEmpty ? _accounts.first.id : null;
+  }
+
   Future<void> _loadMruCategories() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
       _mruExpense = prefs.getStringList(_kMruExpenseKey) ?? [];
       _mruIncome = prefs.getStringList(_kMruIncomeKey) ?? [];
+      _lastUsedExpenseAccountId = prefs.getString(_kLastExpenseAccountKey);
+      _lastUsedIncomeAccountId = prefs.getString(_kLastIncomeAccountKey);
     });
   }
 
@@ -276,8 +346,7 @@ class _DashboardPageState extends State<DashboardPage>
     final amountCtrl = TextEditingController();
     final String selectedType = initialType;
     String? selectedAccountId =
-        preselectedAccountId ??
-        (_accounts.isNotEmpty ? _accounts.first.id : null);
+        preselectedAccountId ?? _getDefaultAccountId(selectedType);
 
     // Seed first category from MRU-ordered list
     final initialCategories = _orderedCategories(initialType);
@@ -415,6 +484,7 @@ class _DashboardPageState extends State<DashboardPage>
                     );
                     if (picked != null) {
                       setSheetState(() => selectedAccountId = picked.value);
+                      unawaited(_recordAccountUsed(picked.value, selectedType));
                     }
                   },
                 ),
@@ -544,6 +614,10 @@ class _DashboardPageState extends State<DashboardPage>
                           selectedCategory,
                           selectedType,
                         );
+                        await _recordAccountUsed(
+                          selectedAccountId!,
+                          selectedType,
+                        );
                         if (context.mounted) {
                           Navigator.pop(context);
                           _loadData();
@@ -615,11 +689,15 @@ class _DashboardPageState extends State<DashboardPage>
     unawaited(_updateWidgetData());
   }
 
+  bool _isBill(FinanceTransaction transaction) =>
+      isBillTransaction(transaction, _bills);
+
   double _calculateSpentBetween(DateTime start, DateTime end) {
     var total = 0.0;
     for (final transaction in _transactions) {
       if (!transaction.isExpense ||
           transaction.isTransfer ||
+          _isBill(transaction) ||
           transaction.date.isBefore(start) ||
           !transaction.date.isBefore(end)) {
         continue;
@@ -680,6 +758,61 @@ class _DashboardPageState extends State<DashboardPage>
       );
       await _loadData();
       return;
+    }
+
+    // If this was a grocery-trip transaction, also remove it from recentLists
+    // so the daily spent doesn't re-add it from AppState.recentLists.
+    final desc = transaction.description;
+    final beforeCount = AppState.recentLists.length;
+    AppState.recentLists.removeWhere(
+      (list) =>
+          desc == 'Grocery Trip: ${list.name}' || desc == list.name,
+    );
+    if (AppState.recentLists.length < beforeCount) {
+      GroceryStorage.saveAll();
+    }
+
+    // If this was a paid-bill transaction, mark the matching bill as unpaid
+    // so it disappears from Analytics > Bills Breakdown.
+    if (_isBill(transaction)) {
+      final bills = await BillStorage.loadBills();
+      bool billUpdated = false;
+
+      // Primary match: transaction ID follows the pattern 'bill_<billId>_<date>'
+      if (transaction.id.startsWith('bill_')) {
+        final parts = transaction.id.split('_');
+        // parts[0]='bill', parts[1]=billId (may itself contain underscores),
+        // last 3 chars are the date suffix — reconstruct billId conservatively.
+        if (parts.length >= 3) {
+          final billId = parts.sublist(1, parts.length - 1).join('_');
+          final idx = bills.indexWhere((b) => b.id == billId);
+          if (idx != -1 && bills[idx].isPaid) {
+            bills[idx] = bills[idx].copyWith(isPaid: false);
+            billUpdated = true;
+          }
+        }
+      }
+
+      // Fallback match: description 'Paid: <name>' — match by name + amount
+      if (!billUpdated) {
+        final cleanName = cleanBillName(transaction.description);
+        for (int i = 0; i < bills.length; i++) {
+          final b = bills[i];
+          if (b.isPaid &&
+              !b.isIncome &&
+              b.amount == transaction.amount &&
+              (cleanBillName(b.type) == cleanName ||
+                  (billLabelForExpense(b.type) ?? '') == cleanName)) {
+            bills[i] = b.copyWith(isPaid: false);
+            billUpdated = true;
+            break;
+          }
+        }
+      }
+
+      if (billUpdated) {
+        await BillStorage.saveBills(bills);
+      }
     }
 
     await _loadData();
@@ -927,6 +1060,7 @@ class _DashboardPageState extends State<DashboardPage>
                     child: _GlassTrendChart(
                       recentLists: recentLists,
                       transactions: _transactions,
+                      bills: _bills,
                     ),
                   ),
                 ),
@@ -1798,9 +1932,11 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
 class _GlassTrendChart extends StatefulWidget {
   final List<GroceryList> recentLists;
   final List<FinanceTransaction> transactions;
+  final List<Bill> bills;
   const _GlassTrendChart({
     required this.recentLists,
     required this.transactions,
+    this.bills = const [],
   });
 
   @override
@@ -1827,7 +1963,8 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
   void didUpdateWidget(_GlassTrendChart oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.transactions != widget.transactions ||
-        oldWidget.recentLists != widget.recentLists) {
+        oldWidget.recentLists != widget.recentLists ||
+        oldWidget.bills != widget.bills) {
       _animCtrl.forward(from: 0);
     }
   }
@@ -1846,7 +1983,11 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
     final weeklyData = List.generate(7, (index) => 0.0);
 
     for (final txn in widget.transactions) {
-      if (!txn.isExpense || txn.isTransfer) continue;
+      if (!txn.isExpense ||
+          txn.isTransfer ||
+          isBillTransaction(txn, widget.bills)) {
+        continue;
+      }
       final difference = txn.date.difference(startOfWeek).inDays;
       if (difference >= 0 && difference < 7) {
         weeklyData[difference] += txn.amount;
