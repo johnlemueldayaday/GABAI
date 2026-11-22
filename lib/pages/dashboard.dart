@@ -262,8 +262,6 @@ class _DashboardPageState extends State<DashboardPage>
       safeToSpend: spendingPlan.safeToSpend,
       weekSpent: weekSpent,
       weekBudget: weekBudget,
-      spentToday: spendingPlan.spentToday,
-      dailyBudget: _dailyAllocation,
       daysLeft: daysLeft,
     );
     if (!updated) {
@@ -1144,7 +1142,7 @@ class _DashboardPageState extends State<DashboardPage>
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              '$remainingPercent% of 100%',
+              '$remainingPercent% left of 100%',
               style: GoogleFonts.plusJakartaSans(fontSize: 9, color: kMuted),
             ),
             Text(

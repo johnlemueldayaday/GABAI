@@ -14,8 +14,6 @@ class WidgetService {
     required double safeToSpend,
     required double weekSpent,
     required double weekBudget,
-    double spentToday = 0.0,
-    double dailyBudget = 0.0,
     int daysLeft = 0,
   }) async {
     try {
@@ -36,14 +34,6 @@ class WidgetService {
         'week_budget',
         weekBudget,
       );
-      final spentTodaySaved = await HomeWidget.saveWidgetData<double>(
-        'spent_today',
-        spentToday,
-      );
-      final dailyBudgetSaved = await HomeWidget.saveWidgetData<double>(
-        'daily_budget',
-        dailyBudget,
-      );
       final daysLeftSaved = await HomeWidget.saveWidgetData<int>(
         'days_left',
         daysLeft,
@@ -51,8 +41,6 @@ class WidgetService {
       if (safeToSpendSaved != true ||
           weekSpentSaved != true ||
           weekBudgetSaved != true ||
-          spentTodaySaved != true ||
-          dailyBudgetSaved != true ||
           daysLeftSaved != true) {
         throw StateError('GABAI could not save the widget data.');
       }

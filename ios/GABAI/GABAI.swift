@@ -37,27 +37,11 @@ struct Provider: TimelineProvider {
     let userDefaults = UserDefaults(suiteName: "group.com.johnlemueldayaday.gabay")
 
     func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(
-            date: Date(),
-            safeToSpend: 4740.0,
-            weekSpent: 100,
-            weekBudget: 5000.0,
-            spentToday: 0.0,
-            dailyBudget: 400.0,
-            daysLeft: 13
-        )
+        SimpleEntry(date: Date(), safeToSpend: 4740.0, weekSpent: 100, weekBudget: 5000.0, daysLeft: 13)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> ()) {
-        let entry = SimpleEntry(
-            date: Date(),
-            safeToSpend: 4740.0,
-            weekSpent: 100,
-            weekBudget: 5000.0,
-            spentToday: 0.0,
-            dailyBudget: 400.0,
-            daysLeft: 13
-        )
+        let entry = SimpleEntry(date: Date(), safeToSpend: 4740.0, weekSpent: 100, weekBudget: 5000.0, daysLeft: 13)
         completion(entry)
     }
 
@@ -65,8 +49,6 @@ struct Provider: TimelineProvider {
         let safeToSpend = userDefaults?.double(forKey: "safe_to_spend") ?? 0.0
         let weekSpent = userDefaults?.double(forKey: "week_spent") ?? 0.0
         let weekBudget = userDefaults?.double(forKey: "week_budget") ?? 1.0
-        let spentToday = userDefaults?.double(forKey: "spent_today") ?? 0.0
-        let dailyBudget = userDefaults?.double(forKey: "daily_budget") ?? 0.0
         let daysLeft = userDefaults?.integer(forKey: "days_left") ?? 0
 
         let entry = SimpleEntry(
@@ -74,8 +56,6 @@ struct Provider: TimelineProvider {
             safeToSpend: safeToSpend,
             weekSpent: weekSpent,
             weekBudget: weekBudget,
-            spentToday: spentToday,
-            dailyBudget: dailyBudget,
             daysLeft: daysLeft
         )
 
@@ -91,8 +71,6 @@ struct SimpleEntry: TimelineEntry {
     let safeToSpend: Double
     let weekSpent: Double
     let weekBudget: Double
-    let spentToday: Double
-    let dailyBudget: Double
     let daysLeft: Int
 }
 
@@ -166,15 +144,7 @@ struct SafeToSpendWidgetView : View {
                 }
 
                 Text(formatPeso(entry.safeToSpend))
-                    .font(.system(size: 16, weight: .bold))
-                    .minimumScaleFactor(0.75)
-                    .lineLimit(1)
-
-                HStack {
-                    Text("\(formatPeso(entry.spentToday)) out of \(formatPeso(entry.dailyBudget))")
-                        .font(.system(size: 10))
-                    Spacer()
-                }
+                    .font(.system(size: 20, weight: .bold))
 
                 Text("\(entry.daysLeft) \(entry.daysLeft == 1 ? "day" : "days") till next payday")
                     .font(.system(size: 10))
