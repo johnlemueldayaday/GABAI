@@ -170,6 +170,7 @@ class SafeToSpend {
   final double safeToSpend;
   final double effectiveDailyBudget;
   final bool isSevereShortfall;
+  final double upcomingBills;
 
   const SafeToSpend({
     required this.balance,
@@ -182,6 +183,7 @@ class SafeToSpend {
     required this.safeToSpend,
     required this.effectiveDailyBudget,
     required this.isSevereShortfall,
+    this.upcomingBills = 0.0,
   });
 
   factory SafeToSpend.calculate({
@@ -191,11 +193,15 @@ class SafeToSpend {
     required double spentToday,
     int? totalCycleDays, // kept for API compatibility, unused
     double cycleSpentBeforeToday = 0.0, // kept for API compatibility, unused
+    double upcomingBills = 0.0,
   }) {
     final validBalance = balance.isFinite ? balance : 0.0;
     final validBudget = dailyBudget.isFinite ? math.max(0.0, dailyBudget) : 0.0;
     final validSpentToday = spentToday.isFinite
         ? math.max(0.0, spentToday)
+        : 0.0;
+    final validUpcomingBills = upcomingBills.isFinite
+        ? math.max(0.0, upcomingBills)
         : 0.0;
 
     final remainingDays = math.max(0, daysLeft);
@@ -206,29 +212,17 @@ class SafeToSpend {
     // Money that must be kept for future days
     final reservedFuture = validBudget * futureDays;
 
-    // Surplus above what's needed for future days.
+    // Surplus above what's needed for future days and unpaid upcoming bills.
     // NOTE: validBalance is already the current balance AFTER today's spending
     // (FinanceStorage updates the account balance on every transaction), so we
     // do NOT subtract spentToday again here — that would double-count it.
-    //
-    // Logic (user example):
-    //   balance=6940, dailyBudget=400, daysLeft=13
-    //   futureDays=12, reservedFuture=4800
-    //   extra = 6940 - 4800 = 2140  → safe to spend
-    //
-    //   If 500 spent today → balance becomes 6440
-    //   extra = 6440 - 4800 = 1640  → safe to spend
-    //
-    //   If 2240 spent today → balance becomes 4700
-    //   extra = 4700 - 4800 = -100  → safe to spend = -100
-    //   effectiveDailyBudget = 4700 / 12 = 391.67
-    final extra = validBalance - reservedFuture;
+    final extra = validBalance - reservedFuture - validUpcomingBills;
     final safeToSpend = extra;
 
-    // When we've dipped into the future reserve (extra < 0), recalculate the
-    // daily budget across remaining future days so the user knows their new cap.
+    // When we've dipped into the future reserve or bill obligations (extra < 0),
+    // recalculate the daily budget across remaining future days so the user knows their new cap.
     final effectiveDailyBudget = (extra < 0 && futureDays > 0)
-        ? math.max(0.0, validBalance / futureDays)
+        ? math.max(0.0, (validBalance - validUpcomingBills) / futureDays)
         : validBudget;
 
     final isSevereShortfall =
@@ -251,6 +245,7 @@ class SafeToSpend {
       safeToSpend: safeToSpend,
       effectiveDailyBudget: effectiveDailyBudget,
       isSevereShortfall: isSevereShortfall,
+      upcomingBills: validUpcomingBills,
     );
   }
 }
