@@ -48,7 +48,7 @@ class _DashboardPageState extends State<DashboardPage>
   List<FinanceTransaction> _transactions = [];
   List<Account> _accounts = [];
   double _netWorth = 0.0;
-  double _dailyAllocation = 172.30;
+  double _dailyAllocation = 0.0;
   PayFrequency _payFrequency = PayFrequency.monthly;
   int _payday1 = 30;
   int? _payday2;

@@ -809,9 +809,9 @@ void main() {
   );
 
   test('spending statements never update allocation', () async {
-    expect(SettingsService().dailySpendingAllocation, 172.30);
+    expect(SettingsService().dailySpendingAllocation, 0.0);
     final reply = await GabAssistant().handle('I spent 500 today');
-    expect(SettingsService().dailySpendingAllocation, 172.30);
+    expect(SettingsService().dailySpendingAllocation, 0.0);
     expect(reply.text, isNot(contains('✅ Done! Your')));
   });
 
@@ -824,7 +824,7 @@ void main() {
     final reply = await GabAssistant().handle('Spent 500 from my budget');
 
     expect(reply.text, 'What did you spend it on?');
-    expect(SettingsService().dailySpendingAllocation, 172.30);
+    expect(SettingsService().dailySpendingAllocation, 0.0);
     expect(await FinanceStorage.loadTransactions(), isEmpty);
   });
 
@@ -977,7 +977,7 @@ void main() {
         confirmation.transactionNotification!.subtitle,
         'Your wallet balance is now ₱1,700.00',
       );
-      expect(SettingsService().dailySpendingAllocation, 172.30);
+      expect(SettingsService().dailySpendingAllocation, 0.0);
 
       final accounts = await FinanceStorage.loadAccounts();
       expect(
@@ -1120,7 +1120,7 @@ void main() {
     final reply = await GabAssistant().handle('I spend 90 on wax using cash');
 
     expect(reply.text, contains('Wax  -₱ 90.00\nNew Cash balance: ₱910.00'));
-    expect(SettingsService().dailySpendingAllocation, 172.30);
+    expect(SettingsService().dailySpendingAllocation, 0.0);
   });
 
   test('future income signal interrupts an unfinished expense flow', () async {

@@ -25,7 +25,7 @@ class SettingsService extends ChangeNotifier {
   static const _keyAnchorPayday = 'settings_anchor_payday';
 
   String _currency = '₱';
-  double _dailySpendingAllocation = 172.30;
+  double _dailySpendingAllocation = 0.0;
   List<int> _salaryPaydayDays = [30];
   PayFrequency _payFrequency = PayFrequency.monthly;
   int _payday1 = 30;
@@ -33,7 +33,7 @@ class SettingsService extends ChangeNotifier {
   int? _intervalDays;
   DateTime? _anchorPayday;
   final ValueNotifier<double> dailySpendingAllocationNotifier = ValueNotifier(
-    172.30,
+    0.0,
   );
   ThemeMode _themeMode = ThemeMode.light;
   bool _budgetAlerts = true;
@@ -77,7 +77,7 @@ class SettingsService extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _currency = prefs.getString(_keyCurrency) ?? '₱';
     _dailySpendingAllocation =
-        prefs.getDouble(_keyDailySpendingAllocation) ?? 172.30;
+        prefs.getDouble(_keyDailySpendingAllocation) ?? 0.0;
     dailySpendingAllocationNotifier.value = _dailySpendingAllocation;
     final legacyPaydayDays =
         (prefs.getStringList(_keySalaryPaydayDays) ?? ['30'])
@@ -306,7 +306,7 @@ class SettingsService extends ChangeNotifier {
     await prefs.remove(_keyPayIntervalDays);
     await prefs.remove(_keyAnchorPayday);
     _currency = '₱';
-    _dailySpendingAllocation = 172.30;
+    _dailySpendingAllocation = 0.0;
     _salaryPaydayDays = [30];
     _payFrequency = PayFrequency.monthly;
     _payday1 = 30;
