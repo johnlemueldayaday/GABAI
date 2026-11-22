@@ -262,6 +262,9 @@ class _DashboardPageState extends State<DashboardPage>
       safeToSpend: spendingPlan.safeToSpend,
       weekSpent: weekSpent,
       weekBudget: weekBudget,
+      spentToday: spendingPlan.spentToday,
+      dailyBudget: _dailyAllocation,
+      daysLeft: daysLeft,
     );
     if (!updated) {
       debugPrint('GABAI widget data was not updated. Check App Group signing.');
@@ -1536,7 +1539,8 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
                               .map(
                                 (day) => GabPickerItem(
                                   value: day,
-                                  label: '$day${_ordinalSuffix(day)} of the month',
+                                  label:
+                                      '$day${_ordinalSuffix(day)} of the month',
                                 ),
                               )
                               .toList(),
@@ -1563,7 +1567,8 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
                               .map(
                                 (day) => GabPickerItem(
                                   value: day,
-                                  label: '$day${_ordinalSuffix(day)} of the month',
+                                  label:
+                                      '$day${_ordinalSuffix(day)} of the month',
                                 ),
                               )
                               .toList(),
@@ -1633,9 +1638,9 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
               ],
               _GabPickerTile(
                 label: 'Next payday anchor',
-                value: DateFormat('MMM d, yyyy').format(
-                  _resolvedPayday ?? _anchorPayday,
-                ),
+                value: DateFormat(
+                  'MMM d, yyyy',
+                ).format(_resolvedPayday ?? _anchorPayday),
                 leading: Icon(
                   Icons.calendar_month_rounded,
                   size: 20,

@@ -37,11 +37,27 @@ struct Provider: TimelineProvider {
     let userDefaults = UserDefaults(suiteName: "group.com.johnlemueldayaday.gabay")
 
     func placeholder(in context: Context) -> SimpleEntry {
-        SimpleEntry(date: Date(), safeToSpend: 4740.0, weekSpent: 100, weekBudget: 5000.0)
+        SimpleEntry(
+            date: Date(),
+            safeToSpend: 4740.0,
+            weekSpent: 100,
+            weekBudget: 5000.0,
+            spentToday: 0.0,
+            dailyBudget: 400.0,
+            daysLeft: 13
+        )
     }
 
     func getSnapshot(in context: Context, completion: @escaping (SimpleEntry) -> ()) {
-        let entry = SimpleEntry(date: Date(), safeToSpend: 4740.0, weekSpent: 100, weekBudget: 5000.0)
+        let entry = SimpleEntry(
+            date: Date(),
+            safeToSpend: 4740.0,
+            weekSpent: 100,
+            weekBudget: 5000.0,
+            spentToday: 0.0,
+            dailyBudget: 400.0,
+            daysLeft: 13
+        )
         completion(entry)
     }
 
@@ -49,12 +65,18 @@ struct Provider: TimelineProvider {
         let safeToSpend = userDefaults?.double(forKey: "safe_to_spend") ?? 0.0
         let weekSpent = userDefaults?.double(forKey: "week_spent") ?? 0.0
         let weekBudget = userDefaults?.double(forKey: "week_budget") ?? 1.0
+        let spentToday = userDefaults?.double(forKey: "spent_today") ?? 0.0
+        let dailyBudget = userDefaults?.double(forKey: "daily_budget") ?? 0.0
+        let daysLeft = userDefaults?.integer(forKey: "days_left") ?? 0
 
         let entry = SimpleEntry(
             date: Date(),
             safeToSpend: safeToSpend,
             weekSpent: weekSpent,
-            weekBudget: weekBudget
+            weekBudget: weekBudget,
+            spentToday: spentToday,
+            dailyBudget: dailyBudget,
+            daysLeft: daysLeft
         )
 
         // Ask iOS to refresh at the start of the next day.
@@ -69,6 +91,9 @@ struct SimpleEntry: TimelineEntry {
     let safeToSpend: Double
     let weekSpent: Double
     let weekBudget: Double
+    let spentToday: Double
+    let dailyBudget: Double
+    let daysLeft: Int
 }
 
 // MARK: - Safe to Spend views
@@ -131,22 +156,29 @@ struct SafeToSpendWidgetView : View {
             }
             .padding()
         case .accessoryRectangular:
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
                     Image(systemName: entry.safeToSpend <= 0 ? "arrow.down.right" : "checkmark.shield.fill")
-                        .font(.system(size: 12))
+                        .font(.system(size: 11))
                     Text(entry.safeToSpend <= 0 ? "Cut cost" : "Safe to spend")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(entry.safeToSpend <= 0 ? .red : .primary)
                 }
 
                 Text(formatPeso(entry.safeToSpend))
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: 18, weight: .bold))
+                    .minimumScaleFactor(0.75)
+                    .lineLimit(1)
 
-                let progress = entry.weekBudget > 0 ? entry.weekSpent / entry.weekBudget : 0
-                ProgressView(value: min(progress, 1.0))
-                    .progressViewStyle(LinearProgressViewStyle())
-                    .tint(.white)
+                Text("\(formatPeso(entry.spentToday)) out of \(formatPeso(entry.dailyBudget))")
+                    .font(.system(size: 11, weight: .medium))
+                    .minimumScaleFactor(0.7)
+                    .lineLimit(1)
+
+                Text("\(entry.daysLeft) \(entry.daysLeft == 1 ? "day" : "days") till next payday")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
             }
         case .accessoryCircular:
             Gauge(value: entry.weekBudget > 0 ? min(entry.weekSpent / entry.weekBudget, 1.0) : 0) {
