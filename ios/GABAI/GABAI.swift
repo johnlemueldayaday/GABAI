@@ -156,27 +156,28 @@ struct SafeToSpendWidgetView : View {
             }
             .padding()
         case .accessoryRectangular:
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 4) {
                     Image(systemName: entry.safeToSpend <= 0 ? "arrow.down.right" : "checkmark.shield.fill")
-                        .font(.system(size: 11))
+                        .font(.system(size: 12))
                     Text(entry.safeToSpend <= 0 ? "Cut cost" : "Safe to spend")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(entry.safeToSpend <= 0 ? .red : .primary)
                 }
 
                 Text(formatPeso(entry.safeToSpend))
-                    .font(.system(size: 18, weight: .bold))
+                    .font(.system(size: 16, weight: .bold))
                     .minimumScaleFactor(0.75)
                     .lineLimit(1)
 
-                Text("\(formatPeso(entry.spentToday)) out of \(formatPeso(entry.dailyBudget))")
-                    .font(.system(size: 11, weight: .medium))
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
+                HStack {
+                    Text("\(formatPeso(entry.spentToday)) out of \(formatPeso(entry.dailyBudget))")
+                        .font(.system(size: 10))
+                    Spacer()
+                }
 
                 Text("\(entry.daysLeft) \(entry.daysLeft == 1 ? "day" : "days") till next payday")
-                    .font(.system(size: 9))
+                    .font(.system(size: 10))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
