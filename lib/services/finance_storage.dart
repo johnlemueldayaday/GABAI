@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/finance_models.dart';
 import 'notification_service.dart';
@@ -152,7 +153,7 @@ class FinanceStorage {
     await saveAccounts(accounts);
 
     // 4. Trigger system local notification
-    if (notify) {
+    if (notify && !kIsWeb) {
       try {
         final totalBalance = accounts.fold(0.0, (sum, a) => sum + a.balance);
         await NotificationService().notifyTransaction(

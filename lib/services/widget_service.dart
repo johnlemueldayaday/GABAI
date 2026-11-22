@@ -1,5 +1,5 @@
-import 'package:home_widget/home_widget.dart';
 import 'package:flutter/foundation.dart';
+import 'package:home_widget/home_widget.dart';
 
 class WidgetService {
   static const String iOSAppGroupId = 'group.com.johnlemueldayaday.gabay';
@@ -15,6 +15,7 @@ class WidgetService {
     required double weekSpent,
     required double weekBudget,
   }) async {
+    if (kIsWeb) return false; // Home widgets not supported on web
     try {
       final groupConfigured = await HomeWidget.setAppGroupId(iOSAppGroupId);
       if (groupConfigured != true) {

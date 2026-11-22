@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -111,7 +112,7 @@ class _OnboardingModalState extends State<OnboardingModal>
   Future<void> _finishOnboarding() async {
     await SettingsService().setUserName(_nameCtrl.text.trim());
     await SettingsService().setOnboardingComplete(true);
-    if (mounted) {
+    if (mounted && !kIsWeb) {
       await NotificationService().requestNotificationPermissions(
         context: context,
       );

@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:device_calendar/device_calendar.dart';
 import 'package:gabay/models/bill_models.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,6 +14,7 @@ class BillCalendarService {
   final DeviceCalendarPlugin _plugin;
 
   Future<void> syncAllBills(List<Bill> bills) async {
+    if (kIsWeb) return;
     final preferences = await SharedPreferences.getInstance();
     final references = _loadReferences(preferences);
     if (bills.isEmpty && references.isEmpty) return;
@@ -32,6 +34,7 @@ class BillCalendarService {
   }
 
   Future<void> syncBill(Bill bill) async {
+    if (kIsWeb) return;
     final preferences = await SharedPreferences.getInstance();
     final references = _loadReferences(preferences);
     final calendarId = await _writableCalendarId();
@@ -40,6 +43,7 @@ class BillCalendarService {
   }
 
   Future<void> deleteBill(String billId) async {
+    if (kIsWeb) return;
     final preferences = await SharedPreferences.getInstance();
     final references = _loadReferences(preferences);
     await _deleteReference(references, billId);

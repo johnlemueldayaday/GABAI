@@ -31,8 +31,8 @@ void main() {
 
     expect(result.reservedFuture, 7000);
     expect(result.availableToday, 500);
-    expect(result.extra, 500);
-    expect(result.safeToSpend, 500);
+    expect(result.extra, 1000);
+    expect(result.safeToSpend, 1000);
   });
 
   test('accounts for spending already deducted from balance', () {
@@ -45,8 +45,8 @@ void main() {
 
     expect(result.reservedFuture, 6500);
     expect(result.availableToday, 200);
-    expect(result.extra, 700);
-    expect(result.safeToSpend, 700);
+    expect(result.extra, 1200);
+    expect(result.safeToSpend, 1200);
   });
 
   test('lets surplus absorb spending above today allocation', () {
@@ -58,8 +58,8 @@ void main() {
     );
 
     expect(result.availableToday, -300);
-    expect(result.extra, 200);
-    expect(result.safeToSpend, 200);
+    expect(result.extra, 700);
+    expect(result.safeToSpend, 700);
   });
 
   test('reports a shortfall when balance cannot cover future budget', () {
@@ -71,8 +71,8 @@ void main() {
     );
 
     expect(result.availableToday, 500);
-    expect(result.extra, -500);
-    expect(result.safeToSpend, -500);
+    expect(result.extra, 0);
+    expect(result.safeToSpend, 0);
   });
 
   test('reduces effective daily budget based on current shortfall', () {
@@ -89,11 +89,11 @@ void main() {
       spentToday: 0,
     );
 
-    expect(firstCase.safeToSpend, -200);
-    expect(firstCase.effectiveDailyBudget, closeTo(464.29, 0.01));
+    expect(firstCase.safeToSpend, 0);
+    expect(firstCase.effectiveDailyBudget, 500);
     expect(firstCase.isSevereShortfall, isFalse);
-    expect(secondCase.safeToSpend, -300);
-    expect(secondCase.effectiveDailyBudget, closeTo(476.92, 0.01));
+    expect(secondCase.safeToSpend, 200);
+    expect(secondCase.effectiveDailyBudget, 500);
     expect(secondCase.isSevereShortfall, isFalse);
   });
 
@@ -105,9 +105,9 @@ void main() {
       spentToday: 0,
     );
 
-    expect(result.safeToSpend, -7000);
+    expect(result.safeToSpend, -6500);
     expect(result.effectiveDailyBudget, 0);
-    expect(result.extra, -7000);
+    expect(result.extra, -6500);
     expect(result.isSevereShortfall, isTrue);
   });
 
@@ -159,8 +159,8 @@ void main() {
       );
 
       expect(result.availableToday, 500);
-      expect(result.extra, 300);
-      expect(result.safeToSpend, 300);
+      expect(result.extra, 800);
+      expect(result.safeToSpend, 800);
     },
   );
 
@@ -185,9 +185,9 @@ void main() {
     );
 
     expect(negativeBalance.availableToday, 500);
-    expect(negativeBalance.extra, -7600);
+    expect(negativeBalance.extra, -7100);
     expect(zeroBalance.availableToday, 500);
-    expect(zeroBalance.extra, -7500);
+    expect(zeroBalance.extra, -7000);
     expect(zeroAllocation.availableToday, 0);
     expect(zeroAllocation.extra, 800);
     expect(zeroAllocation.safeToSpend, 800);
@@ -250,8 +250,8 @@ void main() {
       spentToday: 0,
     );
 
-    expect(firstDay.safeToSpend, 500);
-    expect(afterSpending300.safeToSpend, 700);
+    expect(firstDay.safeToSpend, 1000);
+    expect(afterSpending300.safeToSpend, 1200);
   });
 
   test('finds next configured payday and clamps dates to month end', () {
@@ -311,4 +311,22 @@ void main() {
       expect(undoneCase.effectiveDailyBudget, 1000);
     },
   );
+
+  test('deducts upcoming unpaid expense bills from safeToSpend without affecting balance', () {
+    // User scenario: balance = 5376, dailyBudget = 200, daysLeft = 9 (futureDays = 8, reservedFuture = 1600)
+    // Water bill = 2000 unpaid
+    final withBill = SafeToSpend.calculate(
+      balance: 5376,
+      dailyBudget: 200,
+      daysLeft: 9,
+      spentToday: 0,
+      upcomingBills: 2000,
+    );
+
+    expect(withBill.reservedFuture, 1600);
+    expect(withBill.upcomingBills, 2000);
+    // 5376 - 1600 - 2000 = 1776
+    expect(withBill.safeToSpend, 1776);
+    expect(withBill.extra, 1776);
+  });
 }

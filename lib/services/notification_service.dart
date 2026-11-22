@@ -1,17 +1,18 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:timezone/data/latest_all.dart' as tz;
-import 'package:timezone/timezone.dart' as tz;
 import 'package:gabay/config/app_theme.dart';
 import 'package:gabay/models/bill_models.dart';
 import 'package:gabay/pages/bills.dart';
 import 'package:gabay/pages/wallet.dart';
+
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:timezone/data/latest_all.dart' as tz;
+import 'package:timezone/timezone.dart' as tz;
 
 class NotificationService {
   static final NotificationService _instance = NotificationService._internal();
@@ -29,6 +30,7 @@ class NotificationService {
   bool _exactAlarmPermissionGranted = false;
 
   Future<void> init() async {
+    if (kIsWeb) return;
     if (_initialized) return;
 
     tz.initializeTimeZones();
@@ -84,6 +86,7 @@ class NotificationService {
   }
 
   Future<bool> requestNotificationPermissions({BuildContext? context}) async {
+    if (kIsWeb) return false;
     bool granted = false;
     if (defaultTargetPlatform == TargetPlatform.iOS) {
       final iosPlugin = flutterLocalNotificationsPlugin
@@ -243,6 +246,7 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
+    if (kIsWeb) return;
     await init();
     await _ensureNotificationPermissions();
     await flutterLocalNotificationsPlugin.show(
@@ -278,6 +282,7 @@ class NotificationService {
     String? accountId,
     String? transactionId,
   }) async {
+    if (kIsWeb) return;
     await init();
     await _ensureNotificationPermissions();
 
@@ -343,6 +348,7 @@ class NotificationService {
     required double amount,
     String? billId,
   }) async {
+    if (kIsWeb) return;
     await init();
     await _ensureNotificationPermissions();
 
@@ -402,6 +408,7 @@ class NotificationService {
   /// Schedules 9:00 a.m. reminders for the week before a bill, with additional
   /// 3:00 p.m. and 8:00 p.m. reminders on its due date.
   Future<void> scheduleBillNotification(Bill bill) async {
+    if (kIsWeb) return;
     if (bill.isPaid) {
       await cancelBillNotification(bill.id);
       return;
@@ -482,6 +489,7 @@ class NotificationService {
   }
 
   Future<void> cancelBillNotification(String billId) async {
+    if (kIsWeb) return;
     await init();
     for (var daysBefore = 0; daysBefore <= 7; daysBefore++) {
       await flutterLocalNotificationsPlugin.cancel(
@@ -496,6 +504,7 @@ class NotificationService {
   }
 
   Future<void> rescheduleAllBills(List<Bill> bills) async {
+    if (kIsWeb) return;
     if (bills.any((bill) => !bill.isPaid)) {
       await init();
       await _ensurePermissions();

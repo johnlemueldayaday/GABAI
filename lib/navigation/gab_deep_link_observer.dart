@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:app_links/app_links.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../pages/gab_chat.dart';
@@ -23,6 +24,7 @@ class GabDeepLinkObserver extends NavigatorObserver {
   bool _pushScheduled = false;
 
   void start() {
+    if (kIsWeb) return; // Deep links not supported on web
     _subscription = _appLinks.uriLinkStream.listen(
       handleUri,
       onError: (Object error, StackTrace stackTrace) {

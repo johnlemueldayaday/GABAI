@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:gabay/config/app_theme.dart';
@@ -374,7 +375,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: () async {
+                    onPressed: kIsWeb ? null : () async {
                       Navigator.pop(ctx);
                       final hasPerm = await NotificationService()
                           .requestNotificationPermissions(context: context);
@@ -420,7 +421,7 @@ class _SettingsPageState extends State<SettingsPage> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: () async {
+                    onPressed: kIsWeb ? null : () async {
                       Navigator.pop(ctx);
                       final hasPerm = await NotificationService()
                           .requestNotificationPermissions(context: context);

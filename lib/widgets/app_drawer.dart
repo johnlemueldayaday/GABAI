@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../pages/dashboard.dart';
@@ -10,6 +11,7 @@ import '../pages/wallet.dart';
 import '../pages/gab_chat.dart';
 import '../config/app_theme.dart';
 import '../navigation/app_routes.dart';
+import 'pwa_install_dialog.dart';
 
 class AppDrawer extends StatelessWidget {
   final String currentPage;
@@ -163,6 +165,18 @@ class AppDrawer extends StatelessWidget {
           ),
           // ─── Spacer pushes Settings to the bottom ───────────────────
           const Spacer(),
+          if (kIsWeb) ...[
+            _DrawerItem(
+              icon: Icons.install_mobile_rounded,
+              label: 'Install App (PWA)',
+              isSelected: false,
+              onTap: () {
+                Navigator.pop(context);
+                showPwaInstallGuide(context);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Divider(

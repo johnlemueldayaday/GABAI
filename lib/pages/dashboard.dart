@@ -244,6 +244,7 @@ class _DashboardPageState extends State<DashboardPage>
     );
     final todaySpent = _calculateSpentBetween(today, tomorrow);
     final daysLeft = calculateDaysLeft(today: today, payday: resolvedPayday);
+    final upcomingBills = _calculateUpcomingUnpaidBills(resolvedPayday);
     final spendingPlan = SafeToSpend.calculate(
       balance: _netWorth,
       dailyBudget: _dailyAllocation,
@@ -251,6 +252,7 @@ class _DashboardPageState extends State<DashboardPage>
       spentToday: todaySpent,
       totalCycleDays: totalCycleDays,
       cycleSpentBeforeToday: cycleSpentBeforeToday,
+      upcomingBills: upcomingBills,
     );
     final weekStart = today.subtract(const Duration(days: 6));
     final weekSpent = _calculateSpentBetween(weekStart, tomorrow);
@@ -624,12 +626,45 @@ class _DashboardPageState extends State<DashboardPage>
       total += transaction.amount;
     }
 
+    // Only include grocery trips that don't already have a transaction logged
+    // in _transactions to prevent double-counting.
     for (final list in AppState.recentLists) {
       if (list.date.isBefore(start) || !list.date.isBefore(end)) continue;
-      total += list.items.fold(
-        0.0,
-        (sum, item) => sum + getItemTotal(item.price, item.qty, item.unit),
+      final alreadyLogged = _transactions.any(
+        (t) =>
+            t.isExpense &&
+            (t.description == 'Grocery Trip: ${list.name}' ||
+                t.description == list.name) &&
+            t.date.year == list.date.year &&
+            t.date.month == list.date.month &&
+            t.date.day == list.date.day,
       );
+      if (!alreadyLogged) {
+        total += list.items.fold(
+          0.0,
+          (sum, item) => sum + getItemTotal(item.price, item.qty, item.unit),
+        );
+      }
+    }
+    return total;
+  }
+
+  double _calculateUpcomingUnpaidBills(DateTime resolvedPayday) {
+    final paydayEndOfDay = DateTime(
+      resolvedPayday.year,
+      resolvedPayday.month,
+      resolvedPayday.day,
+      23,
+      59,
+      59,
+    );
+    var total = 0.0;
+    for (final bill in _bills) {
+      if (!bill.isPaid &&
+          !bill.isIncome &&
+          !bill.dueDate.isAfter(paydayEndOfDay)) {
+        total += bill.amount;
+      }
     }
     return total;
   }
@@ -675,11 +710,13 @@ class _DashboardPageState extends State<DashboardPage>
     );
     final todaySpent = _calculateSpentBetween(today, tomorrow);
     final daysLeft = calculateDaysLeft(today: today, payday: resolvedPayday);
+    final upcomingBills = _calculateUpcomingUnpaidBills(resolvedPayday);
     final spendingPlan = SafeToSpend.calculate(
       balance: _netWorth,
       dailyBudget: _dailyAllocation,
       daysLeft: daysLeft,
       spentToday: todaySpent,
+      upcomingBills: upcomingBills,
     );
     final weekStart = today.subtract(const Duration(days: 6));
     final weekSpent = _calculateSpentBetween(weekStart, tomorrow);
@@ -1805,21 +1842,34 @@ class _GlassTrendChartState extends State<_GlassTrendChart>
     final startOfWeek = DateTime(sunday.year, sunday.month, sunday.day);
     final weeklyData = List.generate(7, (index) => 0.0);
 
-    for (final list in widget.recentLists) {
-      final difference = list.date.difference(startOfWeek).inDays;
-      if (difference >= 0 && difference < 7) {
-        weeklyData[difference] += list.items.fold(
-          0.0,
-          (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
-        );
-      }
-    }
-
     for (final txn in widget.transactions) {
       if (!txn.isExpense || txn.isTransfer) continue;
       final difference = txn.date.difference(startOfWeek).inDays;
       if (difference >= 0 && difference < 7) {
         weeklyData[difference] += txn.amount;
+      }
+    }
+
+    // Only include grocery trips that don't already have a transaction logged
+    // in widget.transactions to prevent double-counting.
+    for (final list in widget.recentLists) {
+      final difference = list.date.difference(startOfWeek).inDays;
+      if (difference >= 0 && difference < 7) {
+        final alreadyLogged = widget.transactions.any(
+          (t) =>
+              t.isExpense &&
+              (t.description == 'Grocery Trip: ${list.name}' ||
+                  t.description == list.name) &&
+              t.date.year == list.date.year &&
+              t.date.month == list.date.month &&
+              t.date.day == list.date.day,
+        );
+        if (!alreadyLogged) {
+          weeklyData[difference] += list.items.fold(
+            0.0,
+            (s, i) => s + getItemTotal(i.price, i.qty, i.unit),
+          );
+        }
       }
     }
 

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gabay/pages/cart.dart'
@@ -14,9 +15,11 @@ import 'package:gabay/services/puregold_price_seeder.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  SystemChrome.setSystemUIOverlayStyle(
-    SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
-  );
+  if (!kIsWeb) {
+    SystemChrome.setSystemUIOverlayStyle(
+      SystemUiOverlayStyle.dark.copyWith(statusBarColor: Colors.transparent),
+    );
+  }
 
   // Load persisted data
   await GroceryStorage.loadAll();
@@ -25,7 +28,9 @@ void main() async {
   PuregoldPriceSeeder.seed();       // Seed Puregold reference prices
   await SettingsService().load();
 
-  await NotificationService().init();
+  if (!kIsWeb) {
+    await NotificationService().init();
+  }
 
   runApp(const GroceryApp());
   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -34,6 +39,8 @@ void main() async {
 }
 
 Future<void> _restoreBillReminders() async {
+  if (kIsWeb) return; // Notifications & calendar not available on web
+
   final bills = await BillStorage.loadBills();
   if (bills.isEmpty) return;
 

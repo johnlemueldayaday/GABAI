@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gabay/widgets/account_icon.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -88,6 +89,7 @@ class _BillsPageState extends State<BillsPage> {
   }
 
   Future<void> _syncBillReminders(Bill bill) async {
+    if (kIsWeb) return; // Notifications & calendar not available on web
     final errors = <String>[];
     try {
       await NotificationService().scheduleBillNotification(bill);
@@ -103,6 +105,7 @@ class _BillsPageState extends State<BillsPage> {
   }
 
   Future<void> _deleteBillReminders(String billId) async {
+    if (kIsWeb) return; // Notifications & calendar not available on web
     final errors = <String>[];
     try {
       await NotificationService().cancelBillNotification(billId);
@@ -358,13 +361,15 @@ class _BillsPageState extends State<BillsPage> {
           await _saveData();
           await _syncBillReminders(newBill);
 
-          try {
-            await NotificationService().notifyBillAddedToCalendar(
-              billName: newBill.type,
-              amount: newBill.amount,
-              billId: newBill.id,
-            );
-          } catch (_) {}
+          if (!kIsWeb) {
+            try {
+              await NotificationService().notifyBillAddedToCalendar(
+                billName: newBill.type,
+                amount: newBill.amount,
+                billId: newBill.id,
+              );
+            } catch (_) {}
+          }
 
           // Only add to FinanceStorage automatically if date is today or in the past
           final now = DateTime.now();
