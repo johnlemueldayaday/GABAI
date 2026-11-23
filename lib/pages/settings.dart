@@ -215,7 +215,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 children: [
                   _InfoTile(label: 'App Name', value: 'GABAI'),
                   _Divider(),
-                  _InfoTile(label: 'Version', value: '1.42'),
+                  _InfoTile(label: 'Version', value: '1.5'),
                 ],
               ),
               const SizedBox(height: 8),
@@ -268,9 +268,7 @@ class _SettingsPageState extends State<SettingsPage> {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: kCardBg,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           'Lock Screen Widgets',
           style: GoogleFonts.plusJakartaSans(
@@ -284,7 +282,10 @@ class _SettingsPageState extends State<SettingsPage> {
           children: [
             Text(
               'To add widgets to your Lock Screen:',
-              style: TextStyle(color: kTextCharcoal, fontWeight: FontWeight.bold),
+              style: TextStyle(
+                color: kTextCharcoal,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 10),
             Text(
@@ -375,32 +376,36 @@ class _SettingsPageState extends State<SettingsPage> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: kIsWeb ? null : () async {
-                      Navigator.pop(ctx);
-                      final hasPerm = await NotificationService()
-                          .requestNotificationPermissions(context: context);
-                      if (!hasPerm) return;
+                    onPressed: kIsWeb
+                        ? null
+                        : () async {
+                            Navigator.pop(ctx);
+                            final hasPerm = await NotificationService()
+                                .requestNotificationPermissions(
+                                  context: context,
+                                );
+                            if (!hasPerm) return;
 
-                      if (delay3s && context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Banner firing in 3s! Swipe to home screen or lock device now.',
-                            ),
-                            duration: Duration(seconds: 3),
-                          ),
-                        );
-                        await Future.delayed(const Duration(seconds: 3));
-                      }
+                            if (delay3s && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Banner firing in 3s! Swipe to home screen or lock device now.',
+                                  ),
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
+                              await Future.delayed(const Duration(seconds: 3));
+                            }
 
-                      await NotificationService().notifyTransaction(
-                        type: 'EXPENSE',
-                        amount: 99.00,
-                        accountName: 'GCash',
-                        newBalance: 250.60,
-                        accountId: 'gcash_test',
-                      );
-                    },
+                            await NotificationService().notifyTransaction(
+                              type: 'EXPENSE',
+                              amount: 99.00,
+                              accountName: 'GCash',
+                              newBalance: 250.60,
+                              accountId: 'gcash_test',
+                            );
+                          },
                     child: Text(
                       'Fire Expense Banner (₱99.00 from GCash)',
                       style: GoogleFonts.plusJakartaSans(
@@ -421,33 +426,37 @@ class _SettingsPageState extends State<SettingsPage> {
                         borderRadius: BorderRadius.circular(14),
                       ),
                     ),
-                    onPressed: kIsWeb ? null : () async {
-                      Navigator.pop(ctx);
-                      final hasPerm = await NotificationService()
-                          .requestNotificationPermissions(context: context);
-                      if (!hasPerm) return;
+                    onPressed: kIsWeb
+                        ? null
+                        : () async {
+                            Navigator.pop(ctx);
+                            final hasPerm = await NotificationService()
+                                .requestNotificationPermissions(
+                                  context: context,
+                                );
+                            if (!hasPerm) return;
 
-                      if (delay3s && context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Banner firing in 3s! Swipe to home screen or lock device now.',
-                            ),
-                            duration: Duration(seconds: 3),
-                          ),
-                        );
-                        await Future.delayed(const Duration(seconds: 3));
-                      }
+                            if (delay3s && context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Banner firing in 3s! Swipe to home screen or lock device now.',
+                                  ),
+                                  duration: Duration(seconds: 3),
+                                ),
+                              );
+                              await Future.delayed(const Duration(seconds: 3));
+                            }
 
-                      await NotificationService().notifyTransaction(
-                        type: 'INCOME',
-                        amount: 5000.00,
-                        accountName: 'BPI',
-                        newBalance: 18786.00,
-                        description: 'Freelance Project',
-                        accountId: 'bpi_test',
-                      );
-                    },
+                            await NotificationService().notifyTransaction(
+                              type: 'INCOME',
+                              amount: 5000.00,
+                              accountName: 'BPI',
+                              newBalance: 18786.00,
+                              description: 'Freelance Project',
+                              accountId: 'bpi_test',
+                            );
+                          },
                     child: Text(
                       'Fire Income Banner (₱5,000.00 from Freelance)',
                       style: GoogleFonts.plusJakartaSans(

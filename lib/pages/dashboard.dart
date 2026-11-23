@@ -1340,6 +1340,7 @@ class _DailyAllocationDialog extends StatefulWidget {
 class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
   late final TextEditingController _dailyBudgetController;
   late final TextEditingController _customIntervalController;
+  late final FocusNode _dailyBudgetFocusNode;
   late PayFrequency _frequency;
   late int _payday1;
   late int _payday2;
@@ -1348,9 +1349,19 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
   @override
   void initState() {
     super.initState();
-    _dailyBudgetController = TextEditingController(
-      text: widget.initialAmount.toStringAsFixed(2),
-    );
+    final initialStr = widget.initialAmount % 1 == 0
+        ? widget.initialAmount.toInt().toString()
+        : widget.initialAmount.toStringAsFixed(2);
+    _dailyBudgetController = TextEditingController(text: initialStr);
+    _dailyBudgetFocusNode = FocusNode();
+    _dailyBudgetFocusNode.addListener(() {
+      if (_dailyBudgetFocusNode.hasFocus) {
+        _dailyBudgetController.selection = TextSelection(
+          baseOffset: 0,
+          extentOffset: _dailyBudgetController.text.length,
+        );
+      }
+    });
     _customIntervalController = TextEditingController(
       text: (widget.initialIntervalDays ?? 10).toString(),
     );
@@ -1371,6 +1382,7 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
 
   @override
   void dispose() {
+    _dailyBudgetFocusNode.dispose();
     _dailyBudgetController.dispose();
     _customIntervalController.dispose();
     super.dispose();
@@ -1478,6 +1490,7 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
       backgroundColor: kCardBg,
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 12),
       contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
       actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
@@ -1538,46 +1551,61 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Expanded(
-                  child: TextField(
-                    key: const ValueKey('daily_budget_input'),
-                    controller: _dailyBudgetController,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    style: GoogleFonts.plusJakartaSans(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: kTextCharcoal,
-                    ),
-                    decoration: InputDecoration(
-                      labelText: 'Daily budget',
-                      labelStyle: GoogleFonts.plusJakartaSans(
-                        fontSize: 12,
-                        color: kMuted,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: () {
+                      _dailyBudgetFocusNode.requestFocus();
+                    },
+                    child: TextField(
+                      key: const ValueKey('daily_budget_input'),
+                      focusNode: _dailyBudgetFocusNode,
+                      controller: _dailyBudgetController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
                       ),
-                      prefixText: '${widget.currency} ',
-                      prefixStyle: GoogleFonts.plusJakartaSans(
+                      inputFormatters: [
+                        FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
+                      ],
+                      enableInteractiveSelection: true,
+                      onTap: () {
+                        _dailyBudgetFocusNode.requestFocus();
+                      },
+                      onChanged: (_) => setState(() {}),
+                      style: GoogleFonts.plusJakartaSans(
                         fontSize: 15,
                         fontWeight: FontWeight.w600,
                         color: kTextCharcoal,
                       ),
-                      filled: true,
-                      fillColor: Colors.white,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 12,
-                      ),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: kBorder),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: kBorder),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: kPrimary, width: 1.5),
+                      decoration: InputDecoration(
+                        labelText: 'Daily budget',
+                        labelStyle: GoogleFonts.plusJakartaSans(
+                          fontSize: 12,
+                          color: kMuted,
+                        ),
+                        prefixText: '${widget.currency} ',
+                        prefixStyle: GoogleFonts.plusJakartaSans(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: kTextCharcoal,
+                        ),
+                        filled: true,
+                        fillColor: Colors.white,
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 12,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: kBorder),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: kBorder),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: BorderSide(color: kPrimary, width: 1.5),
+                        ),
                       ),
                     ),
                   ),
@@ -1588,13 +1616,17 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
                   onPressed: suggestedBudget == null
                       ? null
                       : () {
-                          final value = suggestedBudget.toStringAsFixed(2);
+                          final value = suggestedBudget % 1 == 0
+                              ? suggestedBudget.toInt().toString()
+                              : suggestedBudget.toStringAsFixed(2);
                           _dailyBudgetController.value = TextEditingValue(
                             text: value,
-                            selection: TextSelection.collapsed(
-                              offset: value.length,
+                            selection: TextSelection(
+                              baseOffset: 0,
+                              extentOffset: value.length,
                             ),
                           );
+                          setState(() {});
                         },
                   icon: Icon(
                     Icons.lightbulb_outline_rounded,
@@ -1603,6 +1635,8 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
                   ),
                   label: Text(
                     suggestedBudgetLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.plusJakartaSans(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
@@ -1611,7 +1645,7 @@ class _DailyAllocationDialogState extends State<_DailyAllocationDialog> {
                   ),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 48),
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     side: BorderSide(
                       color: suggestedBudget == null
                           ? kBorder
